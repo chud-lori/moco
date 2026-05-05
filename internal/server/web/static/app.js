@@ -227,6 +227,15 @@ function setMessage(node, text, variant = "") {
   if (variant === "success") node.classList.add("is-success");
 }
 
+function truncateFilename(name, maxLen = 48) {
+  if (!name || name.length <= maxLen) return name || "";
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 && name.length - dot <= 8 ? name.slice(dot) : "";
+  const stem = ext ? name.slice(0, name.length - ext.length) : name;
+  const keep = Math.max(8, maxLen - ext.length - 1);
+  return stem.slice(0, keep) + "…" + ext;
+}
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
@@ -340,7 +349,7 @@ if (uploadForm) {
       fileInput.value = "";
       return;
     }
-    setMessage(message, `Selected ${file.name} (${formatBytes(file.size)})`);
+    setMessage(message, `Selected ${truncateFilename(file.name, 48)} (${formatBytes(file.size)})`);
   });
 
   uploadForm.addEventListener("submit", (event) => {
