@@ -1,0 +1,52 @@
+{{ define "discover.html" }}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ .Title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
+        <div class="topbar-actions">
+          {{ if .CurrentUser }}<a class="button subtle" href="/app">Dashboard</a>{{ else }}<a class="button subtle" href="/login">Sign in</a>{{ end }}
+        </div>
+      </header>
+      <main>
+        <section class="feature-band">
+          <article>
+            <p class="section-label">Discover</p>
+            <h2>Public books shared by readers.</h2>
+          </article>
+          <article><p>Anything here is intentionally published by its owner and readable by everyone.</p></article>
+        </section>
+        <section class="library-shelf">
+          {{ if .PublicBooks }}
+            <div class="dashboard-grid">
+              {{ range .PublicBooks }}
+                <article class="book-panel">
+                  <div class="book-panel-top">
+                    <span class="book-format">{{ .Format }}</span>
+                    <span class="visibility-chip">{{ .Visibility }}</span>
+                  </div>
+                  <h2>{{ .Title }}</h2>
+                  <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ .OwnerEmail }}</p>
+                  <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read in app</a></div>
+                </article>
+              {{ end }}
+            </div>
+          {{ else }}
+            <section class="empty-state"><h2>No public books yet.</h2></section>
+          {{ end }}
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
+{{ end }}

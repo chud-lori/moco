@@ -1,0 +1,39 @@
+{{ define "auth.html" }}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ .Title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell page-shell-narrow">
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">M</span>
+          <span class="brand-name">moco</span>
+        </a>
+      </header>
+      <main>
+        <section class="auth-card">
+          <p class="section-label">{{ .Mode }}</p>
+          <h1 class="auth-title">{{ if eq .Mode "Sign up" }}Build your private library{{ else }}Welcome back to your shelf{{ end }}</h1>
+          <p class="auth-copy">{{ if eq .Mode "Sign up" }}Create an account to upload, read, and resume your books.{{ else }}Sign in to continue reading and review your highlights.{{ end }}</p>
+          <form class="stack-form" data-auth-form data-mode="{{ if eq .Mode "Sign up" }}signup{{ else }}login{{ end }}">
+            <label><span>Email</span><input type="email" name="email" required /></label>
+            <label><span>Password</span><input type="password" name="password" minlength="10" required /></label>
+            <button class="button primary" type="submit">{{ .Mode }}</button>
+          </form>
+          <p class="form-message" data-form-message></p>
+          <p class="auth-footer">{{ if eq .Mode "Sign up" }}Already have an account? <a href="/login">Sign in</a>{{ else }}Need an account? <a href="/signup">Create one</a>{{ end }}</p>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+{{ end }}

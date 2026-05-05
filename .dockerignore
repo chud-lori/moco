@@ -1,0 +1,12 @@
+.git
+.gitignore
+.DS_Store
+bin
+dist
+tmp
+var
+*.db
+*.sqlite
+*.sqlite3
+*.log
+

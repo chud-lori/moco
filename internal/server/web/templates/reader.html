@@ -1,0 +1,116 @@
+{{ define "reader.html" }}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ .Title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    {{ if eq .ReaderKind "epub" }}
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    {{ end }}
+  </head>
+  <body class="reader-body">
+    <div class="reader-app" data-reader data-book-id="{{ .Book.ID }}" data-reader-kind="{{ .ReaderKind }}" data-file-url="{{ .FileURL }}">
+      <header class="reader-topbar">
+        <div class="reader-topbar-left">
+          <a class="brand" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
+          <button class="button subtle reader-toggle" type="button" data-reader-toggle="toc">Contents</button>
+          <button class="button subtle reader-toggle" type="button" data-reader-toggle="notes">Highlights</button>
+        </div>
+        <div class="topbar-actions">
+          <span class="session-chip">{{ .Book.Visibility }}</span>
+          <a class="button subtle" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}">Back</a>
+        </div>
+      </header>
+      <main class="reader-layout reader-layout-full">
+        <aside class="toc-panel reader-sidebar" data-reader-panel="toc">
+          <p class="section-label">Contents</p>
+          <h2>{{ .Book.Title }}</h2>
+          <p class="reader-owner">{{ if .Book.Author }}{{ .Book.Author }} · {{ end }}by {{ .Book.OwnerEmail }}</p>
+          {{ if eq .ReaderKind "md" }}
+            <ul class="toc-list">
+              {{ range .Document.Headings }}<li><a href="#{{ .ID }}">{{ .Title }}</a></li>{{ end }}
+            </ul>
+          {{ else }}
+            <ul class="toc-list" data-dynamic-toc><li>Loading chapters…</li></ul>
+          {{ end }}
+        </aside>
+
+        <section class="reader-card reader-shell reader-shell-full">
+          <div class="reader-toolbar">
+            <span>{{ .Book.Format }}</span>
+            <span data-progress-status>{{ if .Progress }}{{ printf "%.0f" .Progress.ProgressPercent }}% read{{ else }}Ready to read{{ end }}</span>
+          </div>
+
+          {{ if eq .ReaderKind "md" }}
+            <article class="reader-page reader-page-full markdown-reader" id="reader-content">{{ .Document.HTML }}</article>
+          {{ else if eq .ReaderKind "epub" }}
+            <div class="ebook-stage ebook-stage-full">
+              <div class="ebook-controls">
+                <button class="button subtle" type="button" data-epub-prev>Previous</button>
+                <button class="button subtle" type="button" data-epub-next>Next</button>
+              </div>
+              <div class="epub-stage" id="reader-content"></div>
+            </div>
+          {{ else }}
+            <div class="ebook-stage ebook-stage-full">
+              <div class="ebook-controls">
+                <button class="button subtle" type="button" data-pdf-prev>Previous</button>
+                <span class="session-chip" data-pdf-page>Page 1</span>
+                <button class="button subtle" type="button" data-pdf-next>Next</button>
+              </div>
+              <div class="pdf-stage"><canvas id="pdf-canvas"></canvas></div>
+            </div>
+          {{ end }}
+
+          {{ if .CurrentUser }}
+            <div class="highlight-actions">
+              <button class="button primary" type="button" data-save-highlight>Save highlight</button>
+              <p class="form-message" data-highlight-message></p>
+            </div>
+          {{ else }}
+            <div class="highlight-actions"><p class="form-message">Sign in to save highlights and reading progress.</p></div>
+          {{ end }}
+        </section>
+
+        <aside class="notes-preview reader-notes reader-sidebar" data-reader-panel="notes">
+          <div class="notes-copy">
+            <p class="section-label">Highlights</p>
+            <h2>Saved passages</h2>
+            <p>{{ if .CurrentUser }}Selections are saved per user, even on public books.{{ else }}Public books are readable without login. Sign in to save highlights.{{ end }}</p>
+          </div>
+          <div class="notes-stack" data-highlights-list>
+            {{ if .Highlights }}
+              {{ range .Highlights }}
+                <article class="note-card" data-highlight-id="{{ .ID }}">
+                  <span class="note-tag amber">{{ .Color }}</span>
+                  <p>{{ .SelectedText }}</p>
+                  <div class="book-panel-actions">
+                    <a class="text-link" href="#{{ .Locator }}">Jump to passage</a>
+                    <button class="text-link destructive" data-delete-highlight="{{ .ID }}" type="button">Delete</button>
+                  </div>
+                </article>
+              {{ end }}
+            {{ else }}
+              <article class="note-card"><p>No highlights yet.</p></article>
+            {{ end }}
+          </div>
+        </aside>
+      </main>
+    </div>
+    {{ if eq .ReaderKind "pdf" }}
+      <script type="module">
+        import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.min.mjs";
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.worker.min.mjs";
+        window.__mocoPdfjs = pdfjsLib;
+      </script>
+    {{ end }}
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+{{ end }}

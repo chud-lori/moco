@@ -1,0 +1,3 @@
+ALTER TABLE books ADD COLUMN original_filename TEXT NOT NULL DEFAULT '';
+ALTER TABLE books ADD COLUMN mime_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE books ADD COLUMN derived_epub_path TEXT NOT NULL DEFAULT '';

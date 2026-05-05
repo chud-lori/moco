@@ -1,0 +1,15 @@
+services:
+  moco:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moco
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MOCO_ADDR: ":8080"
+      MOCO_DATA_DIR: "/app/var"
+    volumes:
+      - ./var:/app/var
+

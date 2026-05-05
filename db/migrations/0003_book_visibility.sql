@@ -1,0 +1,1 @@
+ALTER TABLE books ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
