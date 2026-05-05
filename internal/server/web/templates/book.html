@@ -3,7 +3,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f0e7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="{{ .Book.Title }} on Moco." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d49b6d'/%3E%3Ctext x='50%25' y='55%25' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' dominant-baseline='middle' fill='%2330261d'%3EM%3C/text%3E%3C/svg%3E" />
     <title>{{ .Title }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,18 +15,20 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <div class="page-shell page-shell-narrow">
       <header class="topbar">
         <a class="brand" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
       </header>
-      <main>
+      <main id="main">
         <section class="book-detail-card">
-          <p class="section-label">{{ .Book.Format }}</p>
+          <span class="book-format">{{ .Book.Format }}</span>
           <h1 class="dashboard-title">{{ .Book.Title }}</h1>
           <p class="auth-copy">{{ if .Book.Author }}{{ .Book.Author }}{{ else }}Unknown author{{ end }}</p>
           <div class="book-panel-actions">
-            <a class="button primary" href="/api/v1/books/{{ .Book.ID }}/download">Download original</a>
-            {{ if .Book.DerivedEPUBPath }}<a class="button secondary" href="/api/v1/books/{{ .Book.ID }}/converted.epub">Download EPUB</a>{{ end }}
+            <a class="button primary" href="/books/{{ .Book.ID }}/read">Read in app</a>
+            <a class="button secondary" href="/api/v1/books/{{ .Book.ID }}/download">Download original</a>
+            {{ if .Book.DerivedEPUBPath }}<a class="button subtle" href="/api/v1/books/{{ .Book.ID }}/converted.epub">Download EPUB</a>{{ end }}
             <a class="button subtle" href="/app">Back to shelf</a>
           </div>
         </section>

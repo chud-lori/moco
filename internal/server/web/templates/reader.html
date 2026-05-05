@@ -3,7 +3,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4ede3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Read {{ .Book.Title }} on Moco." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d49b6d'/%3E%3Ctext x='50%25' y='55%25' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' dominant-baseline='middle' fill='%2330261d'%3EM%3C/text%3E%3C/svg%3E" />
     <title>{{ .Title }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,35 +19,36 @@
     {{ end }}
   </head>
   <body class="reader-body">
+    <a class="skip-link" href="#reader-content">Skip to reading area</a>
     <div class="reader-app" data-reader data-book-id="{{ .Book.ID }}" data-reader-kind="{{ .ReaderKind }}" data-file-url="{{ .FileURL }}">
       <header class="reader-topbar">
         <div class="reader-topbar-left">
-          <a class="brand" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
-          <button class="button subtle reader-toggle" type="button" data-reader-toggle="toc">Contents</button>
-          <button class="button subtle reader-toggle" type="button" data-reader-toggle="notes">Highlights</button>
+          <a class="brand" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Back to library"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
+          <button class="button subtle reader-toggle" type="button" data-reader-toggle="toc" aria-label="Show table of contents">Contents</button>
+          <button class="button subtle reader-toggle" type="button" data-reader-toggle="notes" aria-label="Show highlights">Highlights</button>
         </div>
         <div class="topbar-actions">
-          <span class="session-chip">{{ .Book.Visibility }}</span>
+          <span class="visibility-chip" data-visibility="{{ .Book.Visibility }}">{{ .Book.Visibility }}</span>
           <a class="button subtle" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}">Back</a>
         </div>
       </header>
       <main class="reader-layout reader-layout-full">
-        <aside class="toc-panel reader-sidebar" data-reader-panel="toc">
+        <aside class="toc-panel reader-sidebar" data-reader-panel="toc" aria-label="Table of contents">
           <p class="section-label">Contents</p>
           <h2>{{ .Book.Title }}</h2>
-          <p class="reader-owner">{{ if .Book.Author }}{{ .Book.Author }} · {{ end }}by {{ .Book.OwnerEmail }}</p>
+          <p class="reader-owner">{{ if .Book.Author }}{{ .Book.Author }} · {{ end }}by {{ displayName .Book.OwnerEmail }}</p>
           {{ if eq .ReaderKind "md" }}
             <ul class="toc-list">
               {{ range .Document.Headings }}<li><a href="#{{ .ID }}">{{ .Title }}</a></li>{{ end }}
             </ul>
           {{ else }}
-            <ul class="toc-list" data-dynamic-toc><li>Loading chapters…</li></ul>
+            <ul class="toc-list" data-dynamic-toc><li><span style="padding:12px 14px;display:block">Loading chapters…</span></li></ul>
           {{ end }}
         </aside>
 
         <section class="reader-card reader-shell reader-shell-full">
           <div class="reader-toolbar">
-            <span>{{ .Book.Format }}</span>
+            <span class="book-format">{{ .Book.Format }}</span>
             <span data-progress-status>{{ if .Progress }}{{ printf "%.0f" .Progress.ProgressPercent }}% read{{ else }}Ready to read{{ end }}</span>
           </div>
 
@@ -52,33 +57,33 @@
           {{ else if eq .ReaderKind "epub" }}
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
-                <button class="button subtle" type="button" data-epub-prev>Previous</button>
-                <button class="button subtle" type="button" data-epub-next>Next</button>
+                <button class="button subtle" type="button" data-epub-prev aria-label="Previous page">← Previous</button>
+                <button class="button subtle" type="button" data-epub-next aria-label="Next page">Next →</button>
               </div>
               <div class="epub-stage" id="reader-content"></div>
             </div>
           {{ else }}
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
-                <button class="button subtle" type="button" data-pdf-prev>Previous</button>
+                <button class="button subtle" type="button" data-pdf-prev aria-label="Previous page">← Previous</button>
                 <span class="session-chip" data-pdf-page>Page 1</span>
-                <button class="button subtle" type="button" data-pdf-next>Next</button>
+                <button class="button subtle" type="button" data-pdf-next aria-label="Next page">Next →</button>
               </div>
-              <div class="pdf-stage"><canvas id="pdf-canvas"></canvas></div>
+              <div class="pdf-stage"><canvas id="pdf-canvas" aria-label="PDF page"></canvas></div>
             </div>
           {{ end }}
 
           {{ if .CurrentUser }}
             <div class="highlight-actions">
-              <button class="button primary" type="button" data-save-highlight>Save highlight</button>
-              <p class="form-message" data-highlight-message></p>
+              <button class="button primary" type="button" data-save-highlight disabled>Save highlight</button>
+              <p class="form-message" data-highlight-message aria-live="polite"></p>
             </div>
           {{ else }}
             <div class="highlight-actions"><p class="form-message">Sign in to save highlights and reading progress.</p></div>
           {{ end }}
         </section>
 
-        <aside class="notes-preview reader-notes reader-sidebar" data-reader-panel="notes">
+        <aside class="notes-preview reader-notes reader-sidebar" data-reader-panel="notes" aria-label="Highlights">
           <div class="notes-copy">
             <p class="section-label">Highlights</p>
             <h2>Saved passages</h2>

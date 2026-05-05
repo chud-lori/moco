@@ -2,6 +2,7 @@ package server
 
 import (
 	"html/template"
+	"strings"
 	"time"
 
 	"moco/internal/reader"
@@ -51,6 +52,15 @@ func templateFuncs() template.FuncMap {
 				return "Not opened yet"
 			}
 			return t.Format("02 Jan 2006 15:04")
+		},
+		"displayName": func(email string) string {
+			if at := strings.Index(email, "@"); at > 0 {
+				return email[:at]
+			}
+			if email == "" {
+				return "a reader"
+			}
+			return email
 		},
 	}
 }
