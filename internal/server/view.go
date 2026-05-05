@@ -35,14 +35,15 @@ type authPageData struct {
 
 type readerPageData struct {
 	pageData
-	Book          store.Book
-	Document      reader.Document
-	Highlights    []store.Highlight
-	Progress      *store.ReadingProgress
-	ReaderKind    string
-	FileURL       string
-	IsOwner       bool
-	PublicAllowed bool
+	Book           store.Book
+	Document       reader.Document
+	Highlights     []store.Highlight
+	HighlightsJSON template.JS
+	Progress       *store.ReadingProgress
+	ReaderKind     string
+	FileURL        string
+	IsOwner        bool
+	PublicAllowed  bool
 }
 
 func templateFuncs() template.FuncMap {

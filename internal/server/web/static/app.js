@@ -161,13 +161,30 @@ function openTextPrompt({ title, body, placeholder = "", confirmLabel = "Save", 
 }
 
 // ---------- HTTP helpers ----------
+function getCookie(name) {
+  const needle = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(needle))
+    ?.slice(needle.length) || "";
+}
+
+function csrfHeaders(method, headers = {}) {
+  const upper = String(method || "GET").toUpperCase();
+  if (["GET", "HEAD", "OPTIONS"].includes(upper)) return headers;
+  const token = getCookie("moco_csrf");
+  return token ? { ...headers, "X-CSRF-Token": token } : headers;
+}
+
 async function requestJSON(url, options = {}) {
+  const method = options.method || "GET";
   const response = await fetch(url, {
     credentials: "same-origin",
     headers: {
       Accept: "application/json",
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(options.headers || {}),
+      ...csrfHeaders(method, options.headers || {}),
     },
     ...options,
   });
@@ -342,6 +359,8 @@ if (uploadForm) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/v1/books/upload");
     xhr.responseType = "json";
+    const csrf = getCookie("moco_csrf");
+    if (csrf) xhr.setRequestHeader("X-CSRF-Token", csrf);
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable) {
         const pct = (e.loaded / e.total) * 100;
@@ -451,7 +470,9 @@ function attachHighlightDelete(button) {
     if (!confirmed) return;
     try {
       await requestJSON(`/api/v1/highlights/${id}`, { method: "DELETE", body: "{}" });
+      if (window.__mocoReaderState?.removeHighlight) window.__mocoReaderState.removeHighlight(id);
       button.closest(".note-card")?.remove();
+      if (window.__mocoReaderState?.ensureHighlightListState) window.__mocoReaderState.ensureHighlightListState();
       toast("Highlight deleted.", "success");
     } catch (error) {
       toast(error.message || "Could not delete highlight.", "error");
@@ -473,6 +494,54 @@ function saveReaderProgressFactory(bookID, progressStatus) {
       // progress saves are silent — flaky-tick toasts would be obnoxious
     }
   };
+}
+
+// Adds a Copy button to each fenced code block and re-runs Prism if it's loaded.
+// Idempotent — calling it twice on the same root won't double-attach.
+function enrichCodeBlocks(root) {
+  if (!root) return;
+  root.querySelectorAll("pre > code").forEach((code) => {
+    const pre = code.parentElement;
+    if (!pre || pre.dataset.enriched === "1") return;
+    pre.dataset.enriched = "1";
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "code-copy";
+    copy.textContent = "Copy";
+    copy.setAttribute("aria-label", "Copy code to clipboard");
+    copy.addEventListener("click", async () => {
+      const text = code.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        copy.textContent = "Copied";
+        copy.classList.add("is-copied");
+      } catch (_) {
+        copy.textContent = "Press ⌘C";
+      }
+      setTimeout(() => {
+        copy.textContent = "Copy";
+        copy.classList.remove("is-copied");
+      }, 1600);
+    });
+    pre.appendChild(copy);
+  });
+
+  // Trigger Prism if its bundle has loaded; otherwise wait briefly.
+  const tryHighlight = () => {
+    if (window.Prism && typeof window.Prism.highlightAllUnder === "function") {
+      window.Prism.highlightAllUnder(root);
+      return true;
+    }
+    return false;
+  };
+  if (!tryHighlight()) {
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (tryHighlight() || attempts > 40) clearInterval(interval);
+    }, 100);
+  }
 }
 
 function buildHighlightCard(item) {
@@ -519,6 +588,96 @@ if (readerRoot) {
   const progressStatus = document.querySelector("[data-progress-status]");
   const highlightsList = document.querySelector("[data-highlights-list]");
   const saveProgress = saveReaderProgressFactory(bookID, progressStatus);
+  const currentHighlights = (() => {
+    const raw = document.getElementById("reader-highlights-data")?.textContent?.trim();
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch (_) {
+      return [];
+    }
+  })();
+
+  function ensureHighlightListState() {
+    if (!highlightsList) return;
+    const cards = highlightsList.querySelectorAll(".note-card");
+    if (cards.length > 0) return;
+    const card = document.createElement("article");
+    card.className = "note-card";
+    card.innerHTML = "<p>No highlights yet.</p>";
+    highlightsList.appendChild(card);
+  }
+
+  function clearEmptyHighlightState() {
+    const emptyCard = Array.from(highlightsList?.querySelectorAll(".note-card") || []).find((card) => {
+      return card.querySelector("[data-delete-highlight]") === null && /No highlights yet\./i.test(card.textContent || "");
+    });
+    emptyCard?.remove();
+  }
+
+  function unwrapMark(mark) {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  }
+
+  function sectionScope(locator, readerContent) {
+    return readerContent.querySelector(`[data-section="${CSS.escape(locator)}"]`) || readerContent;
+  }
+
+  function highlightNode(scope, item) {
+    const query = String(item.selectedText || "").trim();
+    if (!query) return false;
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (parent.closest("pre, code, mark, script, style")) return NodeFilter.FILTER_REJECT;
+        if (!node.nodeValue || !node.nodeValue.includes(query)) return NodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const value = node.nodeValue || "";
+      const start = value.indexOf(query);
+      if (start < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + query.length);
+      const mark = document.createElement("mark");
+      mark.className = `saved-highlight saved-highlight-${item.color || "amber"}`;
+      mark.setAttribute("data-rendered-highlight", item.id);
+      try {
+        range.surroundContents(mark);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function renderMarkdownHighlights(readerContent) {
+    if (!readerContent) return;
+    readerContent.querySelectorAll("[data-rendered-highlight]").forEach(unwrapMark);
+    currentHighlights.forEach((item) => {
+      const scope = sectionScope(item.locator || "start", readerContent);
+      highlightNode(scope, item);
+    });
+  }
+
+  function removeHighlight(id) {
+    const idx = currentHighlights.findIndex((item) => item.id === id);
+    if (idx >= 0) currentHighlights.splice(idx, 1);
+    const readerContent = document.getElementById("reader-content");
+    if (readerKind === "md" && readerContent) renderMarkdownHighlights(readerContent);
+  }
+
+  window.__mocoReaderState = { removeHighlight, ensureHighlightListState };
 
   // ----- Sidebar panels -----
   let overlay = document.querySelector(".reader-overlay");
@@ -567,6 +726,171 @@ if (readerRoot) {
     }
   });
 
+  // ----- Kindle-style immersive mode -----
+  const readerApp = readerRoot;
+  let immersiveTimer = null;
+  const IMMERSIVE_DELAY = 2800;
+
+  function panelOrModalOpen() {
+    return !!document.querySelector("[data-reader-panel].is-open")
+      || !!document.querySelector("[data-modal-root].is-open");
+  }
+  function hasSelection() {
+    const sel = window.getSelection();
+    return !!(sel && sel.toString().trim());
+  }
+  function clearImmersiveTimer() {
+    if (immersiveTimer) { clearTimeout(immersiveTimer); immersiveTimer = null; }
+  }
+  function scheduleHide(delay = IMMERSIVE_DELAY) {
+    clearImmersiveTimer();
+    immersiveTimer = setTimeout(() => {
+      if (panelOrModalOpen() || hasSelection()) return;
+      readerApp.classList.add("is-immersive");
+    }, delay);
+  }
+  function showChrome({ keepShown = false } = {}) {
+    readerApp.classList.remove("is-immersive");
+    if (keepShown) clearImmersiveTimer();
+    else scheduleHide();
+  }
+  function toggleImmersive() {
+    if (readerApp.classList.contains("is-immersive")) {
+      showChrome();
+    } else {
+      clearImmersiveTimer();
+      readerApp.classList.add("is-immersive");
+    }
+  }
+
+  // Tap on the reading area toggles chrome (skip interactive elements / sidebar / overlay)
+  readerRoot.addEventListener("click", (event) => {
+    if (event.target.closest("button, a, input, textarea, select, .reader-sidebar, .reader-overlay, [data-modal-root]")) return;
+    if (hasSelection()) return;
+    toggleImmersive();
+  });
+
+  // Mouse near the top of the screen reveals chrome
+  document.addEventListener("mousemove", (event) => {
+    if (event.clientY < 80) showChrome();
+  }, { passive: true });
+
+  // Selection forces chrome on (so the Save Highlight button is reachable)
+  document.addEventListener("selectionchange", () => {
+    if (hasSelection()) showChrome({ keepShown: true });
+  });
+
+  // Opening a panel keeps chrome visible; closing it re-arms the timer
+  const panelObserver = new MutationObserver(() => {
+    if (panelOrModalOpen()) showChrome({ keepShown: true });
+    else scheduleHide();
+  });
+  document.querySelectorAll("[data-reader-panel]").forEach((panel) => {
+    panelObserver.observe(panel, { attributes: true, attributeFilter: ["class"] });
+  });
+
+  // Kindle-style: enter immersive immediately on load.
+  // First-time users get a one-shot toast hint.
+  readerApp.classList.add("is-immersive");
+  if (!localStorage.getItem("moco-reader-hint-seen")) {
+    setTimeout(() => {
+      toast("Tap anywhere to show controls.", "info");
+      localStorage.setItem("moco-reader-hint-seen", "1");
+    }, 500);
+  }
+
+  // ----- Swipe-to-page-turn (EPUB / PDF only) -----
+  if (readerKind === "epub" || readerKind === "pdf") {
+    let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+    const SWIPE_MIN = 50;
+    const VERTICAL_TOLERANCE = 60;
+    const TIME_LIMIT = 600;
+
+    readerRoot.addEventListener("touchstart", (event) => {
+      if (event.target.closest("button, a, input, textarea, select, .reader-sidebar, [data-modal-root]")) return;
+      const t = event.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      touchStartT = Date.now();
+    }, { passive: true });
+
+    readerRoot.addEventListener("touchend", (event) => {
+      if (Date.now() - touchStartT > TIME_LIMIT) return;
+      const t = event.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = Math.abs(t.clientY - touchStartY);
+      if (Math.abs(dx) < SWIPE_MIN || dy > VERTICAL_TOLERANCE) return;
+      const prevSel = readerKind === "epub" ? "[data-epub-prev]" : "[data-pdf-prev]";
+      const nextSel = readerKind === "epub" ? "[data-epub-next]" : "[data-pdf-next]";
+      if (dx > 0) document.querySelector(prevSel)?.click();
+      else document.querySelector(nextSel)?.click();
+    }, { passive: true });
+  }
+
+  // ----- Reading settings (font size + theme) -----
+  const SETTINGS_KEY = "moco-reader-settings";
+  const defaultSettings = { fontScale: 1, theme: "system" };
+  const settings = { ...defaultSettings, ...safeJSON(localStorage.getItem(SETTINGS_KEY)) };
+
+  function safeJSON(raw) { try { return raw ? JSON.parse(raw) : {}; } catch (_) { return {}; } }
+
+  function applySettings() {
+    document.documentElement.style.setProperty("--reader-font-scale", String(settings.fontScale));
+    if (settings.theme === "system") {
+      document.body.removeAttribute("data-reader-theme");
+    } else {
+      document.body.setAttribute("data-reader-theme", settings.theme);
+    }
+    const display = document.querySelector("[data-font-scale-display]");
+    if (display) display.textContent = `${Math.round(settings.fontScale * 100)}%`;
+    document.querySelectorAll(".theme-swatch").forEach((btn) => {
+      const on = btn.dataset.theme === settings.theme;
+      btn.setAttribute("aria-pressed", String(on));
+      btn.setAttribute("aria-checked", String(on));
+    });
+    const range = document.querySelector("[data-font-scale]");
+    if (range) range.value = String(settings.fontScale);
+  }
+  function persistSettings() {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+  applySettings();
+
+  document.querySelector("[data-font-scale]")?.addEventListener("input", (event) => {
+    settings.fontScale = Number(event.target.value);
+    applySettings();
+    persistSettings();
+  });
+  document.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.theme = btn.dataset.theme;
+      applySettings();
+      persistSettings();
+    });
+  });
+
+  // ----- Fullscreen API -----
+  const fullscreenButton = document.querySelector("[data-fullscreen-toggle]");
+  if (fullscreenButton) {
+    fullscreenButton.addEventListener("click", async () => {
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (_) {
+        toast("Fullscreen isn't available in this browser.", "error");
+      }
+    });
+    document.addEventListener("fullscreenchange", () => {
+      const on = !!document.fullscreenElement;
+      fullscreenButton.setAttribute("aria-pressed", String(on));
+      fullscreenButton.title = on ? "Exit fullscreen" : "Enter fullscreen";
+      fullscreenButton.textContent = on ? "⤧" : "⛶";
+    });
+  }
+
   // ----- Save highlight (selection-gated) -----
   const highlightButton = document.querySelector("[data-save-highlight]");
   if (highlightButton) {
@@ -595,9 +919,13 @@ if (readerRoot) {
         method: "POST",
         body: JSON.stringify({ locator, selectedText: text, color: "amber" }),
       });
-      const onlyCard = highlightsList?.querySelector(".note-card");
-      if (onlyCard && onlyCard.textContent.includes("No highlights")) highlightsList.innerHTML = "";
+      clearEmptyHighlightState();
       highlightsList?.prepend(buildHighlightCard(payload.highlight));
+      currentHighlights.unshift(payload.highlight);
+      if (readerKind === "md") {
+        const readerContent = document.getElementById("reader-content");
+        renderMarkdownHighlights(readerContent);
+      }
       toast("Highlight saved.", "success");
     } catch (error) {
       toast(error.message || "Could not save highlight.", "error");
@@ -607,6 +935,8 @@ if (readerRoot) {
   // ----- Markdown reader -----
   if (readerKind === "md") {
     const readerContent = document.getElementById("reader-content");
+    renderMarkdownHighlights(readerContent);
+    enrichCodeBlocks(readerContent);
     let lastProgressLocator = null;
     let activeHeadingId = null;
 
@@ -636,7 +966,7 @@ if (readerRoot) {
     window.addEventListener("scroll", () => {
       window.clearTimeout(progressTimer);
       progressTimer = window.setTimeout(async () => {
-        const headings = [...readerContent.querySelectorAll("h1,h2,h3")];
+        const headings = [...readerContent.querySelectorAll("h1,h2,h3,h4,h5,h6")];
         let active = headings[0];
         for (const heading of headings) {
           if (heading.getBoundingClientRect().top <= 120) active = heading;
@@ -670,8 +1000,8 @@ if (readerRoot) {
           ? selection.anchorNode.parentElement
           : selection.anchorNode;
         if (!(container instanceof Element)) container = readerContent;
-        const section = container.closest("h1,h2,h3,[id]");
-        const locator = section?.id || "start";
+        const section = container.closest("[data-section]");
+        const locator = section?.getAttribute("data-section") || "start";
         await saveHighlight(locator, text);
         selection.removeAllRanges();
         setHighlightEnabled(false);

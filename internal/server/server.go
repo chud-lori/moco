@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
@@ -29,10 +30,11 @@ import (
 var embeddedFiles embed.FS
 
 type Config struct {
-	Addr       string
-	DataDir    string
-	DBPath     string
-	CookieName string
+	Addr          string
+	DataDir       string
+	DBPath        string
+	CookieName    string
+	SecureCookies bool
 }
 
 type Server struct {
@@ -74,7 +76,10 @@ func New(cfg Config) *Server {
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.withLogging(s.mux)
+	handler := http.Handler(s.mux)
+	handler = s.withCSRFCookie(handler)
+	handler = s.withSecurityHeaders(handler)
+	return s.withLogging(handler)
 }
 
 func (s *Server) routes() {
@@ -220,6 +225,9 @@ func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
 		}
 		if highlights, err := s.store.ListHighlights(r.Context(), user.ID, book.ID); err == nil {
 			data.Highlights = highlights
+			if encoded, err := json.Marshal(highlights); err == nil {
+				data.HighlightsJSON = template.JS(encoded)
+			}
 		}
 	}
 
@@ -303,8 +311,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   s.cfg.SecureCookies,
 		MaxAge:   -1,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -667,6 +676,66 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 	})
 }
 
+const csrfCookieName = "moco_csrf"
+
+func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		if r.TLS != nil || s.cfg.SecureCookies {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) withCSRFCookie(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, tokenMissing := s.ensureCSRFCookie(w, r)
+		if !isSafeMethod(r.Method) {
+			header := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
+			if tokenMissing || header == "" || subtle.ConstantTimeCompare([]byte(header), []byte(token)) != 1 {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "csrf token mismatch"})
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) ensureCSRFCookie(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if cookie, err := r.Cookie(csrfCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return cookie.Value, false
+	}
+	token, err := randomToken()
+	if err != nil {
+		http.Error(w, "csrf token generation failed", http.StatusInternalServerError)
+		return "", true
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   s.cfg.SecureCookies,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int((24 * time.Hour).Seconds()),
+	})
+	return token, true
+}
+
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -698,8 +767,8 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, userID str
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
+		Secure:   s.cfg.SecureCookies,
+		SameSite: http.SameSiteStrictMode,
 		Expires:  expiresAt,
 		MaxAge:   int((14 * 24 * time.Hour).Seconds()),
 	})
@@ -797,7 +866,8 @@ func formatFromExt(ext string) string {
 }
 
 func safeMIME(given, ext string) string {
-	if strings.Contains(given, "/") {
+	normalized := strings.TrimSpace(strings.ToLower(given))
+	if strings.Contains(normalized, "/") && normalized != "application/octet-stream" && normalized != "binary/octet-stream" {
 		return given
 	}
 	if guessed := mime.TypeByExtension(ext); guessed != "" {

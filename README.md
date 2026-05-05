@@ -10,9 +10,11 @@ This repo currently contains:
 - SQLite-backed auth, sessions, library metadata, public/private visibility, reading progress, and highlights
 - authenticated dashboard with separate private and public shelves
 - public discovery shelf for books intentionally published by users
-- Markdown reading UI with table of contents, progress resume, and highlights
+- Markdown reading UI with richer parsing, section TOC, progress resume, and persistent rendered highlight overlays
 - PDF and EPUB in-app reader routes wired for browser rendering
 - local file uploads with Markdown-to-EPUB sidecar conversion
+- CSRF protection on every unsafe request and production-ready secure cookie support
+- automated Go tests covering auth, upload, visibility, progress, highlight, and reader format flows
 - the initial product and architecture plan in `plan.md`
 
 ## Run
@@ -27,6 +29,12 @@ Books and the SQLite database will be stored under:
 
 ```text
 var/
+```
+
+For production HTTPS deployments, enable secure cookies:
+
+```sh
+MOCO_SECURE_COOKIES=true go run ./cmd/moco
 ```
 
 ## Docker Deploy
@@ -86,10 +94,8 @@ So these stay persisted across restarts:
 - `DELETE /api/v1/books/{id}`
 - `DELETE /api/v1/highlights/:id`
 
-## Next Build Steps
+## Remaining Gaps
 
-1. Add EPUB and PDF in-app readers instead of download/detail-only handling
-2. Tighten cookie security and add CSRF protection for production
-3. Add richer Markdown parsing and persistent rendered highlight overlays
-4. Vendor reader assets locally if you want zero runtime CDN dependency
-5. Add automated tests for auth, upload, visibility, progress, and highlight flows
+1. Vendor `pdf.js` and `epub.js` locally if you want zero runtime CDN dependency
+2. Add richer PDF text selection overlays instead of page-note-only highlighting
+3. Expand EPUB/PDF keyboard shortcuts and TOC navigation polish
