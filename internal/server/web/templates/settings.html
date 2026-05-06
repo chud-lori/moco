@@ -1,0 +1,77 @@
+{{ define "settings.html" }}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f0e7" />
+    <meta name="description" content="Account settings on Moco." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d49b6d'/%3E%3Ctext x='50%25' y='55%25' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' dominant-baseline='middle' fill='%2330261d'%3EM%3C/text%3E%3C/svg%3E" />
+    <title>{{ .Title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page-shell page-shell-narrow">
+      {{ template "primary_topbar" . }}
+      <main id="main">
+        <section class="settings-hero">
+          <p class="section-label">Settings</p>
+          <h1 class="dashboard-title">Account</h1>
+          <p class="auth-copy">Manage how your name appears on the public shelf, change your password, or delete your account.</p>
+        </section>
+
+        <section class="auth-card">
+          <h2 style="margin-top:0">Profile</h2>
+          <form class="stack-form" data-account-form novalidate>
+            <label><span>Display name</span><input type="text" name="displayName" value="{{ userDisplayName .CurrentUser }}" maxlength="60" required /></label>
+            <p class="form-message" data-account-message aria-live="polite"></p>
+            <button class="button primary" type="submit">Save</button>
+          </form>
+          <p class="auth-footer" style="margin-top:8px">Email: <span class="quote-cite-title">{{ .CurrentUser.Email }}</span></p>
+        </section>
+
+        <section class="auth-card">
+          <h2 style="margin-top:0">Change password</h2>
+          <form class="stack-form" data-password-form novalidate>
+            <label><span>Current password</span>
+              <span class="input-with-action">
+                <input type="password" name="currentPassword" autocomplete="current-password" required />
+                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+              </span>
+            </label>
+            <label><span>New password</span>
+              <span class="input-with-action">
+                <input type="password" name="newPassword" minlength="10" autocomplete="new-password" required />
+                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+              </span>
+            </label>
+            <p class="form-message" data-password-message aria-live="polite"></p>
+            <button class="button primary" type="submit">Change password</button>
+          </form>
+        </section>
+
+        <section class="auth-card">
+          <h2 style="margin-top:0; color: var(--danger)">Delete account</h2>
+          <p class="auth-copy">This permanently removes your account, all uploaded books, highlights, bookmarks, and tags. This cannot be undone.</p>
+          <form class="stack-form" data-delete-account-form novalidate>
+            <label><span>Confirm with your password</span>
+              <span class="input-with-action">
+                <input type="password" name="password" autocomplete="current-password" required />
+                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+              </span>
+            </label>
+            <p class="form-message" data-delete-account-message aria-live="polite"></p>
+            <button class="button danger" type="submit">Delete my account permanently</button>
+          </form>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+{{ end }}

@@ -1,0 +1,76 @@
+{{ define "stats.html" }}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f0e7" />
+    <meta name="description" content="Your reading at a glance." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d49b6d'/%3E%3Ctext x='50%25' y='55%25' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' dominant-baseline='middle' fill='%2330261d'%3EM%3C/text%3E%3C/svg%3E" />
+    <title>{{ .Title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page-shell">
+      {{ template "primary_topbar" . }}
+      <main id="main">
+        <section class="quotes-hero">
+          <p class="section-label">Stats</p>
+          <h1 class="dashboard-title">Your reading at a glance.</h1>
+          <p class="auth-copy">Counts across your library — books, highlights, bookmarks, tags, and total estimated reading time.</p>
+        </section>
+
+        <section class="stats-grid">
+          <article class="stat-card">
+            <p class="stat-label">Books in library</p>
+            <p class="stat-value">{{ .Stats.BookCount }}</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Books started</p>
+            <p class="stat-value">{{ .Stats.BooksStarted }}</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Books finished</p>
+            <p class="stat-value">{{ .Stats.BooksFinished }}</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Highlights</p>
+            <p class="stat-value">{{ .Stats.HighlightCount }}</p>
+            <p class="stat-sub">across {{ .Stats.HighlightsBooks }} books</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Bookmarks</p>
+            <p class="stat-value">{{ .Stats.BookmarkCount }}</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Tags in use</p>
+            <p class="stat-value">{{ .Stats.TagCount }}</p>
+          </article>
+          <article class="stat-card stat-card-wide">
+            <p class="stat-label">Estimated reading time started</p>
+            <p class="stat-value">{{ if .Stats.ReadingMinutes }}{{ formatMinutes .Stats.ReadingMinutes }}{{ else }}0 min{{ end }}</p>
+            <p class="stat-sub">summed across books you've opened</p>
+          </article>
+        </section>
+
+        {{ if .TagCounts }}
+          <section class="library-section">
+            <div class="section-row"><p class="section-label">Tags</p></div>
+            <div class="tag-cloud">
+              {{ range .TagCounts }}
+                <a class="tag-chip" href="/app?tag={{ .Tag }}">#{{ .Tag }} <span class="tag-count">{{ .Count }}</span></a>
+              {{ end }}
+            </div>
+          </section>
+        {{ end }}
+      </main>
+    </div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+{{ end }}

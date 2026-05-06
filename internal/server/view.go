@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"html/template"
 	"strings"
 	"time"
@@ -21,6 +22,11 @@ type dashboardPageData struct {
 	MyPrivateBooks []store.Book
 	MyPublicBooks  []store.Book
 	PublicBooks    []store.Book
+	BookTags       map[string][]string
+	AllTags        []store.TagCount
+	Sort           string
+	Tag            string
+	Format         string
 }
 
 type discoverPageData struct {
@@ -35,7 +41,16 @@ type authPageData struct {
 
 type quotesPageData struct {
 	pageData
-	Quotes []store.HighlightWithBook
+	Quotes      []store.HighlightWithBook
+	Query       string
+	BookFilter  string
+	BookOptions []store.Book
+}
+
+type statsPageData struct {
+	pageData
+	Stats     store.ReadingStats
+	TagCounts []store.TagCount
 }
 
 type readerPageData struct {
@@ -68,5 +83,47 @@ func templateFuncs() template.FuncMap {
 			}
 			return email
 		},
+		"formatMinutes": func(m int) string {
+			if m <= 0 {
+				return ""
+			}
+			if m < 60 {
+				return fmt.Sprintf("%d min read", m)
+			}
+			h := m / 60
+			rem := m % 60
+			if rem == 0 {
+				return fmt.Sprintf("%dh read", h)
+			}
+			return fmt.Sprintf("%dh %dm read", h, rem)
+		},
+		"userDisplayName": func(u *store.User) string {
+			if u == nil {
+				return "a reader"
+			}
+			if u.DisplayName != "" {
+				return u.DisplayName
+			}
+			if at := strings.Index(u.Email, "@"); at > 0 {
+				return u.Email[:at]
+			}
+			return u.Email
+		},
+		"tagsForBook": func(tags map[string][]string, id string) []string {
+			if tags == nil {
+				return nil
+			}
+			return tags[id]
+		},
+		// mkBookGrid bundles a book slice + the user's book→tags map so the
+		// "book_grid" sub-template gets both as a single argument.
+		"mkBookGrid": func(books []store.Book, tags map[string][]string) bookGridData {
+			return bookGridData{Books: books, Tags: tags}
+		},
 	}
+}
+
+type bookGridData struct {
+	Books []store.Book
+	Tags  map[string][]string
 }

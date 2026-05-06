@@ -1,0 +1,14 @@
+{{ define "primary_topbar" }}
+<header class="topbar">
+  <a class="brand" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
+  <nav class="topnav" aria-label="Primary">
+    <a href="/quotes">Quotes</a>
+    <a href="/stats">Stats</a>
+    <a href="/discover">Public shelf</a>
+  </nav>
+  <div class="topbar-actions">
+    <a class="session-chip" href="/settings" title="Account settings">{{ userDisplayName .CurrentUser }}</a>
+    <button class="button subtle" data-logout-button type="button">Log out</button>
+  </div>
+</header>
+{{ end }}

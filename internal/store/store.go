@@ -26,10 +26,11 @@ type Store struct {
 }
 
 type User struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          string    `json:"id"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"displayName"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type Session struct {
@@ -53,9 +54,44 @@ type Book struct {
 	MIMEType         string     `json:"mimeType"`
 	DerivedEPUBPath  string     `json:"-"`
 	FileSize         int64      `json:"fileSize"`
+	ReadingMinutes   int        `json:"readingMinutes"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	LastOpenedAt     *time.Time `json:"lastOpenedAt,omitempty"`
+}
+
+type Bookmark struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"userId"`
+	BookID    string    `json:"bookId"`
+	Locator   string    `json:"locator"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type TagCount struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+type ReadingStats struct {
+	BookCount       int `json:"bookCount"`
+	HighlightCount  int `json:"highlightCount"`
+	BookmarkCount   int `json:"bookmarkCount"`
+	BooksStarted    int `json:"booksStarted"`
+	BooksFinished   int `json:"booksFinished"`
+	TagCount        int `json:"tagCount"`
+	ReadingMinutes  int `json:"readingMinutes"`
+	HighlightsBooks int `json:"highlightsBooks"`
+}
+
+// BookFilter encapsulates dashboard list query options.
+type BookFilter struct {
+	UserID  string
+	Tag     string // empty = all
+	Format  string // empty = all
+	Sort    string // "recent" | "title" | "progress" | "added"
+	OnlyOwn bool   // ignored — caller already filters by user_id
 }
 
 type ReadingProgress struct {
@@ -142,10 +178,12 @@ func (s *Store) migrate(ctx context.Context) error {
 }
 
 func (s *Store) CreateUser(ctx context.Context, id, email, passwordHash string, now time.Time) (User, error) {
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	displayName := defaultDisplayName(cleanEmail)
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, email, password_hash, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		id, strings.ToLower(strings.TrimSpace(email)), passwordHash, now.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano),
+		INSERT INTO users (id, email, password_hash, created_at, updated_at, display_name)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		id, cleanEmail, passwordHash, now.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano), displayName,
 	)
 	if err != nil {
 		return User{}, err
@@ -157,7 +195,7 @@ func (s *Store) CreateUser(ctx context.Context, id, email, passwordHash string, 
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, string, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, email, password_hash, created_at, updated_at
+		SELECT id, email, password_hash, created_at, updated_at, display_name
 		FROM users
 		WHERE email = ?`,
 		strings.ToLower(strings.TrimSpace(email)),
@@ -176,7 +214,7 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, string,
 
 func (s *Store) GetUserByID(ctx context.Context, id string) (User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, email, password_hash, created_at, updated_at
+		SELECT id, email, password_hash, created_at, updated_at, display_name
 		FROM users
 		WHERE id = ?`,
 		id,
@@ -234,12 +272,12 @@ func (s *Store) CreateBook(ctx context.Context, book Book) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO books (
 			id, user_id, title, author, format, storage_path, cover_path, file_size,
-			created_at, updated_at, last_opened_at, original_filename, mime_type, derived_epub_path, visibility
+			created_at, updated_at, last_opened_at, original_filename, mime_type, derived_epub_path, visibility, reading_minutes
 		)
-		VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		book.ID, book.UserID, book.Title, book.Author, book.Format, book.StoragePath, book.FileSize,
 		book.CreatedAt.UTC().Format(time.RFC3339Nano), book.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		nullableTime(book.LastOpenedAt), book.OriginalFilename, book.MIMEType, book.DerivedEPUBPath, book.Visibility,
+		nullableTime(book.LastOpenedAt), book.OriginalFilename, book.MIMEType, book.DerivedEPUBPath, book.Visibility, book.ReadingMinutes,
 	)
 	return err
 }
@@ -247,7 +285,7 @@ func (s *Store) CreateBook(ctx context.Context, book Book) error {
 func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.user_id = ?
@@ -268,7 +306,7 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.StoragePath,
 			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-			&book.DerivedEPUBPath,
+			&book.DerivedEPUBPath, &book.ReadingMinutes,
 		); err != nil {
 			return nil, err
 		}
@@ -287,7 +325,7 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID string) ([]Book, error) {
 	query := `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.visibility = 'public'`
@@ -313,7 +351,7 @@ func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID string) ([]Bo
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.StoragePath,
 			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-			&book.DerivedEPUBPath,
+			&book.DerivedEPUBPath, &book.ReadingMinutes,
 		); err != nil {
 			return nil, err
 		}
@@ -336,7 +374,7 @@ func (s *Store) GetBook(ctx context.Context, userID, id string) (Book, error) {
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.id = ? AND b.user_id = ?`,
@@ -344,7 +382,7 @@ func (s *Store) GetBook(ctx context.Context, userID, id string) (Book, error) {
 	).Scan(
 		&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.StoragePath,
 		&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-		&book.DerivedEPUBPath,
+		&book.DerivedEPUBPath, &book.ReadingMinutes,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -371,7 +409,7 @@ func (s *Store) GetBookAny(ctx context.Context, id string) (Book, error) {
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.id = ?`,
@@ -379,7 +417,7 @@ func (s *Store) GetBookAny(ctx context.Context, id string) (Book, error) {
 	).Scan(
 		&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.StoragePath,
 		&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-		&book.DerivedEPUBPath,
+		&book.DerivedEPUBPath, &book.ReadingMinutes,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -572,6 +610,349 @@ func hashToken(rawToken string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func defaultDisplayName(email string) string {
+	if at := strings.Index(email, "@"); at > 0 {
+		return email[:at]
+	}
+	return ""
+}
+
+// ----- Account management -----
+
+func (s *Store) UpdateDisplayName(ctx context.Context, userID, name string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?`,
+		strings.TrimSpace(name), now, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) UpdatePassword(ctx context.Context, userID, newHash string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
+		newHash, now, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) DeleteUser(ctx context.Context, userID string) error {
+	// CASCADE handles sessions/books/highlights/bookmarks/book_tags.
+	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ----- Tags -----
+
+func (s *Store) AddTag(ctx context.Context, userID, bookID, tag string) error {
+	tag = normalizeTag(tag)
+	if tag == "" {
+		return errors.New("tag is empty")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO book_tags (user_id, book_id, tag, created_at) VALUES (?, ?, ?, ?)`,
+		userID, bookID, tag, now)
+	return err
+}
+
+func (s *Store) RemoveTag(ctx context.Context, userID, bookID, tag string) error {
+	tag = normalizeTag(tag)
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM book_tags WHERE user_id = ? AND book_id = ? AND tag = ?`,
+		userID, bookID, tag)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) ListBookTags(ctx context.Context, userID, bookID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT tag FROM book_tags WHERE user_id = ? AND book_id = ? ORDER BY tag`,
+		userID, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListTagCounts(ctx context.Context, userID string) ([]TagCount, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT tag, COUNT(*) FROM book_tags WHERE user_id = ? GROUP BY tag ORDER BY tag`,
+		userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TagCount
+	for rows.Next() {
+		var tc TagCount
+		if err := rows.Scan(&tc.Tag, &tc.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, tc)
+	}
+	return out, rows.Err()
+}
+
+// AttachTagsToBooks fetches the tag list for each book and assigns it via the
+// callback. It runs one query (SELECT book_id, tag FROM book_tags WHERE
+// user_id IN ...) regardless of how many books are passed.
+func (s *Store) AttachTagsToBooks(ctx context.Context, userID string, books []Book) (map[string][]string, error) {
+	if len(books) == 0 {
+		return map[string][]string{}, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT book_id, tag FROM book_tags WHERE user_id = ? ORDER BY tag`,
+		userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string][]string, len(books))
+	for rows.Next() {
+		var bookID, tag string
+		if err := rows.Scan(&bookID, &tag); err != nil {
+			return nil, err
+		}
+		out[bookID] = append(out[bookID], tag)
+	}
+	return out, rows.Err()
+}
+
+func normalizeTag(tag string) string {
+	t := strings.ToLower(strings.TrimSpace(tag))
+	// collapse internal whitespace into single spaces
+	t = strings.Join(strings.Fields(t), " ")
+	if len(t) > 32 {
+		t = t[:32]
+	}
+	return t
+}
+
+// ----- Bookmarks -----
+
+func (s *Store) CreateBookmark(ctx context.Context, b Bookmark) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO bookmarks (id, user_id, book_id, locator, label, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		b.ID, b.UserID, b.BookID, b.Locator, b.Label,
+		b.CreatedAt.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) ListBookmarks(ctx context.Context, userID, bookID string) ([]Bookmark, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, book_id, locator, label, created_at
+		 FROM bookmarks
+		 WHERE user_id = ? AND book_id = ?
+		 ORDER BY created_at DESC`,
+		userID, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Bookmark
+	for rows.Next() {
+		var b Bookmark
+		var createdAt string
+		if err := rows.Scan(&b.ID, &b.UserID, &b.BookID, &b.Locator, &b.Label, &createdAt); err != nil {
+			return nil, err
+		}
+		b.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteBookmark(ctx context.Context, userID, id string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM bookmarks WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ----- Highlights extensions -----
+
+func (s *Store) UpdateHighlight(ctx context.Context, userID, id, note, color string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE highlights SET note = ?, color = ? WHERE id = ? AND user_id = ?`,
+		note, color, id, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ----- Reading stats -----
+
+func (s *Store) GetReadingStats(ctx context.Context, userID string) (ReadingStats, error) {
+	var stats ReadingStats
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM books WHERE user_id = ?),
+			(SELECT COUNT(*) FROM highlights WHERE user_id = ?),
+			(SELECT COUNT(*) FROM bookmarks WHERE user_id = ?),
+			(SELECT COUNT(*) FROM reading_progress WHERE user_id = ? AND progress_percent > 0),
+			(SELECT COUNT(*) FROM reading_progress WHERE user_id = ? AND progress_percent >= 95),
+			(SELECT COUNT(DISTINCT tag) FROM book_tags WHERE user_id = ?),
+			(SELECT COALESCE(SUM(b.reading_minutes), 0) FROM books b
+			   JOIN reading_progress rp ON rp.book_id = b.id AND rp.user_id = b.user_id
+			   WHERE b.user_id = ?),
+			(SELECT COUNT(DISTINCT book_id) FROM highlights WHERE user_id = ?)
+	`, userID, userID, userID, userID, userID, userID, userID, userID)
+	if err := row.Scan(&stats.BookCount, &stats.HighlightCount, &stats.BookmarkCount,
+		&stats.BooksStarted, &stats.BooksFinished, &stats.TagCount, &stats.ReadingMinutes,
+		&stats.HighlightsBooks); err != nil {
+		return ReadingStats{}, err
+	}
+	return stats, nil
+}
+
+// ----- Library list with sort/filter -----
+
+func (s *Store) ListBooksFiltered(ctx context.Context, opts BookFilter) ([]Book, error) {
+	q := `
+		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path, b.file_size, b.created_at, b.updated_at,
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes
+		FROM books b
+		JOIN users u ON u.id = b.user_id
+		WHERE b.user_id = ?`
+	args := []any{opts.UserID}
+	if opts.Format != "" {
+		q += ` AND b.format = ?`
+		args = append(args, opts.Format)
+	}
+	if opts.Tag != "" {
+		q += ` AND b.id IN (SELECT book_id FROM book_tags WHERE user_id = ? AND tag = ?)`
+		args = append(args, opts.UserID, normalizeTag(opts.Tag))
+	}
+	switch opts.Sort {
+	case "title":
+		q += ` ORDER BY b.title COLLATE NOCASE ASC`
+	case "added":
+		q += ` ORDER BY b.created_at DESC`
+	case "progress":
+		q += ` ORDER BY (SELECT progress_percent FROM reading_progress WHERE user_id = b.user_id AND book_id = b.id) DESC NULLS LAST`
+	default:
+		q += ` ORDER BY COALESCE(b.last_opened_at, b.updated_at) DESC`
+	}
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var books []Book
+	for rows.Next() {
+		var book Book
+		var createdAt string
+		var updatedAt string
+		var lastOpened sql.NullString
+		if err := rows.Scan(
+			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.StoragePath,
+			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
+			&book.DerivedEPUBPath, &book.ReadingMinutes,
+		); err != nil {
+			return nil, err
+		}
+		book.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		book.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+		if lastOpened.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, lastOpened.String)
+			book.LastOpenedAt = &t
+		}
+		books = append(books, book)
+	}
+	return books, rows.Err()
+}
+
+// SearchHighlights returns the user's highlights with book info, optionally
+// filtered by free-text query (case-insensitive substring on text + book title)
+// and/or a specific book ID.
+func (s *Store) SearchHighlights(ctx context.Context, userID, query, bookID string) ([]HighlightWithBook, error) {
+	q := `
+		SELECT h.id, h.user_id, h.book_id, h.locator, h.selected_text, h.color, h.note, h.created_at,
+		       b.title, b.author, b.format
+		FROM highlights h
+		JOIN books b ON b.id = h.book_id
+		WHERE h.user_id = ?`
+	args := []any{userID}
+	if bookID != "" {
+		q += ` AND h.book_id = ?`
+		args = append(args, bookID)
+	}
+	if query = strings.TrimSpace(query); query != "" {
+		q += ` AND (lower(h.selected_text) LIKE ? OR lower(h.note) LIKE ? OR lower(b.title) LIKE ?)`
+		needle := "%" + strings.ToLower(query) + "%"
+		args = append(args, needle, needle, needle)
+	}
+	q += ` ORDER BY h.created_at DESC`
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HighlightWithBook
+	for rows.Next() {
+		var item HighlightWithBook
+		var createdAt string
+		if err := rows.Scan(
+			&item.ID, &item.UserID, &item.BookID, &item.Locator, &item.SelectedText, &item.Color, &item.Note, &createdAt,
+			&item.BookTitle, &item.BookAuthor, &item.BookFormat,
+		); err != nil {
+			return nil, err
+		}
+		item.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func nullableTime(t *time.Time) any {
 	if t == nil {
 		return nil
@@ -586,11 +967,15 @@ func scanUser(scanner interface {
 	var passwordHash string
 	var createdAt string
 	var updatedAt string
+	var displayName sql.NullString
 
-	if err := scanner.Scan(&user.ID, &user.Email, &passwordHash, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&user.ID, &user.Email, &passwordHash, &createdAt, &updatedAt, &displayName); err != nil {
 		return User{}, "", err
 	}
 
+	if displayName.Valid {
+		user.DisplayName = displayName.String
+	}
 	user.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 	user.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
 	return user, passwordHash, nil

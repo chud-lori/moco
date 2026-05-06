@@ -1378,8 +1378,17 @@ if (readerRoot) {
       });
 
       // ---- Kindle-style highlight overlay ----
-      const HIGHLIGHT_FILL = "#d6ad68";
-      const HIGHLIGHT_STYLES = { fill: HIGHLIGHT_FILL, "fill-opacity": "0.42", "mix-blend-mode": "multiply" };
+      const HIGHLIGHT_COLORS = {
+        amber: "#d6ad68",
+        sage:  "#8d9b77",
+        rose:  "#c98072",
+      };
+      const stylesFor = (color) => ({
+        fill: HIGHLIGHT_COLORS[color] || HIGHLIGHT_COLORS.amber,
+        "fill-opacity": "0.42",
+        "mix-blend-mode": "multiply",
+      });
+      const HIGHLIGHT_STYLES = stylesFor("amber");
       // id → cfiRange so we can remove the visual overlay on delete
       const annotationIndex = new Map();
       window.__mocoEpubAnnotations = {
@@ -1459,10 +1468,11 @@ if (readerRoot) {
       popover.querySelector('[data-popover-action="highlight"]').addEventListener("click", async () => {
         if (!pendingSelection) return;
         const { cfiRange, text, contents } = pendingSelection;
+        const color = (window.__mocoActiveHighlightColor && window.__mocoActiveHighlightColor()) || "amber";
         try {
           const payload = await requestJSON(`/api/v1/books/${bookID}/highlights`, {
             method: "POST",
-            body: JSON.stringify({ locator: cfiRange, selectedText: text, color: "amber" }),
+            body: JSON.stringify({ locator: cfiRange, selectedText: text, color }),
           });
           // Visual overlay
           try {
@@ -1471,7 +1481,7 @@ if (readerRoot) {
               { id: payload.highlight.id },
               null,
               "moco-highlight",
-              HIGHLIGHT_STYLES,
+              stylesFor(color),
             );
             annotationIndex.set(payload.highlight.id, cfiRange);
           } catch (annErr) {
@@ -1504,7 +1514,7 @@ if (readerRoot) {
               { id: item.id },
               null,
               "moco-highlight",
-              HIGHLIGHT_STYLES,
+              stylesFor(item.color),
             );
             annotationIndex.set(item.id, item.locator);
           } catch (_) { /* invalid CFI — skip */ }
@@ -1654,5 +1664,314 @@ if (readerRoot) {
       }
     };
     initPdf();
+  }
+}
+
+// ---------- Service Worker registration ----------
+if ("serviceWorker" in navigator && location.protocol !== "http:") {
+  // SWs require HTTPS or localhost — quietly skip otherwise.
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
+// ---------- Settings page: profile, password, delete-account ----------
+const accountForm = document.querySelector("[data-account-form]");
+if (accountForm) {
+  const message = accountForm.querySelector("[data-account-message]");
+  const submit = accountForm.querySelector('button[type="submit"]');
+  accountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(accountForm);
+    const name = String(data.get("displayName") || "").trim();
+    if (!name) { setMessage(message, "Display name is required.", "error"); return; }
+    setButtonLoading(submit, true, "Saving…");
+    try {
+      await requestJSON("/api/v1/auth/me", { method: "PUT", body: JSON.stringify({ displayName: name }) });
+      setMessage(message, "Saved.", "success");
+      toast("Profile updated.", "success");
+      // Reflect new display name in the topbar without a reload
+      const chip = document.querySelector(".session-chip");
+      if (chip) chip.textContent = name;
+    } catch (err) {
+      setMessage(message, err.message || "Could not save.", "error");
+    } finally {
+      setButtonLoading(submit, false);
+    }
+  });
+}
+
+const passwordForm = document.querySelector("[data-password-form]");
+if (passwordForm) {
+  const message = passwordForm.querySelector("[data-password-message]");
+  const submit = passwordForm.querySelector('button[type="submit"]');
+  passwordForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(passwordForm);
+    const cur = String(data.get("currentPassword") || "");
+    const nxt = String(data.get("newPassword") || "");
+    if (nxt.length < 10) { setMessage(message, "New password must be at least 10 characters.", "error"); return; }
+    if (cur === nxt)     { setMessage(message, "New password must differ from the current one.", "error"); return; }
+    setButtonLoading(submit, true, "Changing…");
+    try {
+      await requestJSON("/api/v1/auth/password", {
+        method: "PUT",
+        body: JSON.stringify({ currentPassword: cur, newPassword: nxt }),
+      });
+      setMessage(message, "Password changed.", "success");
+      toast("Password updated.", "success");
+      passwordForm.reset();
+    } catch (err) {
+      setMessage(message, err.message || "Could not change password.", "error");
+    } finally {
+      setButtonLoading(submit, false);
+    }
+  });
+  // Show/hide toggles for both fields
+  passwordForm.querySelectorAll("[data-toggle-password]").forEach((btn) => {
+    const input = btn.parentElement?.querySelector('input[type="password"], input[type="text"]');
+    btn.addEventListener("click", () => {
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "Show" : "Hide";
+      btn.setAttribute("aria-pressed", String(!showing));
+    });
+  });
+}
+
+const deleteAccountForm = document.querySelector("[data-delete-account-form]");
+if (deleteAccountForm) {
+  const message = deleteAccountForm.querySelector("[data-delete-account-message]");
+  const submit = deleteAccountForm.querySelector('button[type="submit"]');
+  deleteAccountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const confirmed = await openConfirm({
+      title: "Delete your account?",
+      body: "This permanently removes your account, all uploaded books, highlights, bookmarks, and tags. This cannot be undone.",
+      confirmLabel: "Delete account",
+      danger: true,
+    });
+    if (!confirmed) return;
+    const data = new FormData(deleteAccountForm);
+    const password = String(data.get("password") || "");
+    setButtonLoading(submit, true, "Deleting…");
+    try {
+      await requestJSON("/api/v1/auth/me", { method: "DELETE", body: JSON.stringify({ password }) });
+      window.location.href = "/";
+    } catch (err) {
+      setMessage(message, err.message || "Could not delete account.", "error");
+      setButtonLoading(submit, false);
+    }
+  });
+  deleteAccountForm.querySelectorAll("[data-toggle-password]").forEach((btn) => {
+    const input = btn.parentElement?.querySelector('input[type="password"], input[type="text"]');
+    btn.addEventListener("click", () => {
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "Show" : "Hide";
+      btn.setAttribute("aria-pressed", String(!showing));
+    });
+  });
+}
+
+// ---------- Library: tag chips on book cards ----------
+async function addTagToBook(bookID, tag) {
+  const cleaned = String(tag || "").trim().toLowerCase().slice(0, 32);
+  if (!cleaned) return null;
+  const data = await requestJSON(`/api/v1/books/${bookID}/tags`, {
+    method: "POST",
+    body: JSON.stringify({ tag: cleaned }),
+  });
+  return data.tags || [];
+}
+
+function renderTagChips(container, bookID, tags) {
+  if (!container) return;
+  container.querySelectorAll("[data-remove-tag]").forEach((c) => c.remove());
+  const addBtn = container.querySelector("[data-add-tag]");
+  (tags || []).forEach((tag) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "tag-chip";
+    chip.dataset.removeTag = tag;
+    chip.dataset.bookId = bookID;
+    chip.setAttribute("aria-label", `Remove tag ${tag}`);
+    chip.innerHTML = `#${escapeHTML(tag)}<span class="tag-x" aria-hidden="true">×</span>`;
+    container.insertBefore(chip, addBtn);
+    attachRemoveTag(chip);
+  });
+}
+
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function attachRemoveTag(button) {
+  button.addEventListener("click", async () => {
+    const bookID = button.dataset.bookId;
+    const tag = button.dataset.removeTag;
+    if (!bookID || !tag) return;
+    try {
+      await requestJSON(`/api/v1/books/${bookID}/tags/${encodeURIComponent(tag)}`, {
+        method: "DELETE",
+        body: "{}",
+      });
+      button.remove();
+    } catch (err) {
+      toast(err.message || "Could not remove tag.", "error");
+    }
+  });
+}
+document.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
+
+document.querySelectorAll("[data-add-tag]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const bookID = btn.dataset.bookId;
+    if (!bookID) return;
+    const value = await openTextPrompt({
+      title: "Add a tag",
+      body: "Tags are lowercase, up to 32 characters. Used for sorting and filtering your library.",
+      placeholder: "e.g. fiction, tech, in-progress",
+      confirmLabel: "Add",
+    });
+    if (!value) return;
+    try {
+      const tags = await addTagToBook(bookID, value);
+      const card = btn.closest(".book-panel");
+      const container = card?.querySelector("[data-book-tags]");
+      renderTagChips(container, bookID, tags);
+    } catch (err) {
+      toast(err.message || "Could not add tag.", "error");
+    }
+  });
+});
+
+// ---------- Reader: highlight color picker + notes (extends popover) ----------
+// Wired on EPUB only — the selection popover lives there. We mutate the popover
+// after it's been built by the EPUB block.
+document.addEventListener("DOMContentLoaded", () => {
+  const popover = document.querySelector(".selection-popover");
+  if (!popover || popover.dataset.extended === "1") return;
+
+  const colorRow = document.createElement("div");
+  colorRow.className = "popover-colors";
+  ["amber", "sage", "rose"].forEach((c) => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = `swatch swatch-${c}`;
+    dot.dataset.color = c;
+    dot.setAttribute("aria-label", `Highlight ${c}`);
+    if (c === "amber") dot.setAttribute("aria-pressed", "true");
+    colorRow.appendChild(dot);
+  });
+  popover.appendChild(colorRow);
+
+  let activeColor = "amber";
+  colorRow.querySelectorAll(".swatch").forEach((dot) => {
+    dot.addEventListener("click", () => {
+      activeColor = dot.dataset.color;
+      colorRow.querySelectorAll(".swatch").forEach((d) => d.setAttribute("aria-pressed", String(d === dot)));
+    });
+  });
+  popover.dataset.extended = "1";
+  // Expose for the EPUB block to read
+  window.__mocoActiveHighlightColor = () => activeColor;
+});
+
+// ---------- Reader: in-book search (Cmd/Ctrl+F is browser-native; we offer "/" as a quick command) ----------
+// We open a simple search modal. For markdown reader: highlight matches in the
+// DOM. For EPUB: use book.search() and jump to results. For PDF: skip (pdf.js
+// has built-in search via its viewer).
+(function wireInBookSearch() {
+  const root = document.querySelector("[data-reader]");
+  if (!root) return;
+  const kind = root.getAttribute("data-reader-kind");
+  if (kind === "pdf") return; // skip; pdf.js has its own
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "/" && !(event.key === "f" && (event.metaKey || event.ctrlKey))) return;
+    if (event.target.matches("input,textarea,select")) return;
+    event.preventDefault();
+    runReaderSearch(kind);
+  });
+})();
+
+async function runReaderSearch(kind) {
+  const query = await openTextPrompt({
+    title: "Search this book",
+    body: kind === "epub" ? "Searches across loaded chapters." : "Find any text in the markdown.",
+    placeholder: "What are you looking for?",
+    confirmLabel: "Search",
+  });
+  if (!query) return;
+  if (kind === "md") return mdSearch(query);
+  if (kind === "epub") return epubSearch(query);
+}
+
+function mdSearch(query) {
+  const root = document.getElementById("reader-content");
+  if (!root) return;
+  // Strip any prior highlights
+  root.querySelectorAll(".search-hit").forEach((m) => {
+    const t = document.createTextNode(m.textContent);
+    m.replaceWith(t);
+  });
+  root.normalize();
+
+  const needle = query.toLowerCase();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let count = 0;
+  const hits = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const value = node.nodeValue || "";
+    const lower = value.toLowerCase();
+    if (!lower.includes(needle)) continue;
+    const parts = lower.split(needle);
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    parts.forEach((part, i) => {
+      frag.appendChild(document.createTextNode(value.slice(cursor, cursor + part.length)));
+      cursor += part.length;
+      if (i < parts.length - 1) {
+        const span = document.createElement("mark");
+        span.className = "search-hit";
+        span.textContent = value.slice(cursor, cursor + needle.length);
+        frag.appendChild(span);
+        cursor += needle.length;
+        count += 1;
+      }
+    });
+    node.replaceWith(frag);
+  }
+  root.querySelectorAll(".search-hit").forEach((m) => hits.push(m));
+  if (hits.length === 0) { toast(`No matches for "${query}"`, "error"); return; }
+  hits[0].scrollIntoView({ block: "center", behavior: "smooth" });
+  toast(`${count} match${count === 1 ? "" : "es"} for "${query}"`);
+}
+
+async function epubSearch(query) {
+  const reg = window.__mocoEpubAnnotations;
+  const rendition = reg?.rendition;
+  if (!rendition) { toast("Reader not ready yet.", "error"); return; }
+  const book = rendition.book;
+  if (!book?.spine) { toast("This book doesn't expose a searchable spine.", "error"); return; }
+  try {
+    const all = [];
+    // Search across all spine items — concurrency-light
+    for (const section of book.spine.spineItems) {
+      const item = await section.load(book.load.bind(book));
+      const result = section.find(query);
+      all.push(...(result || []));
+      section.unload();
+    }
+    if (all.length === 0) { toast(`No matches for "${query}"`, "error"); return; }
+    rendition.display(all[0].cfi);
+    toast(`${all.length} match${all.length === 1 ? "" : "es"} — jumped to first.`, "success");
+  } catch (err) {
+    toast("Search failed.", "error");
+    console.error(err);
   }
 }

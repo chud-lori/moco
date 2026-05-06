@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f6f0e7" />
     <meta name="description" content="Your private and public shelves on Moco." />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d49b6d'/%3E%3Ctext x='50%25' y='55%25' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' dominant-baseline='middle' fill='%2330261d'%3EM%3C/text%3E%3C/svg%3E" />
     <title>{{ .Title }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,17 +17,7 @@
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="page-shell">
-      <header class="topbar">
-        <a class="brand" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
-        <nav class="topnav" aria-label="Primary">
-          <a href="/quotes">Quotes</a>
-          <a href="/discover">Public shelf</a>
-        </nav>
-        <div class="topbar-actions">
-          <span class="session-chip" title="{{ .CurrentUser.Email }}">{{ displayName .CurrentUser.Email }}</span>
-          <button class="button subtle" data-logout-button type="button">Log out</button>
-        </div>
-      </header>
+      {{ template "primary_topbar" . }}
       <main id="main">
         <section class="dashboard-hero">
           <div>
@@ -49,13 +40,46 @@
           </form>
         </section>
 
+        <form class="library-toolbar" method="get" action="/app" aria-label="Sort and filter library">
+          <label class="select-input">
+            <span class="sr-only">Sort</span>
+            <select name="sort">
+              <option value="recent" {{ if eq .Sort "" }}selected{{ end }} {{ if eq .Sort "recent" }}selected{{ end }}>Recent</option>
+              <option value="added"   {{ if eq .Sort "added"    }}selected{{ end }}>Recently added</option>
+              <option value="title"   {{ if eq .Sort "title"    }}selected{{ end }}>Title (A–Z)</option>
+              <option value="progress"{{ if eq .Sort "progress" }}selected{{ end }}>Progress</option>
+            </select>
+          </label>
+          <label class="select-input">
+            <span class="sr-only">Format</span>
+            <select name="format">
+              <option value="">All formats</option>
+              <option value="pdf"  {{ if eq .Format "pdf"  }}selected{{ end }}>PDF</option>
+              <option value="epub" {{ if eq .Format "epub" }}selected{{ end }}>EPUB</option>
+              <option value="md"   {{ if eq .Format "md"   }}selected{{ end }}>Markdown</option>
+            </select>
+          </label>
+          {{ if .AllTags }}
+            <label class="select-input">
+              <span class="sr-only">Tag</span>
+              <select name="tag">
+                <option value="">All tags</option>
+                {{ $cur := .Tag }}
+                {{ range .AllTags }}<option value="{{ .Tag }}" {{ if eq $cur .Tag }}selected{{ end }}>#{{ .Tag }} ({{ .Count }})</option>{{ end }}
+              </select>
+            </label>
+          {{ end }}
+          <button class="button subtle" type="submit">Apply</button>
+          {{ if or .Tag .Format (and (ne .Sort "") (ne .Sort "recent")) }}<a class="text-link" href="/app">Clear</a>{{ end }}
+        </form>
+
         <section class="library-section">
           <div class="section-row">
             <p class="section-label">Private books</p>
             <span class="session-chip">{{ len .MyPrivateBooks }}</span>
           </div>
           {{ if .MyPrivateBooks }}
-            {{ template "book_grid" .MyPrivateBooks }}
+            {{ template "book_grid" (mkBookGrid .MyPrivateBooks .BookTags) }}
           {{ else }}
             <section class="empty-state is-primary">
               <h2>Your shelf is empty.</h2>
@@ -71,7 +95,7 @@
             <span class="session-chip">{{ len .MyPublicBooks }}</span>
           </div>
           {{ if .MyPublicBooks }}
-            {{ template "book_grid" .MyPublicBooks }}
+            {{ template "book_grid" (mkBookGrid .MyPublicBooks .BookTags) }}
           {{ else }}
             <section class="empty-state">
               <p>You haven't published anything yet. Toggle any private book to public to share it.</p>
@@ -94,6 +118,7 @@
                   </div>
                   <h2>{{ .Title }}</h2>
                   <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ displayName .OwnerEmail }}</p>
+                  {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
                   <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
                 </article>
               {{ end }}
@@ -110,15 +135,24 @@
 {{ end }}
 
 {{ define "book_grid" }}
+  {{ $tagMap := .Tags }}
   <div class="dashboard-grid">
-    {{ range . }}
-      <article class="book-panel">
+    {{ range .Books }}
+      {{ $book := . }}
+      <article class="book-panel" data-book-id="{{ .ID }}">
         <div class="book-panel-top">
           <span class="book-format">{{ .Format }}</span>
           <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
         </div>
         <h2>{{ .Title }}</h2>
         {{ if .Author }}<p>{{ .Author }}</p>{{ end }}
+        {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
+        <div class="book-tags" data-book-tags>
+          {{ range tagsForBook $tagMap $book.ID }}
+            <button type="button" class="tag-chip" data-remove-tag="{{ . }}" data-book-id="{{ $book.ID }}" aria-label="Remove tag {{ . }}">#{{ . }}<span class="tag-x" aria-hidden="true">×</span></button>
+          {{ end }}
+          <button type="button" class="tag-add" data-add-tag data-book-id="{{ $book.ID }}" aria-label="Add tag">+ tag</button>
+        </div>
         <div class="book-panel-actions">
           <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
           <button class="button subtle" data-toggle-visibility="{{ .ID }}" data-next-visibility="{{ if eq .Visibility "public" }}private{{ else }}public{{ end }}" type="button">{{ if eq .Visibility "public" }}Make private{{ else }}Publish{{ end }}</button>

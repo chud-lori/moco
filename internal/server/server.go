@@ -15,6 +15,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,14 +97,23 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /app", s.handleDashboard)
 	s.mux.HandleFunc("GET /quotes", s.handleQuotes)
+	s.mux.HandleFunc("GET /stats", s.handleStats)
+	s.mux.HandleFunc("GET /settings", s.handleSettings)
 	s.mux.HandleFunc("GET /books/{id}", s.handleBookDetail)
 	s.mux.HandleFunc("GET /books/{id}/read", s.handleReadBook)
+
+	// PWA assets
+	s.mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
+	s.mux.HandleFunc("GET /sw.js", s.handleServiceWorker)
 
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
+	s.mux.HandleFunc("PUT /api/v1/auth/me", s.handleUpdateAccount)
+	s.mux.HandleFunc("PUT /api/v1/auth/password", s.handleChangePassword)
+	s.mux.HandleFunc("DELETE /api/v1/auth/me", s.handleDeleteAccount)
 	s.mux.HandleFunc("GET /api/v1/books", s.handleBooks)
 	s.mux.HandleFunc("GET /api/v1/books/public", s.handlePublicBooks)
 	s.mux.HandleFunc("POST /api/v1/books/upload", s.handleUploadBook)
@@ -113,10 +123,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/progress", s.handlePutProgress)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/highlights", s.handleGetHighlights)
 	s.mux.HandleFunc("POST /api/v1/books/{id}/highlights", s.handleCreateHighlight)
+	s.mux.HandleFunc("GET /api/v1/books/{id}/bookmarks", s.handleListBookmarks)
+	s.mux.HandleFunc("POST /api/v1/books/{id}/bookmarks", s.handleCreateBookmark)
+	s.mux.HandleFunc("POST /api/v1/books/{id}/tags", s.handleAddTag)
+	s.mux.HandleFunc("DELETE /api/v1/books/{id}/tags/{tag}", s.handleRemoveTag)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/download", s.handleDownloadBook)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/converted.epub", s.handleDownloadConvertedEPUB)
 	s.mux.HandleFunc("DELETE /api/v1/books/{id}", s.handleDeleteBook)
 	s.mux.HandleFunc("DELETE /api/v1/highlights/{id}", s.handleDeleteHighlight)
+	s.mux.HandleFunc("PUT /api/v1/highlights/{id}", s.handleUpdateHighlight)
+	s.mux.HandleFunc("DELETE /api/v1/bookmarks/{id}", s.handleDeleteBookmark)
 }
 
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
@@ -175,11 +191,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	books, err := s.store.ListBooks(r.Context(), user.ID)
+	q := r.URL.Query()
+	filter := libraryFilterFromQuery(user.ID, q)
+	books, err := s.store.ListBooksFiltered(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load dashboard", http.StatusInternalServerError)
 		return
 	}
+	bookTags, _ := s.store.AttachTagsToBooks(r.Context(), user.ID, books)
+	allTags, _ := s.store.ListTagCounts(r.Context(), user.ID)
 	publicBooks, _ := s.store.ListPublicBooks(r.Context(), user.ID)
 	privateBooks, ownPublic := splitBooksByVisibility(books)
 	s.renderTemplate(w, "dashboard.html", dashboardPageData{
@@ -190,6 +210,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		MyPrivateBooks: privateBooks,
 		MyPublicBooks:  ownPublic,
 		PublicBooks:    publicBooks,
+		BookTags:       bookTags,
+		AllTags:        allTags,
+		Sort:           filter.Sort,
+		Tag:            filter.Tag,
+		Format:         filter.Format,
 	})
 }
 
@@ -203,17 +228,24 @@ func (s *Server) handleQuotes(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	quotes, err := s.store.ListAllHighlights(r.Context(), user.ID)
+	q := r.URL.Query()
+	query := strings.TrimSpace(q.Get("q"))
+	bookFilter := q.Get("book")
+	quotes, err := s.store.SearchHighlights(r.Context(), user.ID, query, bookFilter)
 	if err != nil {
 		http.Error(w, "failed to load quotes", http.StatusInternalServerError)
 		return
 	}
+	bookOptions, _ := s.store.ListBooks(r.Context(), user.ID)
 	s.renderTemplate(w, "quotes.html", quotesPageData{
 		pageData: pageData{
 			Title:       "Quotes - Moco",
 			CurrentUser: &user,
 		},
-		Quotes: quotes,
+		Quotes:      quotes,
+		Query:       query,
+		BookFilter:  bookFilter,
+		BookOptions: bookOptions,
 	})
 }
 
@@ -434,12 +466,15 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = strings.TrimSuffix(header.Filename, ext)
 	}
+	readingMinutes := reader.EstimateMinutesFromBytes(format, size)
 	if format == "md" {
 		source, err := os.ReadFile(storagePath)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to read markdown for conversion"})
 			return
 		}
+		// Replace the byte-based estimate with a real word count for markdown.
+		readingMinutes = reader.EstimateMinutesFromMarkdown(source)
 		epubBytes, err := epub.MarkdownToEPUB(title, author, source)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "markdown to epub conversion failed"})
@@ -461,6 +496,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		Format:           format,
 		Visibility:       visibility,
 		OwnerEmail:       user.Email,
+		ReadingMinutes:   readingMinutes,
 		StoragePath:      storagePath,
 		OriginalFilename: header.Filename,
 		MIMEType:         safeMIME(header.Header.Get("Content-Type"), ext),
@@ -920,4 +956,365 @@ func takeBooks(books []store.Book, limit int) []store.Book {
 		return books
 	}
 	return books[:limit]
+}
+
+// ----- Account management -----
+
+func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		DisplayName string `json:"displayName"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.DisplayName)
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "display name is required"})
+		return
+	}
+	if len(name) > 60 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "display name is too long"})
+		return
+	}
+	if err := s.store.UpdateDisplayName(r.Context(), user.ID, name); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to update profile"})
+		return
+	}
+	user.DisplayName = name
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	_, currentHash, err := s.store.GetUserByEmail(r.Context(), user.Email)
+	if err != nil || !auth.VerifyPassword(currentHash, req.CurrentPassword) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "current password is incorrect"})
+		return
+	}
+	if err := auth.PasswordLooksValid(req.NewPassword); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "password hashing failed"})
+		return
+	}
+	if err := s.store.UpdatePassword(r.Context(), user.ID, newHash); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to change password"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	_, currentHash, err := s.store.GetUserByEmail(r.Context(), user.Email)
+	if err != nil || !auth.VerifyPassword(currentHash, req.Password) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "password is incorrect"})
+		return
+	}
+	if err := s.store.DeleteUser(r.Context(), user.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to delete account"})
+		return
+	}
+	// Best-effort: remove the user's book directory.
+	_ = os.RemoveAll(filepath.Join(s.cfg.DataDir, "books", user.ID))
+	// Drop the session cookie.
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.cfg.CookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+		SameSite: http.SameSiteLaxMode,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ----- Tags -----
+
+func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		Tag string `json:"tag"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	bookID := r.PathValue("id")
+	// confirm ownership
+	if _, err := s.store.GetBook(r.Context(), user.ID, bookID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "book not found"})
+		return
+	}
+	if err := s.store.AddTag(r.Context(), user.ID, bookID, req.Tag); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	tags, _ := s.store.ListBookTags(r.Context(), user.ID, bookID)
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
+}
+
+func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	bookID := r.PathValue("id")
+	tag := r.PathValue("tag")
+	if err := s.store.RemoveTag(r.Context(), user.ID, bookID, tag); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]any{"error": "tag not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ----- Bookmarks -----
+
+func (s *Server) handleListBookmarks(w http.ResponseWriter, r *http.Request) {
+	book, user, err := s.resolveBookAccess(r, r.PathValue("id"), false)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	items, err := s.store.ListBookmarks(r.Context(), user.ID, book.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to load bookmarks"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) handleCreateBookmark(w http.ResponseWriter, r *http.Request) {
+	book, user, err := s.resolveBookAccess(r, r.PathValue("id"), false)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		Locator string `json:"locator"`
+		Label   string `json:"label"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Locator) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "locator is required"})
+		return
+	}
+	bm := store.Bookmark{
+		ID:        randomID("bm"),
+		UserID:    user.ID,
+		BookID:    book.ID,
+		Locator:   req.Locator,
+		Label:     strings.TrimSpace(req.Label),
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.store.CreateBookmark(r.Context(), bm); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to save bookmark"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"bookmark": bm})
+}
+
+func (s *Server) handleDeleteBookmark(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	if err := s.store.DeleteBookmark(r.Context(), user.ID, r.PathValue("id")); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]any{"error": "bookmark not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ----- Highlights extension -----
+
+func (s *Server) handleUpdateHighlight(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		Note  string `json:"note"`
+		Color string `json:"color"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	color := strings.TrimSpace(req.Color)
+	if color == "" {
+		color = "amber"
+	}
+	if !validHighlightColor(color) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid color"})
+		return
+	}
+	if err := s.store.UpdateHighlight(r.Context(), user.ID, r.PathValue("id"), req.Note, color); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]any{"error": "highlight not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "note": req.Note, "color": color})
+}
+
+func validHighlightColor(c string) bool {
+	switch c {
+	case "amber", "sage", "rose":
+		return true
+	}
+	return false
+}
+
+// ----- Stats page -----
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	stats, err := s.store.GetReadingStats(r.Context(), user.ID)
+	if err != nil {
+		http.Error(w, "failed to load stats", http.StatusInternalServerError)
+		return
+	}
+	tagCounts, _ := s.store.ListTagCounts(r.Context(), user.ID)
+	s.renderTemplate(w, "stats.html", statsPageData{
+		pageData: pageData{
+			Title:       "Reading stats - Moco",
+			CurrentUser: &user,
+		},
+		Stats:     stats,
+		TagCounts: tagCounts,
+	})
+}
+
+// ----- Settings page -----
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	s.renderTemplate(w, "settings.html", pageData{
+		Title:       "Settings - Moco",
+		CurrentUser: &user,
+	})
+}
+
+// ----- PWA assets -----
+
+func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/manifest+json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	manifest := `{
+  "name": "Moco — Personal Reader",
+  "short_name": "Moco",
+  "description": "A calm reader for PDF, EPUB, and Markdown.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f1e8",
+  "theme_color": "#f6f0e7",
+  "icons": [
+    { "src": "/static/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/static/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
+  ]
+}`
+	_, _ = w.Write([]byte(manifest))
+}
+
+func (s *Server) handleServiceWorker(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	sw := `// Moco service worker — minimal "stale-while-revalidate" for static assets,
+// and offline fallback for the library shell.
+const CACHE = 'moco-v1';
+const STATIC = ['/static/styles.css', '/static/app.js', '/manifest.webmanifest'];
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(STATIC)));
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+  );
+  self.clients.claim();
+});
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  // Only handle same-origin static assets and the bare app routes.
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname.startsWith('/static/') || STATIC.includes(url.pathname)) {
+    event.respondWith(
+      caches.open(CACHE).then(async (cache) => {
+        const cached = await cache.match(req);
+        const fetched = fetch(req).then((res) => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => cached);
+        return cached || fetched;
+      })
+    );
+  }
+});`
+	_, _ = w.Write([]byte(sw))
+}
+
+// Used by the dashboard to read sort/filter from query params.
+func libraryFilterFromQuery(userID string, q url.Values) store.BookFilter {
+	return store.BookFilter{
+		UserID: userID,
+		Tag:    q.Get("tag"),
+		Format: q.Get("format"),
+		Sort:   q.Get("sort"),
+	}
 }
