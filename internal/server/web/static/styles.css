@@ -1436,10 +1436,43 @@ main { display: grid; gap: 28px; }
   .topbar-actions { gap: 8px; margin-left: auto; }
   .topbar-actions .session-chip { display: none; }
 
-  .reader-topbar { padding: 8px 10px; border-radius: 18px; }
-  .reader-topbar-left { gap: 6px; }
+  .reader-topbar {
+    padding: 6px 8px;
+    border-radius: 16px;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+  .reader-topbar-left { gap: 4px; flex: 1 1 auto; min-width: 0; }
+  .reader-topbar .topbar-actions { gap: 4px; }
   .reader-topbar .brand-name { display: none; }
-  .reader-topbar .session-chip { display: none; }
+  .reader-topbar .session-chip,
+  .reader-topbar .visibility-chip,
+  .reader-topbar [data-fullscreen-toggle] { display: none; }
+  .reader-topbar .button {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    min-height: 38px;
+  }
+  /* Icon-only Contents and Highlights on phone width */
+  .reader-topbar .reader-toggle[data-reader-toggle="toc"],
+  .reader-topbar .reader-toggle[data-reader-toggle="notes"] {
+    width: 38px;
+    padding: 0;
+    font-size: 0;
+    flex-shrink: 0;
+  }
+  .reader-topbar .reader-toggle[data-reader-toggle="toc"]::before {
+    content: "☰";
+    font-size: 1.05rem;
+  }
+  .reader-topbar .reader-toggle[data-reader-toggle="notes"]::before {
+    content: "✦";
+    font-size: 1rem;
+  }
+  .reader-topbar .reader-toggle[data-reader-toggle="settings"] {
+    padding: 8px 10px;
+    flex-shrink: 0;
+  }
 
   .button { padding: 10px 14px; font-size: 0.95rem; }
 

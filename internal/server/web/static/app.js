@@ -1066,10 +1066,56 @@ if (readerRoot) {
       const tocList = document.querySelector("[data-dynamic-toc]");
       const prev = document.querySelector("[data-epub-prev]");
       const next = document.querySelector("[data-epub-next]");
+      const stage = document.getElementById("reader-content");
+      const loadingEl = stage?.querySelector("[data-reader-loading]");
+      const showLoadingError = (msg) => {
+        if (stage) stage.innerHTML = `<p class="reader-loading">${msg}</p>`;
+      };
+      const removeLoading = () => loadingEl?.remove();
+
+      // Fetch the EPUB ourselves so we can surface network errors and pin a
+      // 30s timeout. Letting epub.js do its own fetch can silently hang.
+      let buffer;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        const response = await fetch(fileURL, {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        buffer = await response.arrayBuffer();
+      } catch (error) {
+        const reason = error.name === "AbortError" ? "Network timed out." : "Could not download the EPUB file.";
+        showLoadingError(reason);
+        toast(reason, "error");
+        console.error("EPUB fetch error:", error);
+        return;
+      }
 
       let book, rendition;
       try {
-        book = window.ePub(fileURL);
+        book = window.ePub(buffer);
+      } catch (error) {
+        showLoadingError("This EPUB file looks malformed.");
+        toast("This EPUB file looks malformed.", "error");
+        console.error("EPUB parse error:", error);
+        return;
+      }
+
+      // Surface metadata-load failures (corrupt zip, missing OPF, etc.)
+      book.opened.catch((err) => {
+        showLoadingError("Could not open this EPUB file.");
+        toast("Could not open this EPUB file.", "error");
+        console.error("EPUB open error:", err);
+      });
+
+      // Wipe placeholder before handing the container to epub.js — it APPENDS
+      // iframes, doesn't replace, so the placeholder would otherwise stay.
+      removeLoading();
+
+      try {
         rendition = book.renderTo("reader-content", {
           width: "100%",
           height: "100%",
@@ -1077,19 +1123,16 @@ if (readerRoot) {
           allowScriptedContent: false,
         });
       } catch (error) {
+        showLoadingError("Could not initialize EPUB renderer.");
         toast("Could not initialize EPUB reader.", "error");
+        console.error("EPUB renderTo error:", error);
         return;
       }
 
-      // Clear the placeholder and surface any open/render error.
-      book.opened.then(() => {
-        document.querySelector("[data-reader-loading]")?.remove();
-      }).catch((err) => {
-        const stage = document.getElementById("reader-content");
-        if (stage) stage.innerHTML = '<p class="reader-loading">Could not open this EPUB file.</p>';
-        toast("Could not open this EPUB file.", "error");
-        console.error("EPUB open error:", err);
-      });
+      // Belt-and-braces: even if the renderer never fires "rendered",
+      // make sure the placeholder is gone and we don't show a frozen UI.
+      const safety = setTimeout(removeLoading, 6000);
+      rendition.on("rendered", () => clearTimeout(safety));
 
       try {
         await rendition.display();
