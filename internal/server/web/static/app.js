@@ -424,7 +424,9 @@ if (uploadForm) {
 }
 
 // ---------- Delete book ----------
-document.querySelectorAll("[data-delete-book]").forEach((button) => {
+function attachDeleteBook(button) {
+  if (button.dataset.wired === "1") return;
+  button.dataset.wired = "1";
   button.addEventListener("click", async () => {
     const bookID = button.getAttribute("data-delete-book");
     if (!bookID) return;
@@ -445,10 +447,13 @@ document.querySelectorAll("[data-delete-book]").forEach((button) => {
       toast(error.message || "Could not remove book.", "error");
     }
   });
-});
+}
+document.querySelectorAll("[data-delete-book]").forEach(attachDeleteBook);
 
 // ---------- Toggle visibility ----------
-document.querySelectorAll("[data-toggle-visibility]").forEach((button) => {
+function attachToggleVisibility(button) {
+  if (button.dataset.wired === "1") return;
+  button.dataset.wired = "1";
   button.addEventListener("click", async () => {
     const bookID = button.getAttribute("data-toggle-visibility");
     const visibility = button.getAttribute("data-next-visibility");
@@ -475,7 +480,8 @@ document.querySelectorAll("[data-toggle-visibility]").forEach((button) => {
       toast(error.message || "Could not update visibility.", "error");
     }
   });
-});
+}
+document.querySelectorAll("[data-toggle-visibility]").forEach(attachToggleVisibility);
 
 // ---------- Highlight delete ----------
 function attachHighlightDelete(button) {
@@ -1062,31 +1068,60 @@ if (readerRoot) {
       }, 300);
     }, { passive: true });
 
+    // Selection popover for highlights — same UX as the EPUB reader.
+    ensureSelectionPopover();
+    let mdPendingSelection = null;
+
+    function locatorFromNode(node) {
+      let el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      if (!(el instanceof Element)) return "start";
+      const anchor = el.closest("[id]");
+      return anchor?.id || "start";
+    }
+
     document.addEventListener("selectionchange", () => {
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : "";
       const inReader = !!(text && sel.anchorNode && readerContent.contains(sel.anchorNode));
-      setHighlightEnabled(inReader);
+      if (!inReader || sel.rangeCount === 0) {
+        hideSelectionPopover();
+        mdPendingSelection = null;
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      mdPendingSelection = { text, locator: locatorFromNode(sel.anchorNode) };
+      showSelectionPopoverNear(rect);
     });
 
+    attachPopoverHighlight(async () => {
+      if (!mdPendingSelection) return;
+      const { locator, text } = mdPendingSelection;
+      const color = window.__mocoActiveHighlightColor?.() || "amber";
+      try {
+        const payload = await requestJSON(`/api/v1/books/${bookID}/highlights`, {
+          method: "POST",
+          body: JSON.stringify({ locator, selectedText: text, color }),
+        });
+        clearEmptyHighlightState();
+        highlightsList?.prepend(buildHighlightCard(payload.highlight));
+        currentHighlights.unshift(payload.highlight);
+        renderMarkdownHighlights(readerContent);
+        toast("Highlighted.", "success");
+      } catch (err) {
+        toast(err.message || "Could not save highlight.", "error");
+      } finally {
+        window.getSelection()?.removeAllRanges();
+        hideSelectionPopover();
+        mdPendingSelection = null;
+      }
+    });
+
+    // The bottom Save Highlight button is replaced by the popover.
     if (highlightButton) {
-      highlightButton.addEventListener("click", async () => {
-        const selection = window.getSelection();
-        const text = selection ? selection.toString().trim() : "";
-        if (!text) {
-          toast("Select some text in the reader first.", "error");
-          return;
-        }
-        let container = selection.anchorNode && selection.anchorNode.nodeType === Node.TEXT_NODE
-          ? selection.anchorNode.parentElement
-          : selection.anchorNode;
-        if (!(container instanceof Element)) container = readerContent;
-        const section = container.closest("[data-section]");
-        const locator = section?.getAttribute("data-section") || "start";
-        await saveHighlight(locator, text);
-        selection.removeAllRanges();
-        setHighlightEnabled(false);
-      });
+      highlightButton.style.display = "none";
+      const noticeEl = document.querySelector("[data-highlight-message]");
+      if (noticeEl) noticeEl.textContent = "Select text in the book to highlight it.";
     }
 
     // Floating "jump to last position" button
@@ -1375,6 +1410,14 @@ if (readerRoot) {
           if (e.target.closest("a, button, input, textarea, select")) return;
           toggleImmersive();
         });
+
+        // The "selected" event only fires when text becomes selected. Clearing
+        // the selection produces no event, so the popover would linger. Watch
+        // for selection changes inside the iframe and hide it when empty.
+        doc.addEventListener("selectionchange", () => {
+          const sel = win.getSelection();
+          if (!sel || !sel.toString().trim()) hideSelectionPopover();
+        });
       });
 
       // ---- Kindle-style highlight overlay ----
@@ -1402,35 +1445,15 @@ if (readerRoot) {
         },
       };
 
-      // Build the selection popover lazily and reuse it
-      let popover = document.querySelector(".selection-popover");
-      if (!popover) {
-        popover = document.createElement("div");
-        popover.className = "selection-popover";
-        popover.setAttribute("role", "menu");
-
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.dataset.popoverAction = "highlight";
-        const swatch = document.createElement("span");
-        swatch.className = "swatch";
-        const label = document.createElement("span");
-        label.textContent = "Highlight";
-        btn.appendChild(swatch);
-        btn.appendChild(label);
-        popover.appendChild(btn);
-
-        document.body.appendChild(popover);
-      }
-      const hidePopover = () => popover.classList.remove("is-open");
-
+      // ---- Selection popover ----
+      ensureSelectionPopover();
       let pendingSelection = null;
 
       rendition.on("selected", (cfiRange, contents) => {
         const sel = contents.window.getSelection();
         const text = sel?.toString().trim() || "";
         if (!text || sel.rangeCount === 0) {
-          hidePopover();
+          hideSelectionPopover();
           pendingSelection = null;
           return;
         }
@@ -1440,41 +1463,20 @@ if (readerRoot) {
         const rect = range.getBoundingClientRect();
         const frame = contents.document.defaultView.frameElement;
         const frameRect = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
-
-        const x = frameRect.left + (rect.left + rect.right) / 2;
-        let y = frameRect.top + rect.top - 50;
-        if (y < 12) y = frameRect.top + rect.bottom + 14; // flip below if too close to top
-
-        // Show offscreen first so we can read offsetWidth, then position
-        popover.style.visibility = "hidden";
-        popover.classList.add("is-open");
-        const popoverWidth = popover.offsetWidth;
-        const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 8, x - popoverWidth / 2));
-        popover.style.left = `${left}px`;
-        popover.style.top = `${y}px`;
-        popover.style.visibility = "";
+        showSelectionPopoverNear(rect, { left: frameRect.left, top: frameRect.top });
       });
 
-      // Hide on scroll (in iframe), navigation, resize, key, or click outside
-      const onOutside = (event) => {
-        if (event && popover.contains(event.target)) return;
-        hidePopover();
-      };
-      document.addEventListener("pointerdown", onOutside);
-      window.addEventListener("resize", hidePopover);
-      window.addEventListener("scroll", hidePopover, true);
-      rendition.on("relocated", hidePopover);
+      rendition.on("relocated", hideSelectionPopover);
 
-      popover.querySelector('[data-popover-action="highlight"]').addEventListener("click", async () => {
+      attachPopoverHighlight(async () => {
         if (!pendingSelection) return;
         const { cfiRange, text, contents } = pendingSelection;
-        const color = (window.__mocoActiveHighlightColor && window.__mocoActiveHighlightColor()) || "amber";
+        const color = window.__mocoActiveHighlightColor?.() || "amber";
         try {
           const payload = await requestJSON(`/api/v1/books/${bookID}/highlights`, {
             method: "POST",
             body: JSON.stringify({ locator: cfiRange, selectedText: text, color }),
           });
-          // Visual overlay
           try {
             rendition.annotations.highlight(
               cfiRange,
@@ -1487,14 +1489,12 @@ if (readerRoot) {
           } catch (annErr) {
             console.warn("Could not paint highlight overlay:", annErr);
           }
-          // Sidebar list update
           const onlyCard = highlightsList?.querySelector(".note-card");
           if (onlyCard && onlyCard.textContent.includes("No highlights")) highlightsList.innerHTML = "";
           highlightsList?.prepend(buildHighlightCard(payload.highlight));
           toast("Highlighted.", "success");
-          // Clear iframe selection + popover
           contents.window.getSelection()?.removeAllRanges();
-          hidePopover();
+          hideSelectionPopover();
           pendingSelection = null;
         } catch (err) {
           toast(err.message || "Could not save highlight.", "error");
@@ -1809,6 +1809,8 @@ function escapeHTML(s) {
 }
 
 function attachRemoveTag(button) {
+  if (button.dataset.wired === "1") return;
+  button.dataset.wired = "1";
   button.addEventListener("click", async () => {
     const bookID = button.dataset.bookId;
     const tag = button.dataset.removeTag;
@@ -1824,9 +1826,10 @@ function attachRemoveTag(button) {
     }
   });
 }
-document.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
 
-document.querySelectorAll("[data-add-tag]").forEach((btn) => {
+function attachAddTag(btn) {
+  if (btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
   btn.addEventListener("click", async () => {
     const bookID = btn.dataset.bookId;
     if (!bookID) return;
@@ -1846,14 +1849,106 @@ document.querySelectorAll("[data-add-tag]").forEach((btn) => {
       toast(err.message || "Could not add tag.", "error");
     }
   });
+}
+
+function wireBookCardActions(scope) {
+  scope.querySelectorAll("[data-delete-book]").forEach(attachDeleteBook);
+  scope.querySelectorAll("[data-toggle-visibility]").forEach(attachToggleVisibility);
+  scope.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
+  scope.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
+}
+
+document.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
+document.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
+
+// ---------- Auto-submitting filter forms (AJAX swap) ----------
+// Forms with data-results-target="<selector>" fetch ?fragment=1 and replace
+// the matching container's innerHTML instead of reloading the whole page.
+document.querySelectorAll("form[data-auto-submit]").forEach((form) => {
+  const targetSelector = form.dataset.resultsTarget;
+  let inflight = null;
+
+  async function applyFilters() {
+    const action = form.getAttribute("action") || window.location.pathname;
+    const params = new URLSearchParams(new FormData(form));
+    const url = `${action}?${params.toString()}`;
+
+    if (!targetSelector) {
+      window.location.assign(url);
+      return;
+    }
+    const target = document.querySelector(targetSelector);
+    if (!target) {
+      window.location.assign(url);
+      return;
+    }
+
+    // Update browser URL so refresh / back works.
+    history.replaceState(null, "", url);
+
+    if (inflight) inflight.abort();
+    inflight = new AbortController();
+    target.classList.add("is-loading");
+    try {
+      const res = await fetch(`${url}${url.includes("?") ? "&" : "?"}fragment=1`, {
+        headers: { "X-Fragment": "1", Accept: "text/html" },
+        signal: inflight.signal,
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const html = await res.text();
+      target.innerHTML = html;
+      wireBookCardActions(target);
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        toast(err.message || "Could not update results.", "error");
+      }
+    } finally {
+      target.classList.remove("is-loading");
+    }
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    applyFilters();
+  });
+
+  form.querySelectorAll("select").forEach((select) => {
+    select.addEventListener("change", applyFilters);
+  });
+  form.querySelectorAll('input[type="search"], input[type="text"]').forEach((input) => {
+    let timer = null;
+    input.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(applyFilters, 350);
+    });
+  });
 });
 
-// ---------- Reader: highlight color picker + notes (extends popover) ----------
-// Wired on EPUB only — the selection popover lives there. We mutate the popover
-// after it's been built by the EPUB block.
-document.addEventListener("DOMContentLoaded", () => {
-  const popover = document.querySelector(".selection-popover");
-  if (!popover || popover.dataset.extended === "1") return;
+// ---------- Selection popover (shared by EPUB + Markdown readers) ----------
+// One instance is built lazily and reused. Helpers below handle positioning,
+// color selection, and click-to-highlight binding for whichever reader is live.
+let __mocoPopoverActiveColor = "amber";
+window.__mocoActiveHighlightColor = () => __mocoPopoverActiveColor;
+
+function ensureSelectionPopover() {
+  let popover = document.querySelector(".selection-popover");
+  if (popover) return popover;
+
+  popover = document.createElement("div");
+  popover.className = "selection-popover";
+  popover.setAttribute("role", "menu");
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.dataset.popoverAction = "highlight";
+  const swatch = document.createElement("span");
+  swatch.className = "swatch";
+  const label = document.createElement("span");
+  label.textContent = "Highlight";
+  btn.appendChild(swatch);
+  btn.appendChild(label);
+  popover.appendChild(btn);
 
   const colorRow = document.createElement("div");
   colorRow.className = "popover-colors";
@@ -1863,22 +1958,63 @@ document.addEventListener("DOMContentLoaded", () => {
     dot.className = `swatch swatch-${c}`;
     dot.dataset.color = c;
     dot.setAttribute("aria-label", `Highlight ${c}`);
-    if (c === "amber") dot.setAttribute("aria-pressed", "true");
+    if (c === __mocoPopoverActiveColor) dot.setAttribute("aria-pressed", "true");
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      __mocoPopoverActiveColor = dot.dataset.color;
+      colorRow.querySelectorAll(".swatch").forEach((d) => {
+        d.setAttribute("aria-pressed", String(d === dot));
+      });
+    });
     colorRow.appendChild(dot);
   });
   popover.appendChild(colorRow);
 
-  let activeColor = "amber";
-  colorRow.querySelectorAll(".swatch").forEach((dot) => {
-    dot.addEventListener("click", () => {
-      activeColor = dot.dataset.color;
-      colorRow.querySelectorAll(".swatch").forEach((d) => d.setAttribute("aria-pressed", String(d === dot)));
-    });
+  document.body.appendChild(popover);
+
+  // Outside-click + global resets
+  document.addEventListener("pointerdown", (event) => {
+    if (popover.contains(event.target)) return;
+    hideSelectionPopover();
   });
-  popover.dataset.extended = "1";
-  // Expose for the EPUB block to read
-  window.__mocoActiveHighlightColor = () => activeColor;
-});
+  window.addEventListener("resize", hideSelectionPopover);
+  window.addEventListener("scroll", hideSelectionPopover, true);
+
+  return popover;
+}
+
+function hideSelectionPopover() {
+  const popover = document.querySelector(".selection-popover");
+  if (popover) popover.classList.remove("is-open");
+}
+
+function showSelectionPopoverNear(rect, frameOffset = { left: 0, top: 0 }) {
+  const popover = ensureSelectionPopover();
+  const x = frameOffset.left + (rect.left + rect.right) / 2;
+  let y = frameOffset.top + rect.top - 50;
+  if (y < 12) y = frameOffset.top + rect.bottom + 14; // flip below if too close to top
+
+  popover.style.visibility = "hidden";
+  popover.classList.add("is-open");
+  const popoverWidth = popover.offsetWidth;
+  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 8, x - popoverWidth / 2));
+  popover.style.left = `${left}px`;
+  popover.style.top = `${y}px`;
+  popover.style.visibility = "";
+}
+
+function attachPopoverHighlight(handler) {
+  const popover = ensureSelectionPopover();
+  const btn = popover.querySelector('[data-popover-action="highlight"]');
+  if (!btn) return;
+  // Replace the node to clear any prior listener — readers re-bind on init.
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", (event) => {
+    event.preventDefault();
+    handler();
+  });
+}
 
 // ---------- Reader: in-book search (Cmd/Ctrl+F is browser-native; we offer "/" as a quick command) ----------
 // We open a simple search modal. For markdown reader: highlight matches in the

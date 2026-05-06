@@ -15,6 +15,7 @@ type pageData struct {
 	CurrentUser *store.User
 	Error       string
 	Message     string
+	Nav         string // "library" | "quotes" | "stats" | "discover" | "settings"
 }
 
 type dashboardPageData struct {

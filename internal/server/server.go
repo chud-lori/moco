@@ -166,6 +166,7 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		pageData: pageData{
 			Title:       "Public Library - Moco",
 			CurrentUser: user,
+			Nav:         "discover",
 		},
 		PublicBooks: publicBooks,
 	})
@@ -202,10 +203,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	allTags, _ := s.store.ListTagCounts(r.Context(), user.ID)
 	publicBooks, _ := s.store.ListPublicBooks(r.Context(), user.ID)
 	privateBooks, ownPublic := splitBooksByVisibility(books)
-	s.renderTemplate(w, "dashboard.html", dashboardPageData{
+	data := dashboardPageData{
 		pageData: pageData{
 			Title:       "Library - Moco",
 			CurrentUser: &user,
+			Nav:         "library",
 		},
 		MyPrivateBooks: privateBooks,
 		MyPublicBooks:  ownPublic,
@@ -215,7 +217,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Sort:           filter.Sort,
 		Tag:            filter.Tag,
 		Format:         filter.Format,
-	})
+	}
+	if isFragmentRequest(r) {
+		s.renderTemplate(w, "library_results", data)
+		return
+	}
+	s.renderTemplate(w, "dashboard.html", data)
 }
 
 func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
@@ -237,16 +244,22 @@ func (s *Server) handleQuotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bookOptions, _ := s.store.ListBooks(r.Context(), user.ID)
-	s.renderTemplate(w, "quotes.html", quotesPageData{
+	data := quotesPageData{
 		pageData: pageData{
 			Title:       "Quotes - Moco",
 			CurrentUser: &user,
+			Nav:         "quotes",
 		},
 		Quotes:      quotes,
 		Query:       query,
 		BookFilter:  bookFilter,
 		BookOptions: bookOptions,
-	})
+	}
+	if isFragmentRequest(r) {
+		s.renderTemplate(w, "quotes_results", data)
+		return
+	}
+	s.renderTemplate(w, "quotes.html", data)
 }
 
 func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
@@ -933,6 +946,12 @@ func safeMIME(given, ext string) string {
 	return "application/octet-stream"
 }
 
+// isFragmentRequest reports whether the client wants only the inner content
+// fragment (used by AJAX-driven filter forms) rather than the full page.
+func isFragmentRequest(r *http.Request) bool {
+	return r.URL.Query().Get("fragment") == "1" || r.Header.Get("X-Fragment") == "1"
+}
+
 func (s *Server) renderTemplate(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.templates.ExecuteTemplate(w, name, data); err != nil {
@@ -1230,6 +1249,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		pageData: pageData{
 			Title:       "Reading stats - Moco",
 			CurrentUser: &user,
+			Nav:         "stats",
 		},
 		Stats:     stats,
 		TagCounts: tagCounts,
@@ -1247,6 +1267,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, "settings.html", pageData{
 		Title:       "Settings - Moco",
 		CurrentUser: &user,
+		Nav:         "settings",
 	})
 }
 

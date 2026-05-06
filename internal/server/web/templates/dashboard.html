@@ -40,7 +40,7 @@
           </form>
         </section>
 
-        <form class="library-toolbar" method="get" action="/app" aria-label="Sort and filter library">
+        <form class="library-toolbar" method="get" action="/app" aria-label="Sort and filter library" data-auto-submit data-results-target="[data-library-results]">
           <label class="select-input">
             <span class="sr-only">Sort</span>
             <select name="sort">
@@ -69,69 +69,74 @@
               </select>
             </label>
           {{ end }}
-          <button class="button subtle" type="submit">Apply</button>
-          {{ if or .Tag .Format (and (ne .Sort "") (ne .Sort "recent")) }}<a class="text-link" href="/app">Clear</a>{{ end }}
+          <noscript><button class="button subtle" type="submit">Apply</button></noscript>
         </form>
 
-        <section class="library-section">
-          <div class="section-row">
-            <p class="section-label">Private books</p>
-            <span class="session-chip">{{ len .MyPrivateBooks }}</span>
-          </div>
-          {{ if .MyPrivateBooks }}
-            {{ template "book_grid" (mkBookGrid .MyPrivateBooks .BookTags) }}
-          {{ else }}
-            <section class="empty-state is-primary">
-              <h2>Your shelf is empty.</h2>
-              <p>Drop your first PDF, EPUB, or Markdown file into the upload form above to get started.</p>
-              <a class="button primary empty-cta" href="#upload">Upload a book ↑</a>
-            </section>
-          {{ end }}
-        </section>
-
-        <section class="library-section">
-          <div class="section-row">
-            <p class="section-label">Public books you published</p>
-            <span class="session-chip">{{ len .MyPublicBooks }}</span>
-          </div>
-          {{ if .MyPublicBooks }}
-            {{ template "book_grid" (mkBookGrid .MyPublicBooks .BookTags) }}
-          {{ else }}
-            <section class="empty-state">
-              <p>You haven't published anything yet. Toggle any private book to public to share it.</p>
-            </section>
-          {{ end }}
-        </section>
-
-        <section class="library-section">
-          <div class="section-row">
-            <p class="section-label">Public books from others</p>
-            <span class="session-chip">{{ len .PublicBooks }}</span>
-          </div>
-          {{ if .PublicBooks }}
-            <div class="dashboard-grid">
-              {{ range .PublicBooks }}
-                <article class="book-panel">
-                  <div class="book-panel-top">
-                    <span class="book-format">{{ .Format }}</span>
-                    <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
-                  </div>
-                  <h2>{{ .Title }}</h2>
-                  <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ displayName .OwnerEmail }}</p>
-                  {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
-                  <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
-                </article>
-              {{ end }}
-            </div>
-          {{ else }}
-            <section class="empty-state"><p>No public books from other readers yet.</p></section>
-          {{ end }}
-        </section>
+        <div data-library-results>
+          {{ template "library_results" . }}
+        </div>
       </main>
     </div>
     <script src="/static/app.js" defer></script>
   </body>
 </html>
+{{ end }}
+
+{{ define "library_results" }}
+  <section class="library-section">
+    <div class="section-row">
+      <p class="section-label">Private books</p>
+      <span class="session-chip">{{ len .MyPrivateBooks }}</span>
+    </div>
+    {{ if .MyPrivateBooks }}
+      {{ template "book_grid" (mkBookGrid .MyPrivateBooks .BookTags) }}
+    {{ else }}
+      <section class="empty-state is-primary">
+        <h2>{{ if or .Tag .Format }}No private books match these filters.{{ else }}Your shelf is empty.{{ end }}</h2>
+        <p>{{ if or .Tag .Format }}Try clearing a filter or pick a different one.{{ else }}Drop your first PDF, EPUB, or Markdown file into the upload form above to get started.{{ end }}</p>
+        {{ if not (or .Tag .Format) }}<a class="button primary empty-cta" href="#upload">Upload a book ↑</a>{{ end }}
+      </section>
+    {{ end }}
+  </section>
+
+  <section class="library-section">
+    <div class="section-row">
+      <p class="section-label">Public books you published</p>
+      <span class="session-chip">{{ len .MyPublicBooks }}</span>
+    </div>
+    {{ if .MyPublicBooks }}
+      {{ template "book_grid" (mkBookGrid .MyPublicBooks .BookTags) }}
+    {{ else }}
+      <section class="empty-state">
+        <p>{{ if or .Tag .Format }}Nothing matching these filters in your published shelf.{{ else }}You haven't published anything yet. Toggle any private book to public to share it.{{ end }}</p>
+      </section>
+    {{ end }}
+  </section>
+
+  <section class="library-section">
+    <div class="section-row">
+      <p class="section-label">Public books from others</p>
+      <span class="session-chip">{{ len .PublicBooks }}</span>
+    </div>
+    {{ if .PublicBooks }}
+      <div class="dashboard-grid">
+        {{ range .PublicBooks }}
+          <article class="book-panel">
+            <div class="book-panel-top">
+              <span class="book-format">{{ .Format }}</span>
+              <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
+            </div>
+            <h2>{{ .Title }}</h2>
+            <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ displayName .OwnerEmail }}</p>
+            {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
+            <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
+          </article>
+        {{ end }}
+      </div>
+    {{ else }}
+      <section class="empty-state"><p>No public books from other readers yet.</p></section>
+    {{ end }}
+  </section>
 {{ end }}
 
 {{ define "book_grid" }}

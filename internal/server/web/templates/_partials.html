@@ -1,10 +1,11 @@
 {{ define "primary_topbar" }}
 <header class="topbar">
-  <a class="brand" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
+  <a class="brand{{ if eq .Nav "library" }} is-active{{ end }}" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
   <nav class="topnav" aria-label="Primary">
-    <a href="/quotes">Quotes</a>
-    <a href="/stats">Stats</a>
-    <a href="/discover">Public shelf</a>
+    <a href="/app"     {{ if eq .Nav "library" }}aria-current="page"{{ end }}>Library</a>
+    <a href="/quotes"  {{ if eq .Nav "quotes"   }}aria-current="page"{{ end }}>Quotes</a>
+    <a href="/stats"   {{ if eq .Nav "stats"    }}aria-current="page"{{ end }}>Stats</a>
+    <a href="/discover"{{ if eq .Nav "discover" }}aria-current="page"{{ end }}>Public shelf</a>
   </nav>
   <div class="topbar-actions">
     <a class="session-chip" href="/settings" title="Account settings">{{ userDisplayName .CurrentUser }}</a>

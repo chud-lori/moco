@@ -17,12 +17,20 @@
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="page-shell">
-      <header class="topbar">
-        <a class="brand" href="/"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
-        <div class="topbar-actions">
-          {{ if .CurrentUser }}<a class="button subtle" href="/app">Dashboard</a>{{ else }}<a class="button subtle" href="/login">Sign in</a>{{ end }}
-        </div>
-      </header>
+      {{ if .CurrentUser }}
+        {{ template "primary_topbar" . }}
+      {{ else }}
+        <header class="topbar">
+          <a class="brand" href="/"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
+          <nav class="topnav" aria-label="Primary">
+            <a href="/discover" aria-current="page">Public shelf</a>
+          </nav>
+          <div class="topbar-actions">
+            <a class="button subtle" href="/login">Sign in</a>
+            <a class="button primary" href="/signup">Create account</a>
+          </div>
+        </header>
+      {{ end }}
       <main id="main">
         <section class="feature-band">
           <article>

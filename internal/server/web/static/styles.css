@@ -235,13 +235,46 @@ main { display: grid; gap: 28px; }
   gap: 10px;
 }
 
-.topnav a,
 .text-link,
 .hero-meta span,
 .reader-toolbar span,
 .library-toolbar .pill {
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+/* Topbar nav: pill-shaped links with clear hover + active states. */
+.topnav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.topnav a:hover {
+  background: rgba(255, 250, 242, 0.85);
+  border-color: var(--line);
+  color: var(--text);
+}
+.topnav a:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.topnav a[aria-current="page"] {
+  background: var(--text);
+  color: #fff8f0;
+  font-weight: 600;
+}
+.topnav a[aria-current="page"]:hover {
+  background: #1f1813;
+  color: #fff8f0;
+  border-color: transparent;
 }
 
 /* ---------- Buttons ---------- */
@@ -395,7 +428,14 @@ main { display: grid; gap: 28px; }
   border-radius: 22px;
   background: rgba(255, 251, 246, 0.74);
   border: 1px solid rgba(85, 66, 43, 0.08);
-  height: 100%;
+}
+
+.shelf-empty {
+  margin: 0;
+  padding: 18px 4px 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .shelf-header, .book-row, .library-grid, .reader-preview, .notes-preview { display: grid; }
@@ -789,7 +829,8 @@ main { display: grid; gap: 28px; }
 /* ---------- Dashboard ---------- */
 .dashboard-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 20px;
+  align-items: start; /* cards size to content, no empty stretched filler */
 }
 
 .library-section { display: grid; gap: 16px; }
@@ -815,14 +856,14 @@ main { display: grid; gap: 28px; }
 }
 
 .book-panel {
-  padding: 18px;
+  padding: 20px 22px;
   border: 1px solid rgba(85, 66, 43, 0.1);
   border-radius: 24px;
   background: rgba(255, 249, 241, 0.86);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .book-panel-top, .book-panel-actions {
@@ -833,14 +874,16 @@ main { display: grid; gap: 28px; }
 .book-panel-top { justify-content: space-between; }
 
 .book-panel-actions {
-  margin-top: auto;
+  margin-top: 14px;
   padding-top: 14px;
+  border-top: 1px solid rgba(85, 66, 43, 0.08);
   justify-content: flex-start;
   flex-wrap: wrap;
+  gap: 8px;
 }
-/* Push the destructive Remove button away from the primary/secondary
-   actions so it's harder to mistap. */
-.book-panel-actions .book-panel-danger { margin-left: auto; }
+/* Add a small extra gap before the destructive button so it's harder to
+   mistap, but keep it grouped with the rest of the actions. */
+.book-panel-actions .book-panel-danger { margin-left: 12px; }
 
 .empty-state {
   text-align: left;
@@ -1789,6 +1832,21 @@ main { display: grid; gap: 28px; }
 
 @media (max-width: 640px) {
   .quote-card { padding: 22px 22px 20px; }
+}
+
+/* AJAX loading state on result containers */
+[data-library-results].is-loading,
+[data-quotes-results].is-loading {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* Vertical rhythm between library sections */
+[data-library-results] {
+  display: grid;
+  gap: 36px;
+  margin-top: 8px;
 }
 
 /* ---------- Quotes toolbar (search + book filter) ---------- */
