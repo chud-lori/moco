@@ -13,8 +13,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css" />
     {{ if eq .ReaderKind "epub" }}
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+      <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js" defer></script>
     {{ end }}
     {{ if eq .ReaderKind "md" }}
       <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js" defer></script>
@@ -66,7 +66,7 @@
                 <button class="button subtle" type="button" data-epub-prev aria-label="Previous page">← Previous</button>
                 <button class="button subtle" type="button" data-epub-next aria-label="Next page">Next →</button>
               </div>
-              <div class="epub-stage" id="reader-content"></div>
+              <div class="epub-stage" id="reader-content"><p class="reader-loading" data-reader-loading>Loading book…</p></div>
             </div>
           {{ else }}
             <div class="ebook-stage ebook-stage-full">

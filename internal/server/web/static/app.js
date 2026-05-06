@@ -1047,75 +1047,126 @@ if (readerRoot) {
   }
 
   // ----- EPUB reader -----
-  if (readerKind === "epub" && window.ePub) {
-    const tocList = document.querySelector("[data-dynamic-toc]");
-    const prev = document.querySelector("[data-epub-prev]");
-    const next = document.querySelector("[data-epub-next]");
-    const book = window.ePub(fileURL);
-    const rendition = book.renderTo("reader-content", {
-      width: "100%",
-      height: "100%",
-      flow: "scrolled-doc",
-    });
-    rendition.display();
+  if (readerKind === "epub") {
+    const initEpub = async () => {
+      // Wait for the epub.js + jszip CDN scripts to land. Both are deferred so
+      // they may not be ready the instant app.js starts. Give them ~6 seconds.
+      let attempts = 0;
+      while ((!window.ePub || !window.JSZip) && attempts < 60) {
+        await new Promise((r) => setTimeout(r, 100));
+        attempts += 1;
+      }
+      if (!window.ePub) {
+        toast("EPUB reader failed to load. Check your network or any content blocker.", "error");
+        const stage = document.getElementById("reader-content");
+        if (stage) stage.innerHTML = '<p class="reader-loading">Could not load the EPUB reader.</p>';
+        return;
+      }
 
-    book.loaded.navigation.then((navigation) => {
-      tocList.innerHTML = "";
-      navigation.toc.forEach((item) => {
-        const li = document.createElement("li");
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = item.label;
-        button.addEventListener("click", () => rendition.display(item.href));
-        li.appendChild(button);
-        tocList.appendChild(li);
-      });
-    }).catch(() => {
-      tocList.innerHTML = "";
-      const li = document.createElement("li");
-      li.textContent = "No table of contents.";
-      tocList.appendChild(li);
-    });
+      const tocList = document.querySelector("[data-dynamic-toc]");
+      const prev = document.querySelector("[data-epub-prev]");
+      const next = document.querySelector("[data-epub-next]");
 
-    requestJSON(`/api/v1/books/${bookID}/progress`).then((data) => {
-      if (data.progress?.locator) rendition.display(data.progress.locator);
-    }).catch(() => {});
+      let book, rendition;
+      try {
+        book = window.ePub(fileURL);
+        rendition = book.renderTo("reader-content", {
+          width: "100%",
+          height: "100%",
+          flow: "scrolled-doc",
+          allowScriptedContent: false,
+        });
+      } catch (error) {
+        toast("Could not initialize EPUB reader.", "error");
+        return;
+      }
 
-    rendition.on("relocated", (location) => {
-      const locator = location?.start?.cfi || "";
-      const progressPercent = location?.start?.percentage ? location.start.percentage * 100 : 0;
-      saveProgress(locator, progressPercent);
-    });
-
-    prev?.addEventListener("click", () => rendition.prev());
-    next?.addEventListener("click", () => rendition.next());
-
-    document.addEventListener("keydown", (event) => {
-      if (event.target.matches("input,textarea,select")) return;
-      if (event.key === "ArrowLeft") rendition.prev();
-      if (event.key === "ArrowRight") rendition.next();
-    });
-
-    if (highlightButton) {
-      rendition.on("selected", (cfiRange, contents) => {
-        const text = contents.window.getSelection()?.toString().trim() || "";
-        setHighlightEnabled(!!text);
+      // Clear the placeholder and surface any open/render error.
+      book.opened.then(() => {
+        document.querySelector("[data-reader-loading]")?.remove();
+      }).catch((err) => {
+        const stage = document.getElementById("reader-content");
+        if (stage) stage.innerHTML = '<p class="reader-loading">Could not open this EPUB file.</p>';
+        toast("Could not open this EPUB file.", "error");
+        console.error("EPUB open error:", err);
       });
 
-      highlightButton.addEventListener("click", async () => {
-        const contents = rendition.getContents()[0];
-        const selection = contents?.window?.getSelection?.();
-        const text = selection ? selection.toString().trim() : "";
-        const locator = rendition.currentLocation()?.start?.cfi || "start";
-        if (!text) {
-          toast("Select some EPUB text first.", "error");
+      try {
+        await rendition.display();
+      } catch (err) {
+        toast("Could not display the EPUB.", "error");
+        console.error("EPUB display error:", err);
+      }
+
+      book.loaded.navigation.then((navigation) => {
+        tocList.innerHTML = "";
+        if (!navigation.toc || navigation.toc.length === 0) {
+          const li = document.createElement("li");
+          li.innerHTML = '<span style="padding:12px 14px;display:block">No chapters found.</span>';
+          tocList.appendChild(li);
           return;
         }
-        await saveHighlight(locator, text);
-        selection.removeAllRanges();
-        setHighlightEnabled(false);
+        navigation.toc.forEach((item) => {
+          const li = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = item.label;
+          button.addEventListener("click", () => rendition.display(item.href));
+          li.appendChild(button);
+          tocList.appendChild(li);
+        });
+      }).catch(() => {
+        tocList.innerHTML = "";
+        const li = document.createElement("li");
+        li.textContent = "No table of contents.";
+        tocList.appendChild(li);
       });
-    }
+
+      requestJSON(`/api/v1/books/${bookID}/progress`).then((data) => {
+        if (data.progress?.locator) {
+          try { rendition.display(data.progress.locator); }
+          catch (_) { /* invalid CFI from old data — ignore */ }
+        }
+      }).catch(() => {});
+
+      rendition.on("relocated", (location) => {
+        const locator = location?.start?.cfi || "";
+        const progressPercent = location?.start?.percentage ? location.start.percentage * 100 : 0;
+        saveProgress(locator, progressPercent);
+      });
+
+      prev?.addEventListener("click", () => rendition.prev());
+      next?.addEventListener("click", () => rendition.next());
+
+      document.addEventListener("keydown", (event) => {
+        if (event.target.matches("input,textarea,select")) return;
+        if (event.key === "ArrowLeft") rendition.prev();
+        if (event.key === "ArrowRight") rendition.next();
+      });
+
+      if (highlightButton) {
+        rendition.on("selected", (cfiRange, contents) => {
+          const text = contents.window.getSelection()?.toString().trim() || "";
+          setHighlightEnabled(!!text);
+        });
+
+        highlightButton.addEventListener("click", async () => {
+          const contents = rendition.getContents()[0];
+          const selection = contents?.window?.getSelection?.();
+          const text = selection ? selection.toString().trim() : "";
+          const locator = rendition.currentLocation()?.start?.cfi || "start";
+          if (!text) {
+            toast("Select some EPUB text first.", "error");
+            return;
+          }
+          await saveHighlight(locator, text);
+          selection.removeAllRanges();
+          setHighlightEnabled(false);
+        });
+      }
+    };
+
+    initEpub();
   }
 
   // ----- PDF reader -----

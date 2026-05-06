@@ -885,6 +885,17 @@ main { display: grid; gap: 28px; }
   border: 0;
 }
 
+.reader-loading {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 60px 20px;
+  font-family: "Cormorant Garamond", serif;
+  font-size: 1.4rem;
+  color: var(--muted);
+  text-align: center;
+}
+
 .pdf-stage {
   display: grid;
   place-items: start center;
