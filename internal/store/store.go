@@ -954,6 +954,51 @@ func (s *Store) SearchHighlights(ctx context.Context, userID, query, bookID stri
 	return items, rows.Err()
 }
 
+// AllBooksAdmin returns every book in the system. Used only by the storage
+// migration command — not exposed via any HTTP route.
+func (s *Store) AllBooksAdmin(ctx context.Context) ([]Book, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path,
+		       b.file_size, b.created_at, b.updated_at, b.last_opened_at, b.original_filename,
+		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path
+		FROM books b
+		JOIN users u ON u.id = b.user_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var books []Book
+	for rows.Next() {
+		var book Book
+		var createdAt, updatedAt string
+		var lastOpened sql.NullString
+		if err := rows.Scan(
+			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility,
+			&book.OwnerEmail, &book.StoragePath, &book.FileSize, &createdAt, &updatedAt, &lastOpened,
+			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath,
+		); err != nil {
+			return nil, err
+		}
+		book.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		book.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+		if lastOpened.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, lastOpened.String)
+			book.LastOpenedAt = &t
+		}
+		books = append(books, book)
+	}
+	return books, rows.Err()
+}
+
+// UpdateBookPaths rewrites the three path columns on a book. Used by the
+// storage-migration command after files have been pushed to the new backend.
+func (s *Store) UpdateBookPaths(ctx context.Context, bookID, storagePath, derivedEPUBPath, coverPath string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE books SET storage_path = ?, derived_epub_path = ?, cover_path = ?, updated_at = ? WHERE id = ?`,
+		storagePath, derivedEPUBPath, coverPath, time.Now().UTC().Format(time.RFC3339Nano), bookID)
+	return err
+}
+
 // ----- Book shares -----
 
 type Share struct {

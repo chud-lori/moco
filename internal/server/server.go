@@ -2,6 +2,7 @@ package server
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -27,6 +28,7 @@ import (
 	"moco/internal/auth"
 	"moco/internal/epub"
 	"moco/internal/reader"
+	"moco/internal/storage"
 	"moco/internal/store"
 )
 
@@ -34,12 +36,14 @@ import (
 var embeddedFiles embed.FS
 
 type Config struct {
-	Addr          string
-	DataDir       string
-	DBPath        string
-	CookieName    string
-	SecureCookies bool
-	PublicURL     string // canonical https://... URL — used for absolute links in OG tags
+	Addr           string
+	DataDir        string
+	DBPath         string
+	CookieName     string
+	SecureCookies  bool
+	PublicURL      string // canonical https://... URL — used for absolute links in OG tags
+	Storage        storage.Backend
+	StorageBaseDir string // local fallback dir when backend is filesystem-based
 }
 
 type Server struct {
@@ -47,6 +51,7 @@ type Server struct {
 	mux       *http.ServeMux
 	templates *template.Template
 	store     *store.Store
+	storage   storage.Backend
 }
 
 func New(cfg Config) *Server {
@@ -69,16 +74,53 @@ func New(cfg Config) *Server {
 		panic(err)
 	}
 
+	if cfg.Storage == nil {
+		cfg.Storage = storage.NewLocal(cfg.DataDir)
+	}
+
 	s := &Server{
-		cfg:   cfg,
-		mux:   http.NewServeMux(),
-		store: dbStore,
+		cfg:     cfg,
+		mux:     http.NewServeMux(),
+		store:   dbStore,
+		storage: cfg.Storage,
 	}
 
 	s.templates = template.Must(template.New("").Funcs(templateFuncs()).ParseFS(embeddedFiles, "web/templates/*.html"))
 	s.routes()
 	go runTempCleanupWorker(context.Background())
 	return s
+}
+
+// serveBackendObject streams an object from the storage backend to the
+// response. For the local backend it short-circuits to http.ServeFile (which
+// supports range requests, useful for pdf.js). For remote backends it does a
+// simple streaming Get.
+func (s *Server) serveBackendObject(w http.ResponseWriter, r *http.Request, key, contentType, filename string) {
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	if filename != "" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename))
+	}
+	if path := storage.LocalPathOf(s.storage, key); path != "" {
+		http.ServeFile(w, r, path)
+		return
+	}
+	rc, err := s.storage.Get(r.Context(), key)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	defer rc.Close()
+	if size, ok, _ := s.storage.Stat(r.Context(), key); ok && size > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	}
+	_, _ = io.Copy(w, rc)
+}
+
+// keyForBook returns the canonical storage key for a piece of a book.
+func keyForBook(userID, bookID, name string) string {
+	return fmt.Sprintf("books/%s/%s/%s", userID, bookID, name)
 }
 
 // runTempCleanupWorker scans the OS temp dir hourly and removes Moco's
@@ -134,6 +176,60 @@ func runTempCleanupWorker(ctx context.Context) {
 			sweep()
 		}
 	}
+}
+
+// MigrateLocalToBackend copies every book file referenced in the DB from the
+// local filesystem (var/books/...) into the configured Storage backend, then
+// rewrites the DB rows to use the new key format. Idempotent — files already
+// at their target keys are skipped.
+func (s *Server) MigrateLocalToBackend(ctx context.Context) error {
+	if s.storage == nil {
+		return errors.New("no storage backend configured")
+	}
+	books, err := s.store.AllBooksAdmin(ctx)
+	if err != nil {
+		return err
+	}
+	for _, b := range books {
+		if err := s.migrateOneBook(ctx, b); err != nil {
+			log.Printf("migrate book %s: %v", b.ID, err)
+		}
+	}
+	return nil
+}
+
+func (s *Server) migrateOneBook(ctx context.Context, b store.Book) error {
+	moves := []*string{&b.StoragePath, &b.DerivedEPUBPath, &b.CoverPath}
+	for _, p := range moves {
+		path := *p
+		if path == "" {
+			continue
+		}
+		if !filepath.IsAbs(path) && !strings.HasPrefix(path, s.cfg.DataDir) {
+			continue // already a logical key
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		key := localPathToKey(s.cfg.DataDir, path)
+		ct := mime.TypeByExtension(filepath.Ext(path))
+		err = s.storage.Put(ctx, key, f, ct, 0)
+		f.Close()
+		if err != nil {
+			return err
+		}
+		*p = key
+	}
+	return s.store.UpdateBookPaths(ctx, b.ID, b.StoragePath, b.DerivedEPUBPath, b.CoverPath)
+}
+
+func localPathToKey(dataDir, abs string) string {
+	rel, err := filepath.Rel(dataDir, abs)
+	if err != nil {
+		return filepath.ToSlash(abs)
+	}
+	return filepath.ToSlash(rel)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -413,7 +509,13 @@ func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if book.Format == "md" {
-		source, err := os.ReadFile(book.StoragePath)
+		rc, err := s.storage.Get(r.Context(), book.StoragePath)
+		if err != nil {
+			http.Error(w, "failed to load markdown", http.StatusInternalServerError)
+			return
+		}
+		source, err := io.ReadAll(rc)
+		rc.Close()
 		if err != nil {
 			http.Error(w, "failed to load markdown", http.StatusInternalServerError)
 			return
@@ -622,25 +724,25 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bookID := randomID("book")
-	bookDir := filepath.Join(s.cfg.DataDir, "books", user.ID, bookID)
-	if err := os.MkdirAll(bookDir, 0o755); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to create book directory"})
-		return
-	}
-	storagePath := filepath.Join(bookDir, "original"+ext)
-	dst, err := os.Create(storagePath)
+
+	// Stage the upload to a local tmp file. We need a filesystem path for
+	// metadata extraction and (optionally) conversion before pushing the
+	// final artefacts to the storage backend.
+	tmp, err := os.CreateTemp("", "moco-upload-*"+ext)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to store file"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to stage file"})
 		return
 	}
-	size, copyErr := io.Copy(dst, file)
-	closeErr := dst.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	size, copyErr := io.Copy(tmp, file)
+	closeErr := tmp.Close()
 	if copyErr != nil || closeErr != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to write file"})
 		return
 	}
 
-	derivedEPUBPath := ""
+	derivedEPUBKey := ""
 	title := strings.TrimSpace(r.FormValue("title"))
 	author := strings.TrimSpace(r.FormValue("author"))
 	if title == "" {
@@ -649,81 +751,77 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	convertToEPUB := r.FormValue("convertToEpub") == "1" || r.FormValue("convertToEpub") == "true"
 	readingMinutes := reader.EstimateMinutesFromBytes(format, size)
 
+	originalKey := keyForBook(user.ID, bookID, "original"+ext)
 	storedFormat := format
-	storedPath := storagePath
+	storedKey := originalKey
 	storedMIME := safeMIME(header.Header.Get("Content-Type"), ext)
 	storedSize := size
+	// Always upload the original first.
+	if err := putFromFile(r.Context(), s.storage, originalKey, tmpPath, storedMIME); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to upload to storage: " + err.Error()})
+		return
+	}
 
 	if format == "md" {
-		source, readErr := os.ReadFile(storagePath)
+		source, readErr := os.ReadFile(tmpPath)
 		if readErr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to read markdown for conversion"})
 			return
 		}
-		// Replace the byte-based estimate with a real word count for markdown.
 		readingMinutes = reader.EstimateMinutesFromMarkdown(source)
 		epubBytes, convErr := epub.MarkdownToEPUB(title, author, source)
 		if convErr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "markdown to epub conversion failed"})
 			return
 		}
-		derivedEPUBPath = filepath.Join(bookDir, "converted.epub")
-		if err := os.WriteFile(derivedEPUBPath, epubBytes, 0o644); err != nil {
+		derivedEPUBKey = keyForBook(user.ID, bookID, "converted.epub")
+		if err := s.storage.Put(r.Context(), derivedEPUBKey, bytes.NewReader(epubBytes), "application/epub+zip", int64(len(epubBytes))); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to persist converted epub"})
 			return
 		}
 		if convertToEPUB {
 			storedFormat = "epub"
-			storedPath = derivedEPUBPath
+			storedKey = derivedEPUBKey
 			storedMIME = "application/epub+zip"
-			if info, err := os.Stat(derivedEPUBPath); err == nil {
-				storedSize = info.Size()
-			}
+			storedSize = int64(len(epubBytes))
 		}
 	} else if format == "pdf" && convertToEPUB {
-		epubBytes, converter, convErr := epub.PDFToEPUB(title, author, storagePath)
+		epubBytes, _, convErr := epub.PDFToEPUB(title, author, tmpPath)
 		if convErr != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 				"error": "could not convert PDF to EPUB: " + convErr.Error(),
 			})
 			return
 		}
-		_ = converter // could surface tier name in response if needed
-		derivedEPUBPath = filepath.Join(bookDir, "converted.epub")
-		if err := os.WriteFile(derivedEPUBPath, epubBytes, 0o644); err != nil {
+		derivedEPUBKey = keyForBook(user.ID, bookID, "converted.epub")
+		if err := s.storage.Put(r.Context(), derivedEPUBKey, bytes.NewReader(epubBytes), "application/epub+zip", int64(len(epubBytes))); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to persist converted epub"})
 			return
 		}
 		storedFormat = "epub"
-		storedPath = derivedEPUBPath
+		storedKey = derivedEPUBKey
 		storedMIME = "application/epub+zip"
-		if info, err := os.Stat(derivedEPUBPath); err == nil {
-			storedSize = info.Size()
-		}
+		storedSize = int64(len(epubBytes))
 	}
 
-	// Cover handling: prefer user-uploaded image, then auto-extracted, else
-	// leave empty (placeholder SVG is generated on demand).
-	coverPath := ""
+	// Cover handling: user upload first, then auto-extract from the source.
+	coverKey := ""
 	if cover, coverHeader, cerr := r.FormFile("cover"); cerr == nil {
 		defer cover.Close()
-		ext := strings.ToLower(filepath.Ext(coverHeader.Filename))
-		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".gif" {
-			dst := filepath.Join(bookDir, "cover"+ext)
-			if f, err := os.Create(dst); err == nil {
-				if _, copyErr := io.Copy(f, cover); copyErr == nil {
-					coverPath = dst
-				}
-				f.Close()
+		coverExt := strings.ToLower(filepath.Ext(coverHeader.Filename))
+		if coverExt == ".jpg" || coverExt == ".jpeg" || coverExt == ".png" || coverExt == ".webp" || coverExt == ".gif" {
+			coverKey = keyForBook(user.ID, bookID, "cover"+coverExt)
+			coverMIME := mime.TypeByExtension(coverExt)
+			if err := s.storage.Put(r.Context(), coverKey, cover, coverMIME, 0); err != nil {
+				coverKey = "" // fall through to auto-extract / placeholder
 			}
 		}
 	}
-	if coverPath == "" {
-		// Try auto-extraction from the stored file (best effort).
-		if extracted, ext, ok := tryExtractCover(storedPath, storedFormat); ok {
-			dst := filepath.Join(bookDir, "cover"+ext)
-			if err := os.WriteFile(dst, extracted, 0o644); err == nil {
-				coverPath = dst
+	if coverKey == "" {
+		if extracted, coverExt, ok := tryExtractCover(tmpPath, format); ok {
+			coverKey = keyForBook(user.ID, bookID, "cover"+coverExt)
+			if err := s.storage.Put(r.Context(), coverKey, bytes.NewReader(extracted), mime.TypeByExtension(coverExt), int64(len(extracted))); err != nil {
+				coverKey = ""
 			}
 		}
 	}
@@ -738,11 +836,11 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		Visibility:       visibility,
 		OwnerEmail:       user.Email,
 		ReadingMinutes:   readingMinutes,
-		StoragePath:      storedPath,
+		StoragePath:      storedKey,
 		OriginalFilename: header.Filename,
 		MIMEType:         storedMIME,
-		DerivedEPUBPath:  derivedEPUBPath,
-		CoverPath:        coverPath,
+		DerivedEPUBPath:  derivedEPUBKey,
+		CoverPath:        coverKey,
 		FileSize:         storedSize,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -754,9 +852,24 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"book": book,
 		"conversion": map[string]any{
-			"epubGenerated": derivedEPUBPath != "",
+			"epubGenerated": derivedEPUBKey != "",
 		},
 	})
+}
+
+// putFromFile streams a local file into the storage backend.
+func putFromFile(ctx context.Context, backend storage.Backend, key, localPath, contentType string) error {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, _ := f.Stat()
+	size := int64(0)
+	if info != nil {
+		size = info.Size()
+	}
+	return backend.Put(ctx, key, f, contentType, size)
 }
 
 func (s *Server) handleUpdateVisibility(w http.ResponseWriter, r *http.Request) {
@@ -797,24 +910,23 @@ func (s *Server) handleServeBookContent(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "book not found"})
 		return
 	}
-	w.Header().Set("Content-Type", safeMIME(book.MIMEType, filepath.Ext(book.OriginalFilename)))
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", book.OriginalFilename))
-	http.ServeFile(w, r, book.StoragePath)
+	contentType := safeMIME(book.MIMEType, filepath.Ext(book.OriginalFilename))
+	s.serveBackendObject(w, r, book.StoragePath, contentType, book.OriginalFilename)
 }
 
 func (s *Server) handleServeBookCover(w http.ResponseWriter, r *http.Request) {
 	book, _, err := s.resolveBookAccess(r, r.PathValue("id"), false)
 	if err != nil || book.CoverPath == "" {
-		// Synthesize a placeholder SVG so cards always render something.
 		writePlaceholderCover(w, book.Title)
 		return
 	}
-	if _, statErr := os.Stat(book.CoverPath); statErr != nil {
+	if _, exists, _ := s.storage.Stat(r.Context(), book.CoverPath); !exists {
 		writePlaceholderCover(w, book.Title)
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	http.ServeFile(w, r, book.CoverPath)
+	contentType := mime.TypeByExtension(filepath.Ext(book.CoverPath))
+	s.serveBackendObject(w, r, book.CoverPath, contentType, "")
 }
 
 func writePlaceholderCover(w http.ResponseWriter, title string) {
@@ -965,7 +1077,7 @@ func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", book.OriginalFilename))
-	http.ServeFile(w, r, book.StoragePath)
+	s.serveBackendObject(w, r, book.StoragePath, safeMIME(book.MIMEType, filepath.Ext(book.OriginalFilename)), book.OriginalFilename)
 }
 
 func (s *Server) handleDownloadConvertedEPUB(w http.ResponseWriter, r *http.Request) {
@@ -975,9 +1087,8 @@ func (s *Server) handleDownloadConvertedEPUB(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	filename := strings.TrimSuffix(book.OriginalFilename, filepath.Ext(book.OriginalFilename)) + ".epub"
-	w.Header().Set("Content-Type", "application/epub+zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	http.ServeFile(w, r, book.DerivedEPUBPath)
+	s.serveBackendObject(w, r, book.DerivedEPUBPath, "application/epub+zip", filename)
 }
 
 func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
@@ -994,7 +1105,10 @@ func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to delete book"})
 		return
 	}
-	_ = os.RemoveAll(filepath.Dir(book.StoragePath))
+	// Best-effort: remove every object under this book's storage prefix.
+	prefix := keyForBook(book.UserID, book.ID, "")
+	prefix = strings.TrimSuffix(prefix, "/")
+	_ = s.storage.DeletePrefix(r.Context(), prefix)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

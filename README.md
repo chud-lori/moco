@@ -1,122 +1,147 @@
 # moco
 
-`moco` is a fast personal reader for `PDF`, `EPUB`, and `Markdown`, built for a single VM with `Go`, `SQLite`, and local file storage.
+**A calm, private reader for your books.** Upload your PDFs, EPUBs, and Markdown files, then read them on any device with the same Kindle-like experience — themes, font controls, highlights, and progress that follows you between phone, tablet, and laptop.
 
-## Current State
+> Your library, your shelves, your highlights. Nothing tracked, nothing shared unless you choose to.
 
-This repo currently contains:
+---
 
-- a responsive server-rendered web app served by `Go`
-- SQLite-backed auth, sessions, library metadata, public/private visibility, reading progress, and highlights
-- authenticated dashboard with separate private and public shelves
-- public discovery shelf for books intentionally published by users
-- Markdown reading UI with richer parsing, section TOC, progress resume, and persistent rendered highlight overlays
-- PDF and EPUB in-app reader routes wired for browser rendering
-- local file uploads with Markdown-to-EPUB sidecar conversion
-- CSRF protection on every unsafe request and production-ready secure cookie support
-- automated Go tests covering auth, upload, visibility, progress, highlight, and reader format flows
-- the initial product and architecture plan in `plan.md`
+## What you get
 
-## Run
+📚 **Your private library** — Upload books once, read them anywhere. PDF, EPUB, and Markdown all land in the same calm reading interface.
+
+🌗 **Reader you'll actually want to use** — Light, Paper, Sepia, and Dark themes. Adjust font size and line spacing. Reflowable text on any screen.
+
+🔖 **Highlights and quotes** — Mark passages in any book. Search across every highlight you've ever made. Open the original spot in one tap.
+
+📊 **Reading stats and progress** — See how much you've read, what you're partway through, and pick up exactly where you left off.
+
+🤝 **Share what you want** — Keep books private, share a book with a specific friend by email, or publish to the public shelf for anyone to read.
+
+✨ **One-click EPUB conversion** — Turn an awkward PDF or a plain Markdown file into a real reflowable EPUB on upload.
+
+🏷️ **Tags + collections** — Organize books with custom tags. Filter your shelf by tag, format, or progress.
+
+📥 **Want to read** — Save public books to your reading list. Build a wishlist of what's next.
+
+---
+
+## Quick start
+
+The easiest way to run your own Moco:
+
+```sh
+docker compose up -d
+```
+
+Then open <http://localhost:8080>, sign up, and start uploading.
+
+For local development without Docker:
 
 ```sh
 go run ./cmd/moco
 ```
 
-Then open `http://localhost:8080`.
+---
 
-Books and the SQLite database will be stored under:
+## Configuration
 
-```text
-var/
-```
-
-For production HTTPS deployments, enable secure cookies:
+Copy the template and fill it in:
 
 ```sh
-MOCO_SECURE_COOKIES=true go run ./cmd/moco
+cp .env.example .env
 ```
 
-## PDF → EPUB Conversion
+Most things work out of the box. The two settings worth knowing:
 
-When uploading a `.pdf` or `.md`, you can opt-in to convert it to EPUB on the
-server for a much better reading experience (reflow, font controls, themes).
+- **Storage** — by default Moco stores book files on the local disk under `var/`. To use Cloudflare R2 (object storage, S3-compatible) instead, fill in the `MOCO_R2_*` variables in `.env` and Moco will switch automatically.
+- **Dev / prod separation** — `MOCO_STORAGE_PREFIX=dev` (or `prod`, `staging`, etc.) prepends every key with that prefix, so a single bucket can host multiple environments cleanly.
 
-The Docker image **already includes the full conversion stack** — Calibre's
-`ebook-convert` (best fidelity: vector graphics, raster images, TOC, chapter
-detection), with `mupdf-tools` and `poppler-utils` as fallbacks. Calibre runs
-headless via `QT_QPA_PLATFORM=offscreen`, so no X server is needed.
-
-For local development outside Docker, install at least one of:
-
-| Tool                       | Quality                                | Install (macOS)                |
-|----------------------------|----------------------------------------|--------------------------------|
-| **Calibre** (`ebook-convert`) | Best — vector + raster + TOC + chapters | `brew install --cask calibre` |
-| **mupdf-tools** (`mutool`)    | Good — text + raster images             | `brew install mupdf`         |
-| **poppler-utils** (`pdftotext`) | OK — text only                        | `brew install poppler`       |
-
-The Go server walks the chain and uses the first tool found; users uploading a
-PDF just check "Convert to EPUB" and the rest is silent.
-
-## Docker Deploy
-
-Build and run with persisted local data:
+For PDF→EPUB conversion to give you images and proper chapters, the Docker image already includes Calibre, mupdf-tools, and poppler-utils — no extra setup. For local Go development outside Docker, install one of:
 
 ```sh
-docker compose up --build -d
+# macOS — pick at least one (Calibre is the best)
+brew install --cask calibre        # best fidelity
+brew install mupdf                 # text + images
+brew install poppler               # text only
 ```
 
-This mounts the host directory:
+---
 
-```text
-./var
+## Migrating to R2
+
+If you've been running Moco with local storage and want to move existing books to R2:
+
+```sh
+# 1. Fill in MOCO_R2_* in .env
+# 2. Run the migration once:
+go run ./cmd/moco -migrate-storage
 ```
 
-into the container at:
+Every book gets uploaded to your bucket, and the database is rewritten to point at object keys. The command is safe to re-run — already-migrated books are skipped.
 
-```text
-/app/var
+---
+
+## For developers
+
+<details>
+<summary>Tech stack &amp; architecture</summary>
+
+- **Server**: Go 1.25, plain `net/http`, server-rendered `html/template` with a sprinkle of progressive-enhancement JS.
+- **Database**: SQLite via `modernc.org/sqlite` (pure Go, no CGO needed for the build).
+- **Storage**: pluggable backend interface — local filesystem or Cloudflare R2 / any S3-compatible store.
+- **PDF/EPUB conversion**: chains Calibre → mupdf-tools → poppler-utils → a pure-Go fallback.
+- **Reader frontends**: pdf.js, epub.js, goldmark for Markdown.
+- **Auth**: argon2id passwords, server-side sessions, CSRF tokens via cookie + `X-CSRF-Token`.
+
+The plumbing is intentionally boring — single binary, single SQLite file, fits on the smallest VM.
+
+</details>
+
+<details>
+<summary>App routes</summary>
+
+- `/` — landing
+- `/discover` — public shelf
+- `/signup` · `/login` · `/settings`
+- `/app` — your library
+- `/quotes` — every highlight you've made
+- `/stats` — reading stats
+- `/books/:id/read` — reader
+
+</details>
+
+<details>
+<summary>API surface</summary>
+
+```
+GET    /api/v1/health
+POST   /api/v1/auth/signup | login | logout
+GET    /api/v1/auth/me
+PUT    /api/v1/auth/me              update display name
+PUT    /api/v1/auth/password
+DELETE /api/v1/auth/me
+
+GET    /api/v1/books                        your library
+GET    /api/v1/books/public                 public shelf
+POST   /api/v1/books/upload
+POST   /api/v1/books/inspect                metadata-only preview
+GET    /api/v1/books/{id}/content
+GET    /api/v1/books/{id}/cover
+GET    /api/v1/books/{id}/download
+GET    /api/v1/books/{id}/converted.epub
+DELETE /api/v1/books/{id}
+PUT    /api/v1/books/{id}/visibility
+GET    /api/v1/books/{id}/progress | PUT
+GET    /api/v1/books/{id}/highlights | POST
+GET    /api/v1/books/{id}/bookmarks | POST
+POST   /api/v1/books/{id}/tags
+DELETE /api/v1/books/{id}/tags/{tag}
+GET    /api/v1/books/{id}/shares | POST
+DELETE /api/v1/books/{id}/shares/{userID}
+
+GET    /api/v1/wishlist | POST/DELETE /api/v1/wishlist/{id}
+PUT    /api/v1/highlights/{id} | DELETE
 ```
 
-So these stay persisted across restarts:
-
-- uploaded books
-- generated EPUB sidecars
-- `moco.sqlite`
-
-## App Routes
-
-- `/`
-- `/discover`
-- `/signup`
-- `/login`
-- `/app`
-- `/books/:id`
-- `/books/:id/read`
-
-## API Endpoints
-
-- `GET /api/v1/health`
-- `POST /api/v1/auth/signup`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/books`
-- `GET /api/v1/books/public`
-- `POST /api/v1/books/upload`
-- `PUT /api/v1/books/:id/visibility`
-- `GET /api/v1/books/:id/content`
-- `GET /api/v1/books/:id/progress`
-- `PUT /api/v1/books/:id/progress`
-- `GET /api/v1/books/:id/highlights`
-- `POST /api/v1/books/:id/highlights`
-- `GET /api/v1/books/{id}/download`
-- `GET /api/v1/books/{id}/converted.epub`
-- `DELETE /api/v1/books/{id}`
-- `DELETE /api/v1/highlights/:id`
-
-## Remaining Gaps
-
-1. Vendor `pdf.js` and `epub.js` locally if you want zero runtime CDN dependency
-2. Add richer PDF text selection overlays instead of page-note-only highlighting
-3. Expand EPUB/PDF keyboard shortcuts and TOC navigation polish
+</details>

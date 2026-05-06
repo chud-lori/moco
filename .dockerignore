@@ -1,12 +1,40 @@
+# Git
 .git
 .gitignore
+.gitattributes
+
+# OS / editor noise
 .DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
 bin
 dist
 tmp
+*.test
+*.out
+coverage.out
+moco
+
+# Local data — never bake into the image
 var
 *.db
 *.sqlite
+*.sqlite*-shm
+*.sqlite*-wal
 *.sqlite3
 *.log
 
+# Local env — secrets are injected at runtime, not at build time
+.env
+.env.*
+
+# Docs that don't belong in the image
+README.md
+plan.md
+
+# Compose overrides
+docker-compose.override.yml

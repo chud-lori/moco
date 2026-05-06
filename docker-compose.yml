@@ -7,9 +7,14 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    # Loads everything from .env (gitignored). Use docker-compose.override.yml
+    # for per-machine tweaks without touching this file.
+    env_file:
+      - .env
     environment:
       MOCO_ADDR: ":8080"
       MOCO_DATA_DIR: "/app/var"
     volumes:
+      # Persists the SQLite database and (when MOCO_STORAGE=local) book files.
+      # When using R2 you can remove this volume — files live in the bucket.
       - ./var:/app/var
-

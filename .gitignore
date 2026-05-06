@@ -1,9 +1,38 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build output
 bin/
 dist/
 tmp/
+*.exe
+*.out
+moco
+
+# Test coverage
+coverage.out
+*.test
+
+# Local data — sqlite + uploaded books
+var/
 *.db
 *.sqlite
+*.sqlite*-shm
+*.sqlite*-wal
 *.sqlite3
 *.log
-var/
+
+# Local environment — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Docker
+docker-compose.override.yml
