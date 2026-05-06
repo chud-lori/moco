@@ -117,14 +117,16 @@ All config is via env vars. `.env` is loaded automatically at startup (gitignore
 | `MOCO_DB_PATH`                 | `${MOCO_DATA_DIR}/moco.sqlite` | Override DB path                                              |
 | `MOCO_SECURE_COOKIES`          | `false` | Set behind HTTPS so cookies get the `Secure` flag                                     |
 | `MOCO_PUBLIC_URL`              | (auto)  | Canonical https URL for OG / Twitter Card meta tags                                   |
-| `MOCO_STORAGE`                 | (auto)  | `local` forces filesystem even when R2 vars are set                                   |
-| `MOCO_R2_ACCOUNT_ID`           |         | Cloudflare account ID                                                                 |
+| `MOCO_STORAGE`                 | `local` | `local` (filesystem) or `r2` (Cloudflare R2 / S3-compatible)                          |
+| `MOCO_R2_ACCOUNT_ID`           |         | Cloudflare account ID — required when `MOCO_STORAGE=r2`                               |
 | `MOCO_R2_ACCESS_KEY_ID`        |         | R2 API token access key                                                               |
 | `MOCO_R2_SECRET_ACCESS_KEY`    |         | R2 API token secret                                                                   |
 | `MOCO_R2_BUCKET`               |         | Bucket name (e.g. `moco`)                                                             |
-| `MOCO_STORAGE_PREFIX`          | (empty) | Prepends to every storage key — use `dev` / `prod` to share one bucket safely         |
+| `MOCO_STORAGE_PREFIX`          | (empty) | Prepends to every storage key — use `prod` in production                              |
+| `MOCO_HOST_BIND`               | `127.0.0.1` | (compose only) host interface to bind                                             |
+| `MOCO_HOST_PORT`               | `6666`  | (compose only) host port mapped to container `:8080`                                  |
 
-When all four `MOCO_R2_*` are set, R2 is selected automatically. To force local: `MOCO_STORAGE=local`.
+Default is `local` so dev environments can have R2 credentials in `.env` for poking at the bucket without accidentally writing real uploads there. Set `MOCO_STORAGE=r2` explicitly in production.
 
 ---
 
@@ -298,29 +300,39 @@ Use **one R2 bucket** with key prefixes — simpler ops than two buckets, and yo
 
 | | Dev (your laptop) | Prod (VM) |
 |-|-|-|
-| `MOCO_STORAGE_PREFIX` | `dev` | `prod` |
+| `MOCO_STORAGE` | `local` (or unset) | `r2` |
+| `MOCO_STORAGE_PREFIX` | (unset) | `prod` |
 | `MOCO_PUBLIC_URL` | (unset) | `https://moco.example.com` |
 | `MOCO_SECURE_COOKIES` | `false` | `true` |
 | `MOCO_DATA_DIR` | `var` | `/app/var` |
+| `MOCO_HOST_PORT` | `6666` | (whatever's free on the host) |
 
-Both share the same `MOCO_R2_*` credentials. Keys land at `moco/dev/books/...` and `moco/prod/books/...` respectively.
+Dev keeps book files on local disk under `var/`. Prod writes to R2 with keys like `moco/prod/books/...`. R2 credentials can be in both `.env` files — they're only consumed when `MOCO_STORAGE=r2` is set, so dev safely ignores them.
 
 ### Deploy
 
-```sh
-# 1. Pull / clone the repo on the VM
-git pull
+First time only:
 
-# 2. Set up .env (production values, including MOCO_STORAGE_PREFIX=prod)
+```sh
+# 1. Clone the repo on the VM
+git clone <repo-url>
+cd moco
+
+# 2. Set up .env (production values, including MOCO_STORAGE_PREFIX=prod
+#    and MOCO_HOST_PORT to whatever's free on the host)
 cp .env.example .env && vim .env
 
-# 3. Build + start
-docker compose up -d --build
-
-# 4. Tail logs to confirm storage backend
-docker logs -f moco
-# Expect: "storage backend: r2 (bucket=moco) [prefix=prod]"
+# 3. Build + start + health check
+./deploy.sh
 ```
+
+Subsequent deploys (after pushing changes to main):
+
+```sh
+./deploy.sh
+```
+
+`deploy.sh` does `git pull` → `docker compose up -d --build` → polls `/api/v1/health` for 30s → prints recent logs. Bails with the last 50 log lines if the health check fails.
 
 ### First-time data migration (only if you ran with local storage previously)
 

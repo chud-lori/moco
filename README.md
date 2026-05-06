@@ -26,30 +26,12 @@
 
 ---
 
-## Quick start
+## Try it
 
-The easiest way to run your own Moco:
-
-```sh
-cp .env.example .env
-docker compose up -d
-```
-
-Then open <http://localhost:8080>, sign up, and start uploading.
-
----
-
-## Configuration
-
-All settings live in `.env` — copy `.env.example` and fill in what you need. The defaults work out of the box for local use.
-
-The two settings worth knowing about:
-
-- **Storage** — by default Moco stores book files on the local disk under `var/`. To use Cloudflare R2 (object storage) instead, fill in the `MOCO_R2_*` variables and Moco switches automatically.
-- **Dev / prod separation** — `MOCO_STORAGE_PREFIX=dev` (or `prod`, `staging`) prepends every key with that prefix, so a single bucket can host multiple environments cleanly.
+A live instance is running at **<https://moco.lori.my.id>**. Sign up with any email, upload a book, and you'll see the whole experience — themes, highlights, EPUB conversion, the lot.
 
 ---
 
 ## For developers
 
-Architecture, project layout, API surface, deployment plan, migration to R2, and contribution notes live in **[DEVELOPER.md](./DEVELOPER.md)**.
+Architecture, project layout, API surface, configuration reference, deployment plan, and the R2 migration command live in **[DEVELOPER.md](./DEVELOPER.md)**.

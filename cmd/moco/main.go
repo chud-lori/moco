@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -67,30 +68,34 @@ func main() {
 	}
 }
 
-// buildStorageBackend picks local-fs or R2 based on env vars. R2 is selected
-// when all four MOCO_R2_* variables are present. Otherwise fallback to local.
+// buildStorageBackend picks the storage backend based on MOCO_STORAGE.
+// Default is "local" — so dev environments are safe to run with R2 creds
+// sitting in .env without accidentally writing to the real bucket.
+// Set MOCO_STORAGE=r2 in production to opt into the bucket.
 func buildStorageBackend(dataDir string) (storage.Backend, string, error) {
-	r2Account := os.Getenv("MOCO_R2_ACCOUNT_ID")
-	r2Access := os.Getenv("MOCO_R2_ACCESS_KEY_ID")
-	r2Secret := os.Getenv("MOCO_R2_SECRET_ACCESS_KEY")
-	r2Bucket := os.Getenv("MOCO_R2_BUCKET")
-
-	if strings.EqualFold(os.Getenv("MOCO_STORAGE"), "local") {
-		return storage.NewLocal(dataDir), "local (forced)", nil
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MOCO_STORAGE")))
+	if mode == "" {
+		mode = "local"
 	}
-	if r2Account != "" && r2Access != "" && r2Secret != "" && r2Bucket != "" {
-		backend, err := storage.NewR2(context.Background(), storage.R2Config{
-			AccountID:       r2Account,
-			AccessKeyID:     r2Access,
-			SecretAccessKey: r2Secret,
-			Bucket:          r2Bucket,
-		})
+
+	switch mode {
+	case "local":
+		return storage.NewLocal(dataDir), "local", nil
+	case "r2":
+		cfg := storage.R2Config{
+			AccountID:       os.Getenv("MOCO_R2_ACCOUNT_ID"),
+			AccessKeyID:     os.Getenv("MOCO_R2_ACCESS_KEY_ID"),
+			SecretAccessKey: os.Getenv("MOCO_R2_SECRET_ACCESS_KEY"),
+			Bucket:          os.Getenv("MOCO_R2_BUCKET"),
+		}
+		backend, err := storage.NewR2(context.Background(), cfg)
 		if err != nil {
 			return nil, "", err
 		}
-		return backend, "r2 (bucket=" + r2Bucket + ")", nil
+		return backend, "r2 (bucket=" + cfg.Bucket + ")", nil
+	default:
+		return nil, "", fmt.Errorf("unknown MOCO_STORAGE value %q (expected \"local\" or \"r2\")", mode)
 	}
-	return storage.NewLocal(dataDir), "local", nil
 }
 
 func envBool(key string) bool {
