@@ -1308,6 +1308,7 @@ if (readerRoot) {
 
         // Pick text colors per theme so the iframe matches the page chrome.
         let bodyColor = "#46382c", linkColor = "#905f36", headingColor = "#30261d";
+        if (s.theme === "paper") { bodyColor = "#3c3225"; headingColor = "#2a241c"; linkColor = "#8a5a30"; }
         if (s.theme === "sepia") { bodyColor = "#5b4830"; headingColor = "#4a3a25"; linkColor = "#a0683a"; }
         if (s.theme === "dark")  { bodyColor = "#e7dcc7"; headingColor = "#f1e6d3"; linkColor = "#e9b27d"; }
 

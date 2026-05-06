@@ -68,6 +68,16 @@ body {
   --line: rgba(85, 66, 43, 0.14);
   --reader-bg-grad: linear-gradient(180deg, #f7f1e8 0%, #f1e7d8 100%);
 }
+/* Paper: warm off-white that mimics physical book paper. Lower contrast
+   than Light, less yellow tint than Sepia — comfortable for long reads. */
+.reader-body[data-reader-theme="paper"] {
+  --bg: #ebe2cd;
+  --text: #2a241c;
+  --text-soft: #3c3225;
+  --muted: #7a6a52;
+  --line: rgba(85, 66, 43, 0.16);
+  --reader-bg-grad: linear-gradient(180deg, #ece3ce 0%, #e2d7bc 100%);
+}
 .reader-body[data-reader-theme="sepia"] {
   --bg: #f3e8d4;
   --text: #4a3a25;
@@ -1164,6 +1174,7 @@ main { display: grid; gap: 28px; }
 }
 .reader-body[data-reader-theme="dark"] .markdown-reader pre { background: rgba(0, 0, 0, 0.45); }
 .reader-body[data-reader-theme="sepia"] .markdown-reader pre { background: rgba(85, 66, 43, 0.10); }
+.reader-body[data-reader-theme="paper"] .markdown-reader pre { background: rgba(60, 50, 37, 0.10); }
 
 /* Copy button on code blocks */
 .code-copy {
@@ -1384,6 +1395,7 @@ main { display: grid; gap: 28px; }
   min-height: 56px;
 }
 .theme-swatch[data-theme="light"]  { --swatch-bg: #f7f1e8; --swatch-fg: #30261d; }
+.theme-swatch[data-theme="paper"]  { --swatch-bg: #ebe2cd; --swatch-fg: #2a241c; }
 .theme-swatch[data-theme="sepia"]  { --swatch-bg: #f3e8d4; --swatch-fg: #4a3a25; }
 .theme-swatch[data-theme="dark"]   { --swatch-bg: #16130f; --swatch-fg: #f1e6d3; }
 .theme-swatch[aria-pressed="true"] {
