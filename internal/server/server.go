@@ -95,6 +95,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /signup", s.handleSignupPage)
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /app", s.handleDashboard)
+	s.mux.HandleFunc("GET /quotes", s.handleQuotes)
 	s.mux.HandleFunc("GET /books/{id}", s.handleBookDetail)
 	s.mux.HandleFunc("GET /books/{id}/read", s.handleReadBook)
 
@@ -194,6 +195,26 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/books/"+r.PathValue("id")+"/read", http.StatusFound)
+}
+
+func (s *Server) handleQuotes(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	quotes, err := s.store.ListAllHighlights(r.Context(), user.ID)
+	if err != nil {
+		http.Error(w, "failed to load quotes", http.StatusInternalServerError)
+		return
+	}
+	s.renderTemplate(w, "quotes.html", quotesPageData{
+		pageData: pageData{
+			Title:       "Quotes - Moco",
+			CurrentUser: &user,
+		},
+		Quotes: quotes,
+	})
 }
 
 func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {

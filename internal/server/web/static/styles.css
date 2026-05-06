@@ -149,6 +149,7 @@ main { display: grid; gap: 28px; }
   flex-wrap: wrap;
   gap: 12px;
   padding: 10px 12px 10px 22px;
+  margin-bottom: 32px;
   background: rgba(250, 244, 236, 0.72);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -314,6 +315,20 @@ main { display: grid; gap: 28px; }
   border-right-color: transparent;
   animation: spin 0.7s linear infinite;
   display: inline-block;
+}
+
+/* Inline SVG icons in buttons */
+.icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.button .icon { margin-right: -2px; }
+.button.icon-only .icon { margin-right: 0; }
+.reader-toggle, [data-fullscreen-toggle] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -701,6 +716,32 @@ main { display: grid; gap: 28px; }
 
 .stack-form input::placeholder { color: var(--muted); opacity: 0.6; }
 
+/* Show/hide-password toggle inside a password input */
+.input-with-action {
+  position: relative;
+  display: block;
+}
+.input-with-action input {
+  padding-right: 72px;
+}
+.input-action {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  background: transparent;
+  border: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 32px;
+}
+.input-action:hover { color: var(--text); background: rgba(85, 66, 43, 0.08); }
+.input-action[aria-pressed="true"] { color: var(--accent-dark); }
+
 .auth-card, .upload-card, .empty-state, .book-detail-card {
   padding: 26px;
   border: 1px solid var(--line);
@@ -797,6 +838,9 @@ main { display: grid; gap: 28px; }
   justify-content: flex-start;
   flex-wrap: wrap;
 }
+/* Push the destructive Remove button away from the primary/secondary
+   actions so it's harder to mistap. */
+.book-panel-actions .book-panel-danger { margin-left: auto; }
 
 .empty-state {
   text-align: left;
@@ -1294,33 +1338,88 @@ main { display: grid; gap: 28px; }
   background: var(--accent-soft);
 }
 
-/* Always-visible escape hatch back to the library, regardless of immersive */
+/* Always-visible escape hatch back to the library — works regardless of
+   immersive state and doesn't depend on :has(). */
 .reader-floating-close {
   position: fixed;
   top: 14px;
   right: 14px;
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
-  background: rgba(34, 28, 22, 0.78);
+  background: rgba(34, 28, 22, 0.82);
   color: #fff8f0;
-  font-size: 1.4rem;
-  font-weight: 600;
-  line-height: 1;
   text-decoration: none;
-  z-index: 30;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  z-index: 50;
+  border: 1px solid rgba(255, 248, 240, 0.18);
   box-shadow: var(--shadow);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  transition: opacity 0.18s ease, transform 0.08s ease;
+  opacity: 0.92;
+  transition: opacity 0.18s ease, transform 0.08s ease, background 0.18s ease;
+  cursor: pointer;
 }
-.reader-floating-close:hover { transform: scale(1.05); }
-.reader-floating-close:active { transform: scale(0.95); }
-body:has(.reader-app.is-immersive) .reader-floating-close { opacity: 0.55; }
-body:has(.reader-app.is-immersive) .reader-floating-close:hover { opacity: 1; }
+.reader-floating-close .icon { width: 22px; height: 22px; }
+
+/* Floating selection popover for "Highlight this passage" */
+.selection-popover {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(34, 28, 22, 0.94);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 0.88rem;
+  pointer-events: auto;
+}
+.selection-popover.is-open { display: inline-flex; }
+.selection-popover::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(34, 28, 22, 0.94);
+  border-bottom: 0;
+}
+.selection-popover button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff8f0;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 36px;
+  white-space: nowrap;
+}
+.selection-popover button:hover { background: rgba(255, 248, 240, 0.12); }
+.selection-popover .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #d6ad68;
+  border: 1px solid rgba(255, 248, 240, 0.4);
+}
+.reader-floating-close:hover { opacity: 1; transform: scale(1.05); background: rgba(34, 28, 22, 0.95); }
+.reader-floating-close:active { transform: scale(0.94); }
+.reader-floating-close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
 
 .jump-to-progress {
   position: fixed;
@@ -1500,6 +1599,7 @@ body:has(.reader-app.is-immersive) .reader-floating-close:hover { opacity: 1; }
     gap: 12px;
     padding: 12px 14px;
     border-radius: 22px;
+    margin-bottom: 22px;
     background: rgba(250, 244, 236, 0.94);
   }
   .topbar > .brand { flex: 1 1 auto; }
@@ -1525,23 +1625,18 @@ body:has(.reader-app.is-immersive) .reader-floating-close:hover { opacity: 1; }
     min-height: 38px;
   }
   /* Icon-only Contents and Highlights on phone width */
-  .reader-topbar .reader-toggle[data-reader-toggle="toc"],
-  .reader-topbar .reader-toggle[data-reader-toggle="notes"] {
+  .reader-topbar .reader-toggle {
     width: 38px;
+    height: 38px;
     padding: 0;
-    font-size: 0;
     flex-shrink: 0;
   }
-  .reader-topbar .reader-toggle[data-reader-toggle="toc"]::before {
-    content: "☰";
-    font-size: 1.05rem;
-  }
-  .reader-topbar .reader-toggle[data-reader-toggle="notes"]::before {
-    content: "✦";
-    font-size: 1rem;
-  }
-  .reader-topbar .reader-toggle[data-reader-toggle="settings"] {
-    padding: 8px 10px;
+  .reader-topbar .reader-toggle .reader-toggle-label { display: none; }
+  .reader-topbar .reader-toggle .icon { width: 18px; height: 18px; }
+  .reader-topbar [data-fullscreen-toggle] {
+    width: 38px;
+    height: 38px;
+    padding: 0;
     flex-shrink: 0;
   }
 
@@ -1622,6 +1717,78 @@ body:has(.reader-app.is-immersive) .reader-floating-close:hover { opacity: 1; }
 
   .modal { padding: 8px; }
   .modal-card { padding: 18px; border-radius: 22px; }
+}
+
+/* ---------- Quotes page ---------- */
+.quotes-hero {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+}
+.quotes-list {
+  display: grid;
+  gap: 16px;
+}
+.quote-card {
+  position: relative;
+  padding: 28px 32px 24px;
+  background: rgba(255, 251, 246, 0.86);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+.quote-text {
+  margin: 0 0 16px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+.quote-text::before {
+  content: "“";
+  margin-right: 4px;
+  color: var(--accent);
+  font-size: 1.4em;
+  vertical-align: -0.1em;
+}
+.quote-text::after {
+  content: "”";
+  margin-left: 2px;
+  color: var(--accent);
+  font-size: 1.4em;
+  vertical-align: -0.1em;
+}
+.quote-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.92rem;
+}
+.quote-cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  min-width: 0;
+}
+.quote-cite-title {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.quote-cite-author { font-style: italic; }
+
+@media (max-width: 640px) {
+  .quote-card { padding: 22px 22px 20px; }
 }
 
 /* Visually hidden helper */

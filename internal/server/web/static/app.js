@@ -256,6 +256,19 @@ if (authForm) {
 
   const submitBtn = authForm.querySelector('button[type="submit"]');
 
+  // Show/hide password toggle
+  authForm.querySelectorAll("[data-toggle-password]").forEach((btn) => {
+    const input = btn.parentElement?.querySelector('input[type="password"], input[type="text"]');
+    btn.addEventListener("click", () => {
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "Show" : "Hide";
+      btn.setAttribute("aria-pressed", String(!showing));
+      btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    });
+  });
+
   authForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formData = new FormData(authForm);
@@ -480,6 +493,8 @@ function attachHighlightDelete(button) {
     try {
       await requestJSON(`/api/v1/highlights/${id}`, { method: "DELETE", body: "{}" });
       if (window.__mocoReaderState?.removeHighlight) window.__mocoReaderState.removeHighlight(id);
+      // Also strip the EPUB visual overlay if this is an EPUB
+      if (window.__mocoEpubAnnotations?.remove) window.__mocoEpubAnnotations.remove(id);
       button.closest(".note-card")?.remove();
       if (window.__mocoReaderState?.ensureHighlightListState) window.__mocoReaderState.ensureHighlightListState();
       toast("Highlight deleted.", "success");
@@ -1309,25 +1324,198 @@ if (readerRoot) {
         if (event.key === "ArrowRight") rendition.next();
       });
 
-      if (highlightButton) {
-        rendition.on("selected", (cfiRange, contents) => {
-          const text = contents.window.getSelection()?.toString().trim() || "";
-          setHighlightEnabled(!!text);
-        });
+      // Taps inside the iframe never reach the parent document, so wire the
+      // chrome-toggle and swipe-to-page-turn through epub.js's content hooks.
+      rendition.hooks.content.register((contents) => {
+        const doc = contents.document;
+        const win = contents.window;
+        let sx = 0, sy = 0, st = 0, moved = false;
+        const SWIPE_MIN = 50;
+        const VERTICAL_TOLERANCE = 60;
+        const TIME_LIMIT = 600;
 
-        highlightButton.addEventListener("click", async () => {
-          const contents = rendition.getContents()[0];
-          const selection = contents?.window?.getSelection?.();
-          const text = selection ? selection.toString().trim() : "";
-          const locator = rendition.currentLocation()?.start?.cfi || "start";
-          if (!text) {
-            toast("Select some EPUB text first.", "error");
+        doc.addEventListener("touchstart", (e) => {
+          const t = e.touches[0];
+          sx = t.clientX; sy = t.clientY; st = Date.now(); moved = false;
+        }, { passive: true });
+
+        doc.addEventListener("touchmove", (e) => {
+          const t = e.touches[0];
+          if (Math.abs(t.clientX - sx) > 6 || Math.abs(t.clientY - sy) > 6) moved = true;
+        }, { passive: true });
+
+        doc.addEventListener("touchend", (e) => {
+          const elapsed = Date.now() - st;
+          const t = e.changedTouches[0];
+          const dx = t.clientX - sx;
+          const dy = Math.abs(t.clientY - sy);
+          // Swipe → page turn
+          if (elapsed < TIME_LIMIT && Math.abs(dx) >= SWIPE_MIN && dy <= VERTICAL_TOLERANCE) {
+            if (dx > 0) rendition.prev();
+            else rendition.next();
             return;
           }
-          await saveHighlight(locator, text);
-          selection.removeAllRanges();
-          setHighlightEnabled(false);
+          // Plain tap (no movement, no selection) → toggle chrome
+          if (!moved && elapsed < 350) {
+            const sel = win.getSelection();
+            if (sel && sel.toString().trim()) return;
+            const target = e.target.closest("a, button, input, textarea, select");
+            if (target) return;
+            toggleImmersive();
+          }
+        }, { passive: true });
+
+        // Desktop: clicks inside the iframe should also toggle chrome
+        doc.addEventListener("click", (e) => {
+          // Touch handler already toggled — avoid double-toggle on devices
+          // that fire both touchend and click.
+          if (st && Date.now() - st < 600) return;
+          const sel = win.getSelection();
+          if (sel && sel.toString().trim()) return;
+          if (e.target.closest("a, button, input, textarea, select")) return;
+          toggleImmersive();
         });
+      });
+
+      // ---- Kindle-style highlight overlay ----
+      const HIGHLIGHT_FILL = "#d6ad68";
+      const HIGHLIGHT_STYLES = { fill: HIGHLIGHT_FILL, "fill-opacity": "0.42", "mix-blend-mode": "multiply" };
+      // id → cfiRange so we can remove the visual overlay on delete
+      const annotationIndex = new Map();
+      window.__mocoEpubAnnotations = {
+        rendition,
+        index: annotationIndex,
+        remove(id) {
+          const cfi = annotationIndex.get(id);
+          if (!cfi) return;
+          try { rendition.annotations.remove(cfi, "highlight"); } catch (_) {}
+          annotationIndex.delete(id);
+        },
+      };
+
+      // Build the selection popover lazily and reuse it
+      let popover = document.querySelector(".selection-popover");
+      if (!popover) {
+        popover = document.createElement("div");
+        popover.className = "selection-popover";
+        popover.setAttribute("role", "menu");
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.popoverAction = "highlight";
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        const label = document.createElement("span");
+        label.textContent = "Highlight";
+        btn.appendChild(swatch);
+        btn.appendChild(label);
+        popover.appendChild(btn);
+
+        document.body.appendChild(popover);
+      }
+      const hidePopover = () => popover.classList.remove("is-open");
+
+      let pendingSelection = null;
+
+      rendition.on("selected", (cfiRange, contents) => {
+        const sel = contents.window.getSelection();
+        const text = sel?.toString().trim() || "";
+        if (!text || sel.rangeCount === 0) {
+          hidePopover();
+          pendingSelection = null;
+          return;
+        }
+        pendingSelection = { cfiRange, text, contents };
+
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        const frame = contents.document.defaultView.frameElement;
+        const frameRect = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
+
+        const x = frameRect.left + (rect.left + rect.right) / 2;
+        let y = frameRect.top + rect.top - 50;
+        if (y < 12) y = frameRect.top + rect.bottom + 14; // flip below if too close to top
+
+        // Show offscreen first so we can read offsetWidth, then position
+        popover.style.visibility = "hidden";
+        popover.classList.add("is-open");
+        const popoverWidth = popover.offsetWidth;
+        const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 8, x - popoverWidth / 2));
+        popover.style.left = `${left}px`;
+        popover.style.top = `${y}px`;
+        popover.style.visibility = "";
+      });
+
+      // Hide on scroll (in iframe), navigation, resize, key, or click outside
+      const onOutside = (event) => {
+        if (event && popover.contains(event.target)) return;
+        hidePopover();
+      };
+      document.addEventListener("pointerdown", onOutside);
+      window.addEventListener("resize", hidePopover);
+      window.addEventListener("scroll", hidePopover, true);
+      rendition.on("relocated", hidePopover);
+
+      popover.querySelector('[data-popover-action="highlight"]').addEventListener("click", async () => {
+        if (!pendingSelection) return;
+        const { cfiRange, text, contents } = pendingSelection;
+        try {
+          const payload = await requestJSON(`/api/v1/books/${bookID}/highlights`, {
+            method: "POST",
+            body: JSON.stringify({ locator: cfiRange, selectedText: text, color: "amber" }),
+          });
+          // Visual overlay
+          try {
+            rendition.annotations.highlight(
+              cfiRange,
+              { id: payload.highlight.id },
+              null,
+              "moco-highlight",
+              HIGHLIGHT_STYLES,
+            );
+            annotationIndex.set(payload.highlight.id, cfiRange);
+          } catch (annErr) {
+            console.warn("Could not paint highlight overlay:", annErr);
+          }
+          // Sidebar list update
+          const onlyCard = highlightsList?.querySelector(".note-card");
+          if (onlyCard && onlyCard.textContent.includes("No highlights")) highlightsList.innerHTML = "";
+          highlightsList?.prepend(buildHighlightCard(payload.highlight));
+          toast("Highlighted.", "success");
+          // Clear iframe selection + popover
+          contents.window.getSelection()?.removeAllRanges();
+          hidePopover();
+          pendingSelection = null;
+        } catch (err) {
+          toast(err.message || "Could not save highlight.", "error");
+        }
+      });
+
+      // Restore previously saved highlights as visual overlays once the
+      // book is open. CFIs that don't resolve (deleted chapters, etc.) are
+      // skipped silently.
+      try {
+        const data = await requestJSON(`/api/v1/books/${bookID}/highlights`);
+        (data.items || []).forEach((item) => {
+          if (!item.locator || !item.locator.startsWith("epubcfi")) return;
+          try {
+            rendition.annotations.highlight(
+              item.locator,
+              { id: item.id },
+              null,
+              "moco-highlight",
+              HIGHLIGHT_STYLES,
+            );
+            annotationIndex.set(item.id, item.locator);
+          } catch (_) { /* invalid CFI — skip */ }
+        });
+      } catch (_) {}
+
+      // Disable the manual "Save highlight" button — the popover handles it now.
+      if (highlightButton) {
+        highlightButton.style.display = "none";
+        const noticeEl = document.querySelector("[data-highlight-message]");
+        if (noticeEl) noticeEl.textContent = "Select text in the book to highlight it.";
       }
     };
 

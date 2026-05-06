@@ -33,6 +33,11 @@ type authPageData struct {
 	Mode string
 }
 
+type quotesPageData struct {
+	pageData
+	Quotes []store.HighlightWithBook
+}
+
 type readerPageData struct {
 	pageData
 	Book           store.Book

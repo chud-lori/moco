@@ -18,7 +18,10 @@
     <div class="page-shell">
       <header class="topbar">
         <a class="brand" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
-        <nav class="topnav" aria-label="Primary"><a href="/discover">Public shelf</a></nav>
+        <nav class="topnav" aria-label="Primary">
+          <a href="/quotes">Quotes</a>
+          <a href="/discover">Public shelf</a>
+        </nav>
         <div class="topbar-actions">
           <span class="session-chip" title="{{ .CurrentUser.Email }}">{{ displayName .CurrentUser.Email }}</span>
           <button class="button subtle" data-logout-button type="button">Log out</button>
@@ -37,7 +40,7 @@
             <label><span>Visibility</span>
               <select name="visibility">
                 <option value="private">Private — only you</option>
-                <option value="public">Public — anyone with the link</option>
+                <option value="public">Public — listed on the public shelf</option>
               </select>
             </label>
             <label><span>Book file</span><input type="file" name="file" accept=".pdf,.epub,.md,.markdown" required /></label>
@@ -91,7 +94,7 @@
                   </div>
                   <h2>{{ .Title }}</h2>
                   <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ displayName .OwnerEmail }}</p>
-                  <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read in app</a></div>
+                  <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
                 </article>
               {{ end }}
             </div>
@@ -115,11 +118,11 @@
           <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
         </div>
         <h2>{{ .Title }}</h2>
-        <p>{{ if .Author }}{{ .Author }}{{ else }}Unknown author{{ end }}</p>
+        {{ if .Author }}<p>{{ .Author }}</p>{{ end }}
         <div class="book-panel-actions">
-          <a class="button primary" href="/books/{{ .ID }}/read">Read in app</a>
-          <button class="button subtle" data-toggle-visibility="{{ .ID }}" data-next-visibility="{{ if eq .Visibility "public" }}private{{ else }}public{{ end }}" type="button">{{ if eq .Visibility "public" }}Make private{{ else }}Publish public{{ end }}</button>
-          <button class="button danger" data-delete-book="{{ .ID }}" type="button">Remove</button>
+          <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+          <button class="button subtle" data-toggle-visibility="{{ .ID }}" data-next-visibility="{{ if eq .Visibility "public" }}private{{ else }}public{{ end }}" type="button">{{ if eq .Visibility "public" }}Make private{{ else }}Publish{{ end }}</button>
+          <button class="button danger book-panel-danger" data-delete-book="{{ .ID }}" type="button" aria-label="Remove book">Remove</button>
         </div>
       </article>
     {{ end }}

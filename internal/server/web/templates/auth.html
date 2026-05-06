@@ -28,8 +28,14 @@
           <h1 class="auth-title">{{ if eq .Mode "Sign up" }}Build your private library{{ else }}Welcome back to your shelf{{ end }}</h1>
           <p class="auth-copy">{{ if eq .Mode "Sign up" }}Create an account to upload, read, and resume your books.{{ else }}Sign in to continue reading and review your highlights.{{ end }}</p>
           <form class="stack-form" data-auth-form data-mode="{{ if eq .Mode "Sign up" }}signup{{ else }}login{{ end }}" novalidate>
-            <label><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" required /></label>
-            <label><span>Password</span><input type="password" name="password" minlength="10" autocomplete="{{ if eq .Mode "Sign up" }}new-password{{ else }}current-password{{ end }}" required /></label>
+            <label><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" autofocus required /></label>
+            <label>
+              <span>Password</span>
+              <span class="input-with-action">
+                <input type="password" name="password" minlength="10" autocomplete="{{ if eq .Mode "Sign up" }}new-password{{ else }}current-password{{ end }}" required />
+                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+              </span>
+            </label>
             <p class="form-message" id="auth-form-message" data-form-message aria-live="polite"></p>
             <button class="button primary" type="submit">{{ .Mode }}</button>
           </form>

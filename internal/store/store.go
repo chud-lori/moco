@@ -515,6 +515,46 @@ func (s *Store) ListHighlights(ctx context.Context, userID, bookID string) ([]Hi
 	return items, rows.Err()
 }
 
+// HighlightWithBook is a highlight enriched with the book it was made on,
+// for the cross-book Quotes page.
+type HighlightWithBook struct {
+	Highlight
+	BookTitle  string `json:"bookTitle"`
+	BookAuthor string `json:"bookAuthor"`
+	BookFormat string `json:"bookFormat"`
+}
+
+func (s *Store) ListAllHighlights(ctx context.Context, userID string) ([]HighlightWithBook, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT h.id, h.user_id, h.book_id, h.locator, h.selected_text, h.color, h.note, h.created_at,
+		       b.title, b.author, b.format
+		FROM highlights h
+		JOIN books b ON b.id = h.book_id
+		WHERE h.user_id = ?
+		ORDER BY h.created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []HighlightWithBook
+	for rows.Next() {
+		var item HighlightWithBook
+		var createdAt string
+		if err := rows.Scan(
+			&item.ID, &item.UserID, &item.BookID, &item.Locator, &item.SelectedText, &item.Color, &item.Note, &createdAt,
+			&item.BookTitle, &item.BookAuthor, &item.BookFormat,
+		); err != nil {
+			return nil, err
+		}
+		item.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) DeleteHighlight(ctx context.Context, userID, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM highlights WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
