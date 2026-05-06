@@ -798,14 +798,14 @@ if (readerRoot) {
     panelObserver.observe(panel, { attributes: true, attributeFilter: ["class"] });
   });
 
-  // Kindle-style: enter immersive immediately on load.
-  // First-time users get a one-shot toast hint.
-  readerApp.classList.add("is-immersive");
+  // Show chrome briefly on load so users see the controls, then auto-hide.
+  // First-time users also get a one-shot toast hint.
+  scheduleHide(3000);
   if (!localStorage.getItem("moco-reader-hint-seen")) {
     setTimeout(() => {
       toast("Tap anywhere to show controls.", "info");
       localStorage.setItem("moco-reader-hint-seen", "1");
-    }, 500);
+    }, 800);
   }
 
   // ----- Swipe-to-page-turn (EPUB / PDF only) -----
@@ -836,29 +836,69 @@ if (readerRoot) {
     }, { passive: true });
   }
 
-  // ----- Reading settings (font size + theme) -----
+  // ----- Reading settings (font size + theme + family + line height) -----
   const SETTINGS_KEY = "moco-reader-settings";
-  const defaultSettings = { fontScale: 1, theme: "system" };
+  const FONT_FAMILIES = {
+    serif:    '"Cormorant Garamond", Georgia, serif',
+    sans:     '"Manrope", system-ui, -apple-system, "Segoe UI", sans-serif',
+    original: "",
+  };
+  const LINE_HEIGHTS = { compact: 0.88, normal: 1, spacious: 1.18 };
+  const defaultSettings = {
+    fontScale: 1,
+    theme: "system",
+    fontFamily: "serif",
+    lineHeight: "normal",
+  };
   const settings = { ...defaultSettings, ...safeJSON(localStorage.getItem(SETTINGS_KEY)) };
 
   function safeJSON(raw) { try { return raw ? JSON.parse(raw) : {}; } catch (_) { return {}; } }
 
+  // Re-applied to the EPUB iframe theme below; defined so applySettings can call it.
+  let applyEpubTheme = () => {};
+
   function applySettings() {
     document.documentElement.style.setProperty("--reader-font-scale", String(settings.fontScale));
+
+    const lineScale = LINE_HEIGHTS[settings.lineHeight] ?? 1;
+    document.documentElement.style.setProperty("--reader-line-scale", String(lineScale));
+
+    const family = FONT_FAMILIES[settings.fontFamily];
+    document.documentElement.style.setProperty(
+      "--reader-font",
+      family && family.length > 0 ? family : "inherit"
+    );
+
     if (settings.theme === "system") {
       document.body.removeAttribute("data-reader-theme");
     } else {
       document.body.setAttribute("data-reader-theme", settings.theme);
     }
+
     const display = document.querySelector("[data-font-scale-display]");
     if (display) display.textContent = `${Math.round(settings.fontScale * 100)}%`;
+
     document.querySelectorAll(".theme-swatch").forEach((btn) => {
       const on = btn.dataset.theme === settings.theme;
       btn.setAttribute("aria-pressed", String(on));
       btn.setAttribute("aria-checked", String(on));
     });
+    document.querySelectorAll(".font-swatch").forEach((btn) => {
+      const on = btn.dataset.fontFamily === settings.fontFamily;
+      btn.setAttribute("aria-pressed", String(on));
+      btn.setAttribute("aria-checked", String(on));
+    });
+    document.querySelectorAll(".line-swatch").forEach((btn) => {
+      const on = btn.dataset.lineHeight === settings.lineHeight;
+      btn.setAttribute("aria-pressed", String(on));
+      btn.setAttribute("aria-checked", String(on));
+    });
+
     const range = document.querySelector("[data-font-scale]");
     if (range) range.value = String(settings.fontScale);
+
+    // Push changes into the EPUB iframe (no-op for non-EPUB readers)
+    applyEpubTheme();
   }
   function persistSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -877,6 +917,23 @@ if (readerRoot) {
       persistSettings();
     });
   });
+  document.querySelectorAll(".font-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.fontFamily = btn.dataset.fontFamily;
+      applySettings();
+      persistSettings();
+    });
+  });
+  document.querySelectorAll(".line-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.lineHeight = btn.dataset.lineHeight;
+      applySettings();
+      persistSettings();
+    });
+  });
+
+  // Expose the settings + helpers so the EPUB block can build its theme.
+  window.__mocoReaderSettings = { settings, FONT_FAMILIES, LINE_HEIGHTS, registerEpubThemeHook: (fn) => { applyEpubTheme = fn; } };
 
   // ----- Fullscreen API -----
   const fullscreenButton = document.querySelector("[data-fullscreen-toggle]");
@@ -1119,7 +1176,9 @@ if (readerRoot) {
         rendition = book.renderTo("reader-content", {
           width: "100%",
           height: "100%",
-          flow: "scrolled-doc",
+          flow: "paginated",          // Kindle-style page turns
+          spread: "auto",              // two-up on wide screens
+          minSpreadWidth: 900,         // single-page below ~iPad portrait
           allowScriptedContent: false,
         });
       } catch (error) {
@@ -1128,6 +1187,69 @@ if (readerRoot) {
         console.error("EPUB renderTo error:", error);
         return;
       }
+
+      // Build a theme from the current reader settings and push it into the
+      // iframe. Code elements always force monospace so an EPUB that uses bare
+      // <p> for shell commands still reads as code rather than serif prose.
+      const settingsBag = window.__mocoReaderSettings;
+      const buildTheme = () => {
+        const s = settingsBag?.settings || {};
+        const family = settingsBag?.FONT_FAMILIES?.[s.fontFamily];
+        const lineScale = settingsBag?.LINE_HEIGHTS?.[s.lineHeight] ?? 1;
+        const useFamily = family && family.length > 0; // "original" → leave EPUB CSS alone
+
+        // Pick text colors per theme so the iframe matches the page chrome.
+        let bodyColor = "#46382c", linkColor = "#905f36", headingColor = "#30261d";
+        if (s.theme === "sepia") { bodyColor = "#5b4830"; headingColor = "#4a3a25"; linkColor = "#a0683a"; }
+        if (s.theme === "dark")  { bodyColor = "#e7dcc7"; headingColor = "#f1e6d3"; linkColor = "#e9b27d"; }
+
+        const theme = {
+          "html, body": {
+            background: "transparent !important",
+            margin: "0",
+            padding: "0",
+            color: bodyColor,
+            "-webkit-font-smoothing": "antialiased",
+          },
+          "body": { padding: "8px 18px" },
+          "p, li, td, blockquote": {
+            "line-height": String(1.55 * lineScale),
+          },
+          "h1, h2, h3, h4, h5, h6": { color: headingColor },
+          "img": { "max-width": "100%", "height": "auto" },
+          "a": { color: linkColor, "text-decoration": "underline" },
+          // Force mono on actual code elements regardless of font family choice
+          "pre, code, kbd, samp, tt, var": {
+            "font-family": '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important',
+            "font-size": "0.92em",
+          },
+          "pre": {
+            background: s.theme === "dark" ? "rgba(0,0,0,0.35)" : "rgba(85, 66, 43, 0.06)",
+            padding: "12px 14px",
+            "border-radius": "8px",
+            "overflow-x": "auto",
+            "white-space": "pre-wrap",
+            "word-break": "break-word",
+          },
+          "::-webkit-scrollbar": { display: "none" },
+        };
+        if (useFamily) {
+          theme["html, body"]["font-family"] = family;
+          theme["h1, h2, h3, h4, h5, h6"]["font-family"] = family;
+        }
+        return theme;
+      };
+
+      const refreshTheme = () => {
+        if (!rendition) return;
+        try {
+          rendition.themes.register("moco", buildTheme());
+          rendition.themes.select("moco");
+        } catch (_) { /* themes are optional */ }
+      };
+      refreshTheme();
+      // Wire so future setting changes re-paint the iframe.
+      settingsBag?.registerEpubThemeHook(refreshTheme);
 
       // Belt-and-braces: even if the renderer never fires "rendered",
       // make sure the placeholder is gone and we don't show a frozen UI.
@@ -1235,13 +1357,23 @@ if (readerRoot) {
       let pageNum = 1;
       let rendering = false;
 
+      const stage = document.querySelector(".pdf-stage");
+
       const renderPage = async (num) => {
         if (rendering) return;
         rendering = true;
         try {
           const page = await pdf.getPage(num);
           const dpr = window.devicePixelRatio || 1;
-          const viewport = page.getViewport({ scale: 1.25 * dpr });
+
+          // Fit the page to the available stage area — no horizontal/vertical
+          // scrolling, Kindle-style "next page" via the Next button.
+          const base = page.getViewport({ scale: 1 });
+          const stageW = Math.max(stage.clientWidth - 24, 200);
+          const stageH = Math.max(stage.clientHeight - 24, 200);
+          const fitScale = Math.min(stageW / base.width, stageH / base.height);
+
+          const viewport = page.getViewport({ scale: fitScale * dpr });
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = `${viewport.width / dpr}px`;
@@ -1253,6 +1385,14 @@ if (readerRoot) {
           rendering = false;
         }
       };
+
+      // Re-render the current page when the viewport changes (rotation,
+      // window resize, immersive toggle changing the stage height).
+      let resizeTimer = null;
+      window.addEventListener("resize", () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => renderPage(pageNum), 150);
+      });
 
       try {
         const data = await requestJSON(`/api/v1/books/${bookID}/progress`);

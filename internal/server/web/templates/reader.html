@@ -23,6 +23,7 @@
   </head>
   <body class="reader-body">
     <a class="skip-link" href="#reader-content">Skip to reading area</a>
+    <a class="reader-floating-close" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Close book and return to library" title="Close">×</a>
     <div class="reader-app" data-reader data-book-id="{{ .Book.ID }}" data-reader-kind="{{ .ReaderKind }}" data-file-url="{{ .FileURL }}">
       <header class="reader-topbar">
         <div class="reader-topbar-left">
@@ -104,6 +105,24 @@
               <button class="theme-swatch" data-theme="light" type="button" role="radio" aria-checked="false" aria-pressed="false">Light</button>
               <button class="theme-swatch" data-theme="sepia" type="button" role="radio" aria-checked="false" aria-pressed="false">Sepia</button>
               <button class="theme-swatch" data-theme="dark"  type="button" role="radio" aria-checked="false" aria-pressed="false">Dark</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <label>Reading style</label>
+            <div class="theme-picker" role="radiogroup" aria-label="Font family">
+              <button class="font-swatch" data-font-family="serif"    type="button" role="radio" aria-checked="false" aria-pressed="false">Serif</button>
+              <button class="font-swatch" data-font-family="sans"     type="button" role="radio" aria-checked="false" aria-pressed="false">Sans</button>
+              <button class="font-swatch" data-font-family="original" type="button" role="radio" aria-checked="false" aria-pressed="false">Original</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <label>Line spacing</label>
+            <div class="theme-picker" role="radiogroup" aria-label="Line spacing">
+              <button class="line-swatch" data-line-height="compact"  type="button" role="radio" aria-checked="false" aria-pressed="false">Compact</button>
+              <button class="line-swatch" data-line-height="normal"   type="button" role="radio" aria-checked="false" aria-pressed="false">Normal</button>
+              <button class="line-swatch" data-line-height="spacious" type="button" role="radio" aria-checked="false" aria-pressed="false">Spacious</button>
             </div>
           </div>
 
