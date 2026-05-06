@@ -145,15 +145,15 @@
     {{ end }}
   </section>
 
-  <section class="library-section">
-    <div class="section-row">
-      <p class="section-label">Public books from others</p>
-      <span class="session-chip">{{ len .PublicBooks }}</span>
-    </div>
-    {{ if .PublicBooks }}
+  {{ if .WishlistBooks }}
+    <section class="library-section">
+      <div class="section-row">
+        <p class="section-label">Want to read</p>
+        <span class="session-chip">{{ len .WishlistBooks }}</span>
+      </div>
       <div class="dashboard-grid">
-        {{ range .PublicBooks }}
-          <article class="book-panel">
+        {{ range .WishlistBooks }}
+          <article class="book-panel" data-book-id="{{ .ID }}">
             <div class="book-panel-top">
               <span class="book-format">{{ .Format }}</span>
               <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
@@ -161,7 +161,38 @@
             <h2>{{ .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ displayName .OwnerEmail }}</p>
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
-            <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
+            <div class="book-panel-actions">
+              <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+              <button class="button subtle" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="1" aria-pressed="true">✓ On list</button>
+            </div>
+          </article>
+        {{ end }}
+      </div>
+    </section>
+  {{ end }}
+
+  <section class="library-section">
+    <div class="section-row">
+      <p class="section-label">Public books from others</p>
+      <span class="session-chip">{{ len .PublicBooks }}</span>
+    </div>
+    {{ if .PublicBooks }}
+      <div class="dashboard-grid">
+        {{ $wishlisted := .WishlistedIDs }}
+        {{ range .PublicBooks }}
+          {{ $isOnList := isWishlisted $wishlisted .ID }}
+          <article class="book-panel" data-book-id="{{ .ID }}">
+            <div class="book-panel-top">
+              <span class="book-format">{{ .Format }}</span>
+              <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
+            </div>
+            <h2>{{ .Title }}</h2>
+            <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ displayName .OwnerEmail }}</p>
+            {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
+            <div class="book-panel-actions">
+              <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+              <button class="button subtle" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="{{ if $isOnList }}1{{ else }}0{{ end }}" aria-pressed="{{ if $isOnList }}true{{ else }}false{{ end }}">{{ if $isOnList }}✓ On list{{ else }}+ Want to read{{ end }}</button>
+            </div>
           </article>
         {{ end }}
       </div>

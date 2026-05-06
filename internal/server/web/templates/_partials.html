@@ -1,3 +1,26 @@
+{{/*
+  social_meta — Open Graph + Twitter Card + JSON-LD for social/search previews.
+  Pass an SEO struct (see internal/server/view.go) on the page data.
+*/}}
+{{ define "social_meta" }}
+  {{ $title := .SEO.Title }}{{ if eq $title "" }}{{ $title = .Title }}{{ end }}
+  {{ $desc := .SEO.Description }}{{ if eq $desc "" }}{{ $desc = "A calm personal reader for PDF, EPUB, and Markdown — uploads, reading progress, highlights, and a clean library on a single VM." }}{{ end }}
+  {{ $url := .SEO.URL }}
+  {{ $image := .SEO.Image }}{{ if eq $image "" }}{{ $image = "/static/og-default.svg" }}{{ end }}
+  <meta name="description" content="{{ $desc }}" />
+  <meta property="og:title" content="{{ $title }}" />
+  <meta property="og:description" content="{{ $desc }}" />
+  <meta property="og:type" content="{{ if .SEO.OGType }}{{ .SEO.OGType }}{{ else }}website{{ end }}" />
+  {{ if $url }}<meta property="og:url" content="{{ $url }}" />{{ end }}
+  <meta property="og:image" content="{{ $image }}" />
+  <meta property="og:site_name" content="Moco" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ $title }}" />
+  <meta name="twitter:description" content="{{ $desc }}" />
+  <meta name="twitter:image" content="{{ $image }}" />
+  {{ if .SEO.JSONLD }}<script type="application/ld+json">{{ .SEO.JSONLD }}</script>{{ end }}
+{{ end }}
+
 {{ define "primary_topbar" }}
 <header class="topbar">
   <a class="brand{{ if eq .Nav "library" }} is-active{{ end }}" href="/app"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>

@@ -953,6 +953,109 @@ func (s *Store) SearchHighlights(ctx context.Context, userID, query, bookID stri
 	return items, rows.Err()
 }
 
+// ----- Wishlist (want-to-read) -----
+
+// AddToWishlist saves a book to the user's wishlist. Idempotent.
+func (s *Store) AddToWishlist(ctx context.Context, userID, bookID string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO wishlist (user_id, book_id, created_at) VALUES (?, ?, ?)`,
+		userID, bookID, now)
+	return err
+}
+
+// RemoveFromWishlist removes a book from the user's wishlist.
+func (s *Store) RemoveFromWishlist(ctx context.Context, userID, bookID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM wishlist WHERE user_id = ? AND book_id = ?`, userID, bookID)
+	return err
+}
+
+// IsInWishlist reports whether the user has added a book to their wishlist.
+func (s *Store) IsInWishlist(ctx context.Context, userID, bookID string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM wishlist WHERE user_id = ? AND book_id = ? LIMIT 1`, userID, bookID,
+	).Scan(&n)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ListWishlist returns the user's wishlist as a slice of Book records (joins
+// across the books + users tables). Skips books that have since been deleted.
+func (s *Store) ListWishlist(ctx context.Context, userID string) ([]Book, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, b.storage_path,
+		       b.file_size, b.created_at, b.updated_at, b.last_opened_at, b.original_filename,
+		       b.mime_type, b.derived_epub_path, b.reading_minutes
+		FROM wishlist w
+		JOIN books b ON b.id = w.book_id
+		JOIN users u ON u.id = b.user_id
+		WHERE w.user_id = ?
+		ORDER BY w.created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var books []Book
+	for rows.Next() {
+		var book Book
+		var createdAt, updatedAt string
+		var lastOpened sql.NullString
+		if err := rows.Scan(
+			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility,
+			&book.OwnerEmail, &book.StoragePath, &book.FileSize, &createdAt, &updatedAt, &lastOpened,
+			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes,
+		); err != nil {
+			return nil, err
+		}
+		book.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		book.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+		if lastOpened.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, lastOpened.String)
+			book.LastOpenedAt = &t
+		}
+		books = append(books, book)
+	}
+	return books, rows.Err()
+}
+
+// WishlistedBookIDs returns the set of book IDs that the user has wishlisted,
+// scoped to a specific list of candidate IDs (used to mark cards in lists).
+func (s *Store) WishlistedBookIDs(ctx context.Context, userID string, candidates []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(candidates) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(candidates))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(candidates)+1)
+	args = append(args, userID)
+	for _, id := range candidates {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT book_id FROM wishlist WHERE user_id = ? AND book_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 func nullableTime(t *time.Time) any {
 	if t == nil {
 		return nil

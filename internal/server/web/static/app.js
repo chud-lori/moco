@@ -1508,7 +1508,6 @@ if (readerRoot) {
         console.error("EPUB display error:", err);
       }
 
-      const chapterJump = document.querySelector("[data-epub-chapter-jump]");
       book.loaded.navigation.then((navigation) => {
         tocList.innerHTML = "";
         if (!navigation.toc || navigation.toc.length === 0) {
@@ -1517,41 +1516,22 @@ if (readerRoot) {
           tocList.appendChild(li);
           return;
         }
-        // Walk top-level + nested children so users can jump to subsections too.
-        const flatten = (items, depth = 0, out = []) => {
+        // Render top-level + nested entries so users can jump to subsections
+        // straight from the Contents sidebar.
+        const renderItems = (items, depth = 0) => {
           items.forEach((item) => {
-            out.push({ label: "  ".repeat(depth) + item.label.trim(), href: item.href });
-            if (item.subitems?.length) flatten(item.subitems, depth + 1, out);
+            const li = document.createElement("li");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = item.label.trim();
+            if (depth > 0) button.style.paddingLeft = `${14 + depth * 14}px`;
+            button.addEventListener("click", () => rendition.display(item.href));
+            li.appendChild(button);
+            tocList.appendChild(li);
+            if (item.subitems?.length) renderItems(item.subitems, depth + 1);
           });
-          return out;
         };
-        const flat = flatten(navigation.toc);
-
-        navigation.toc.forEach((item) => {
-          const li = document.createElement("li");
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = item.label;
-          button.addEventListener("click", () => rendition.display(item.href));
-          li.appendChild(button);
-          tocList.appendChild(li);
-        });
-
-        if (chapterJump) {
-          flat.forEach(({ label, href }) => {
-            const opt = document.createElement("option");
-            opt.value = href;
-            opt.textContent = label;
-            chapterJump.appendChild(opt);
-          });
-          chapterJump.hidden = false;
-          chapterJump.addEventListener("change", () => {
-            if (chapterJump.value) {
-              rendition.display(chapterJump.value);
-              chapterJump.value = "";
-            }
-          });
-        }
+        renderItems(navigation.toc);
       }).catch(() => {
         tocList.innerHTML = "";
         const li = document.createElement("li");
@@ -2107,20 +2087,50 @@ function attachAddTag(btn) {
   });
 }
 
+function attachWishlistToggle(btn) {
+  if (btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", async () => {
+    const bookID = btn.getAttribute("data-wishlist-toggle");
+    if (!bookID) return;
+    const onList = btn.getAttribute("data-wishlisted") === "1";
+    setButtonLoading(btn, true);
+    try {
+      await requestJSON(`/api/v1/wishlist/${bookID}`, {
+        method: onList ? "DELETE" : "POST",
+        body: "{}",
+      });
+      const nowOnList = !onList;
+      btn.setAttribute("data-wishlisted", nowOnList ? "1" : "0");
+      btn.setAttribute("aria-pressed", String(nowOnList));
+      btn.textContent = nowOnList ? "✓ On list" : "+ Want to read";
+      toast(nowOnList ? "Added to your reading list." : "Removed from list.", "success");
+    } catch (err) {
+      toast(err.message || "Could not update list.", "error");
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+}
+
 function wireBookCardActions(scope) {
   scope.querySelectorAll("[data-delete-book]").forEach(attachDeleteBook);
   scope.querySelectorAll("[data-toggle-visibility]").forEach(attachToggleVisibility);
   scope.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
   scope.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
+  scope.querySelectorAll("[data-wishlist-toggle]").forEach(attachWishlistToggle);
 }
 
 document.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
 document.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
+document.querySelectorAll("[data-wishlist-toggle]").forEach(attachWishlistToggle);
 
 // ---------- Auto-submitting filter forms (AJAX swap) ----------
 // Forms with data-results-target="<selector>" fetch ?fragment=1 and replace
 // the matching container's innerHTML instead of reloading the whole page.
-document.querySelectorAll("form[data-auto-submit]").forEach((form) => {
+function wireAutoSubmitForm(form) {
+  if (form.dataset.wired === "1") return;
+  form.dataset.wired = "1";
   const targetSelector = form.dataset.resultsTarget;
   let inflight = null;
 
@@ -2139,7 +2149,6 @@ document.querySelectorAll("form[data-auto-submit]").forEach((form) => {
       return;
     }
 
-    // Update browser URL so refresh / back works.
     history.replaceState(null, "", url);
 
     if (inflight) inflight.abort();
@@ -2168,7 +2177,6 @@ document.querySelectorAll("form[data-auto-submit]").forEach((form) => {
     event.preventDefault();
     applyFilters();
   });
-
   form.querySelectorAll("select").forEach((select) => {
     select.addEventListener("change", applyFilters);
   });
@@ -2179,6 +2187,86 @@ document.querySelectorAll("form[data-auto-submit]").forEach((form) => {
       timer = setTimeout(applyFilters, 350);
     });
   });
+}
+
+document.querySelectorAll("form[data-auto-submit]").forEach(wireAutoSubmitForm);
+
+// ---------- SPA-style top-nav navigation ----------
+// Intercepts clicks on top-nav links between dashboard/quotes/stats/discover
+// and swaps the <main> content via fetch instead of a full reload. The
+// reader, settings, and login pages are excluded — they keep full-page loads.
+const SPA_PATHS = ["/app", "/quotes", "/stats", "/discover"];
+
+function isSpaPath(pathname) {
+  return SPA_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"));
+}
+
+async function spaNavigate(target, push) {
+  const main = document.querySelector("main#main");
+  if (!main) { window.location.assign(target); return; }
+  main.classList.add("is-spa-loading");
+  try {
+    const res = await fetch(target, {
+      headers: { Accept: "text/html" },
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const newMain = doc.querySelector("main#main");
+    if (!newMain) throw new Error("destination has no <main>");
+    main.innerHTML = newMain.innerHTML;
+    document.title = doc.title;
+
+    // Sync the topbar's active-page state without losing event listeners by
+    // mirroring aria-current attributes from the response.
+    const newLinks = doc.querySelectorAll(".topnav a");
+    document.querySelectorAll(".topnav a").forEach((link, i) => {
+      const fresh = newLinks[i];
+      if (!fresh) return;
+      if (fresh.hasAttribute("aria-current")) {
+        link.setAttribute("aria-current", fresh.getAttribute("aria-current"));
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+
+    // Re-wire dynamic handlers in the swapped content.
+    wireBookCardActions(main);
+    main.querySelectorAll("form[data-auto-submit]").forEach(wireAutoSubmitForm);
+
+    if (push) history.pushState({ spa: true }, "", target);
+    window.scrollTo(0, 0);
+  } catch (err) {
+    // On failure, fall back to a full navigation so the user isn't stuck.
+    console.warn("SPA navigation failed, falling back:", err);
+    window.location.assign(target);
+  } finally {
+    main.classList.remove("is-spa-loading");
+  }
+}
+
+document.addEventListener("click", (event) => {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  const link = event.target.closest("a");
+  if (!link) return;
+  if (link.target === "_blank" || link.hasAttribute("download")) return;
+  if (link.getAttribute("data-spa") === "off") return;
+  let url;
+  try { url = new URL(link.href, window.location.origin); }
+  catch (_) { return; }
+  if (url.origin !== window.location.origin) return;
+  if (!isSpaPath(url.pathname)) return;
+  // Don't intercept hash-only links.
+  if (url.pathname === window.location.pathname && url.hash) return;
+  event.preventDefault();
+  spaNavigate(url.pathname + url.search + url.hash, true);
+});
+
+window.addEventListener("popstate", () => {
+  if (isSpaPath(window.location.pathname)) {
+    spaNavigate(window.location.pathname + window.location.search, false);
+  }
 });
 
 // ---------- Selection popover (shared by EPUB + Markdown readers) ----------

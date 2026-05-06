@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7f1e8"/>
+      <stop offset="100%" stop-color="#ebd8b6"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d49b6d"/>
+      <stop offset="100%" stop-color="#f2dcc4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g transform="translate(120 200)">
+    <circle cx="80" cy="80" r="80" fill="url(#mark)"/>
+    <text x="80" y="108" font-family="Georgia, serif" font-size="100" font-weight="700" text-anchor="middle" fill="#30261d">M</text>
+  </g>
+  <g transform="translate(320 230)">
+    <text font-family="Georgia, serif" font-size="84" font-weight="700" fill="#30261d">moco</text>
+    <text y="80" font-family="Manrope, sans-serif" font-size="36" font-weight="500" fill="#46382c">Read your books like Kindle, in your browser.</text>
+    <text y="140" font-family="Manrope, sans-serif" font-size="28" fill="#6f6255">PDF · EPUB · Markdown · highlights · progress sync</text>
+  </g>
+</svg>

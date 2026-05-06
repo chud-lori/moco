@@ -2050,7 +2050,8 @@ main { display: grid; gap: 28px; }
 
 /* AJAX loading state on result containers */
 [data-library-results].is-loading,
-[data-quotes-results].is-loading {
+[data-quotes-results].is-loading,
+main#main.is-spa-loading {
   opacity: 0.55;
   transition: opacity 0.15s ease;
   pointer-events: none;

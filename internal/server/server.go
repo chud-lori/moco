@@ -36,6 +36,7 @@ type Config struct {
 	DBPath        string
 	CookieName    string
 	SecureCookies bool
+	PublicURL     string // canonical https://... URL — used for absolute links in OG tags
 }
 
 type Server struct {
@@ -128,6 +129,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/books/{id}/bookmarks", s.handleCreateBookmark)
 	s.mux.HandleFunc("POST /api/v1/books/{id}/tags", s.handleAddTag)
 	s.mux.HandleFunc("DELETE /api/v1/books/{id}/tags/{tag}", s.handleRemoveTag)
+	s.mux.HandleFunc("POST /api/v1/wishlist/{id}", s.handleAddWishlist)
+	s.mux.HandleFunc("DELETE /api/v1/wishlist/{id}", s.handleRemoveWishlist)
+	s.mux.HandleFunc("GET /api/v1/wishlist", s.handleListWishlist)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/download", s.handleDownloadBook)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/converted.epub", s.handleDownloadConvertedEPUB)
 	s.mux.HandleFunc("DELETE /api/v1/books/{id}", s.handleDeleteBook)
@@ -145,8 +149,14 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.currentUser(r)
 	s.renderTemplate(w, "home.html", discoverPageData{
 		pageData: pageData{
-			Title:       "Moco",
+			Title:       "Moco — a calm reader for PDF, EPUB, and Markdown",
 			CurrentUser: user,
+			SEO: SEOData{
+				Title:       "Moco — read your books like Kindle, in your browser",
+				Description: "Upload PDFs, EPUBs, and Markdown. Reflowable reading, themes, highlights, progress sync — your own private library.",
+				URL:         s.absoluteURL(r, "/"),
+				OGType:      "website",
+			},
 		},
 		PublicBooks: takeBooks(publicBooks, 6),
 	})
@@ -163,13 +173,29 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load public books", http.StatusInternalServerError)
 		return
 	}
+	var wishlisted map[string]bool
+	if user != nil {
+		ids := make([]string, 0, len(publicBooks))
+		for _, b := range publicBooks {
+			ids = append(ids, b.ID)
+		}
+		wishlisted, _ = s.store.WishlistedBookIDs(r.Context(), user.ID, ids)
+	}
+
 	s.renderTemplate(w, "discover.html", discoverPageData{
 		pageData: pageData{
 			Title:       "Public Library - Moco",
 			CurrentUser: user,
 			Nav:         "discover",
+			SEO: SEOData{
+				Title:       "Public bookshelf — books shared by Moco readers",
+				Description: "Browse books that readers chose to publish on Moco. Read straight in your browser — no signup required.",
+				URL:         s.absoluteURL(r, "/discover"),
+				OGType:      "website",
+			},
 		},
-		PublicBooks: publicBooks,
+		PublicBooks:   publicBooks,
+		WishlistedIDs: wishlisted,
 	})
 }
 
@@ -203,7 +229,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	bookTags, _ := s.store.AttachTagsToBooks(r.Context(), user.ID, books)
 	allTags, _ := s.store.ListTagCounts(r.Context(), user.ID)
 	publicBooks, _ := s.store.ListPublicBooks(r.Context(), user.ID)
+	wishlistBooks, _ := s.store.ListWishlist(r.Context(), user.ID)
 	privateBooks, ownPublic := splitBooksByVisibility(books)
+
+	// Mark which books in the public-from-others list are already wishlisted.
+	publicIDs := make([]string, 0, len(publicBooks))
+	for _, b := range publicBooks {
+		publicIDs = append(publicIDs, b.ID)
+	}
+	wishlistedIDs, _ := s.store.WishlistedBookIDs(r.Context(), user.ID, publicIDs)
+
 	data := dashboardPageData{
 		pageData: pageData{
 			Title:       "Library - Moco",
@@ -213,11 +248,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		MyPrivateBooks: privateBooks,
 		MyPublicBooks:  ownPublic,
 		PublicBooks:    publicBooks,
+		WishlistBooks:  wishlistBooks,
 		BookTags:       bookTags,
 		AllTags:        allTags,
 		Sort:           filter.Sort,
 		Tag:            filter.Tag,
 		Format:         filter.Format,
+		WishlistedIDs:  wishlistedIDs,
 	}
 	if isFragmentRequest(r) {
 		s.renderTemplate(w, "library_results", data)
@@ -274,10 +311,22 @@ func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	desc := "Reading " + book.Title + " on Moco."
+	if book.Author != "" {
+		desc = "Reading " + book.Title + " by " + book.Author + " on Moco."
+	}
+	jsonLD := bookJSONLD(book, s.absoluteURL(r, "/books/"+book.ID+"/read"))
 	data := readerPageData{
 		pageData: pageData{
 			Title:       book.Title + " - Moco",
 			CurrentUser: user,
+			SEO: SEOData{
+				Title:       book.Title,
+				Description: desc,
+				URL:         s.absoluteURL(r, "/books/"+book.ID+"/read"),
+				OGType:      "book",
+				JSONLD:      template.HTML(jsonLD),
+			},
 		},
 		Book:          book,
 		FileURL:       "/api/v1/books/" + book.ID + "/content",
@@ -1040,6 +1089,52 @@ func isFragmentRequest(r *http.Request) bool {
 	return r.URL.Query().Get("fragment") == "1" || r.Header.Get("X-Fragment") == "1"
 }
 
+// bookJSONLD returns a schema.org Book JSON-LD payload for the reader page.
+// Used for richer search results and Twitter/LinkedIn previews.
+func bookJSONLD(book store.Book, url string) string {
+	type bookLD struct {
+		Context  string `json:"@context"`
+		Type     string `json:"@type"`
+		Name     string `json:"name"`
+		Author   string `json:"author,omitempty"`
+		BookEdit string `json:"bookFormat,omitempty"`
+		URL      string `json:"url,omitempty"`
+	}
+	bf := ""
+	switch book.Format {
+	case "epub", "pdf":
+		bf = "https://schema.org/EBook"
+	case "md":
+		bf = "https://schema.org/EBook"
+	}
+	payload := bookLD{
+		Context:  "https://schema.org",
+		Type:     "Book",
+		Name:     book.Title,
+		Author:   book.Author,
+		BookEdit: bf,
+		URL:      url,
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// absoluteURL returns a canonical absolute URL for the given path. Prefers
+// the configured PublicURL; otherwise reconstructs from the request.
+func (s *Server) absoluteURL(r *http.Request, path string) string {
+	if s.cfg.PublicURL != "" {
+		return strings.TrimRight(s.cfg.PublicURL, "/") + path
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + path
+}
+
 func (s *Server) renderTemplate(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.templates.ExecuteTemplate(w, name, data); err != nil {
@@ -1210,6 +1305,59 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ----- Wishlist (want-to-read) -----
+
+func (s *Server) handleAddWishlist(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	bookID := r.PathValue("id")
+	book, err := s.store.GetBookAny(r.Context(), bookID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "book not found"})
+		return
+	}
+	// Only public books or owned books can be wishlisted.
+	if book.Visibility != "public" && book.UserID != user.ID {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "this book is private"})
+		return
+	}
+	if err := s.store.AddToWishlist(r.Context(), user.ID, bookID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to save"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "wishlisted": true})
+}
+
+func (s *Server) handleRemoveWishlist(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	if err := s.store.RemoveFromWishlist(r.Context(), user.ID, r.PathValue("id")); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to remove"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "wishlisted": false})
+}
+
+func (s *Server) handleListWishlist(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	books, err := s.store.ListWishlist(r.Context(), user.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to load wishlist"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": books})
 }
 
 // ----- Bookmarks -----

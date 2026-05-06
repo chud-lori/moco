@@ -5,10 +5,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f4ede3" />
-    <meta name="description" content="Read {{ .Book.Title }} on Moco." />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d49b6d'/%3E%3Ctext x='50%25' y='55%25' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' dominant-baseline='middle' fill='%2330261d'%3EM%3C/text%3E%3C/svg%3E" />
     <title>{{ .Title }}</title>
+    {{ template "social_meta" . }}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -92,9 +92,6 @@
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
                 <button class="button subtle" type="button" data-epub-prev aria-label="Previous page">← Previous</button>
-                <select class="select-input page-jumper-select" data-epub-chapter-jump aria-label="Jump to chapter" hidden>
-                  <option value="">Jump to chapter…</option>
-                </select>
                 <button class="button subtle" type="button" data-epub-next aria-label="Next page">Next →</button>
               </div>
               <div class="epub-stage" id="reader-content"><p class="reader-loading" data-reader-loading>Loading book…</p></div>
