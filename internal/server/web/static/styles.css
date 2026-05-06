@@ -1892,9 +1892,29 @@ main { display: grid; gap: 28px; }
     background: rgba(250, 244, 236, 0.94);
   }
   .topbar > .brand { flex: 1 1 auto; }
-  .topnav { display: none; }
   .topbar-actions { gap: 8px; margin-left: auto; }
   .topbar-actions .session-chip { display: none; }
+
+  /* Re-show the primary nav on phones as a second row below brand+actions.
+     Horizontally scrollable so 4+ links never break the layout. */
+  .topnav {
+    display: flex;
+    flex: 1 1 100%;
+    order: 99;
+    gap: 6px;
+    margin-top: 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .topnav::-webkit-scrollbar { display: none; }
+  .topnav a {
+    padding: 6px 12px;
+    font-size: 0.88rem;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
 
   /* Filter toolbar mobile overrides live below the base .library-toolbar
      declaration so cascade order keeps them winning — see end of file. */
