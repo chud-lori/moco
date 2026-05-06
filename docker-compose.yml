@@ -18,3 +18,14 @@ services:
       # Persists the SQLite database and (when MOCO_STORAGE=local) book files.
       # When using R2 you can remove this volume — files live in the bucket.
       - ./var:/app/var
+    # Hardening — defense in depth on top of the non-root USER in the Dockerfile.
+    security_opt:
+      # Block the process (and any child like ebook-convert) from gaining
+      # extra privileges via setuid binaries.
+      - no-new-privileges:true
+    cap_drop:
+      # The Go server + Calibre don't need any Linux capabilities.
+      - ALL
+    # Tight resource caps so a runaway conversion can't exhaust the host.
+    mem_limit: 1g
+    pids_limit: 256

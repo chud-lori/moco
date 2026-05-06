@@ -255,7 +255,10 @@
         {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
         <div class="book-tags" data-book-tags>
           {{ range tagsForBook $tagMap $book.ID }}
-            <button type="button" class="tag-chip" data-remove-tag="{{ . }}" data-book-id="{{ $book.ID }}" aria-label="Remove tag {{ . }}">#{{ . }}<span class="tag-x" aria-hidden="true">×</span></button>
+            <span class="tag-chip tag-chip--removable">
+              <a class="tag-chip-label" href="/app?tag={{ . }}">#{{ . }}</a>
+              <button type="button" class="tag-chip-remove" data-remove-tag="{{ . }}" data-book-id="{{ $book.ID }}" aria-label="Remove tag {{ . }} from this book" title="Remove tag">×</button>
+            </span>
           {{ end }}
           <button type="button" class="tag-add" data-add-tag data-book-id="{{ $book.ID }}" aria-label="Add tag">+ tag</button>
         </div>

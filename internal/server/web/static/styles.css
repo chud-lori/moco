@@ -724,9 +724,10 @@ main { display: grid; gap: 28px; }
 .dashboard-title, .auth-title {
   margin: 0;
   font-family: "Cormorant Garamond", serif;
-  font-size: clamp(2.2rem, 5vw, 4.2rem);
-  line-height: 1;
+  font-size: clamp(2rem, 3.4vw, 2.8rem);
+  line-height: 1.05;
 }
+.auth-title { font-size: clamp(2rem, 4vw, 3rem); }
 
 .stack-form { gap: 14px; }
 
@@ -1077,9 +1078,9 @@ main { display: grid; gap: 28px; }
   flex-wrap: wrap;
   gap: 8px;
 }
-/* Add a small extra gap before the destructive button so it's harder to
-   mistap, but keep it grouped with the rest of the actions. */
-.book-panel-actions .book-panel-danger { margin-left: 12px; }
+/* Push the destructive button to the far end of the row so it's harder to
+   mistap. Works whether the actions fit on one line or wrap to two. */
+.book-panel-actions .book-panel-danger { margin-left: auto; }
 
 .empty-state {
   text-align: left;
@@ -1888,6 +1889,22 @@ main { display: grid; gap: 28px; }
   .topbar-actions { gap: 8px; margin-left: auto; }
   .topbar-actions .session-chip { display: none; }
 
+  /* Filter toolbar — drop the pill shape and stack selects so wrap doesn't
+     leave one orphan dropdown alone on the second row. */
+  .library-toolbar, .quotes-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: 18px;
+    padding: 12px;
+    gap: 8px;
+    width: 100%;
+  }
+  .library-toolbar .select-input,
+  .quotes-toolbar .select-input,
+  .quotes-toolbar .search-input {
+    width: 100%;
+  }
+
   .reader-topbar {
     padding: 6px 8px;
     border-radius: 16px;
@@ -2138,6 +2155,10 @@ main#main.is-spa-loading::before {
   border-radius: 999px;
   box-shadow: var(--shadow-soft);
   margin-bottom: 8px;
+  /* Hug the contents instead of stretching across the full row — avoids
+     the empty pill effect on wide screens. Mobile rules override below. */
+  width: fit-content;
+  max-width: 100%;
 }
 .search-input, .select-input {
   display: inline-flex;
@@ -2206,6 +2227,39 @@ main#main.is-spa-loading::before {
 }
 .tag-chip { padding-right: 8px; }
 .tag-chip:hover { background: rgba(186, 125, 74, 0.28); }
+
+/* Removable variant: a wrapper with two click targets — clicking the label
+   filters the library by that tag, clicking × removes it from the book. */
+.tag-chip--removable {
+  padding: 0;
+  cursor: default;
+  overflow: hidden;
+}
+.tag-chip--removable:hover { background: var(--accent-soft); }
+.tag-chip-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px 4px 10px;
+  color: var(--accent-dark);
+  text-decoration: none;
+  align-self: stretch;
+}
+.tag-chip-label:hover { background: rgba(186, 125, 74, 0.28); }
+.tag-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  font-size: 1rem;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  color: var(--accent-dark);
+  cursor: pointer;
+  opacity: 0.55;
+  align-self: stretch;
+}
+.tag-chip-remove:hover { opacity: 1; background: rgba(186, 125, 74, 0.32); }
 .tag-add {
   background: transparent;
   color: var(--muted);

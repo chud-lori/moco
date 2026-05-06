@@ -2025,18 +2025,16 @@ async function addTagToBook(bookID, tag) {
 
 function renderTagChips(container, bookID, tags) {
   if (!container) return;
-  container.querySelectorAll("[data-remove-tag]").forEach((c) => c.remove());
+  container.querySelectorAll(".tag-chip--removable").forEach((c) => c.remove());
   const addBtn = container.querySelector("[data-add-tag]");
   (tags || []).forEach((tag) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "tag-chip";
-    chip.dataset.removeTag = tag;
-    chip.dataset.bookId = bookID;
-    chip.setAttribute("aria-label", `Remove tag ${tag}`);
-    chip.innerHTML = `#${escapeHTML(tag)}<span class="tag-x" aria-hidden="true">×</span>`;
-    container.insertBefore(chip, addBtn);
-    attachRemoveTag(chip);
+    const wrap = document.createElement("span");
+    wrap.className = "tag-chip tag-chip--removable";
+    wrap.innerHTML =
+      `<a class="tag-chip-label" href="/app?tag=${encodeURIComponent(tag)}">#${escapeHTML(tag)}</a>` +
+      `<button type="button" class="tag-chip-remove" data-remove-tag="${escapeHTML(tag)}" data-book-id="${escapeHTML(bookID)}" aria-label="Remove tag ${escapeHTML(tag)} from this book" title="Remove tag">×</button>`;
+    container.insertBefore(wrap, addBtn);
+    attachRemoveTag(wrap.querySelector("[data-remove-tag]"));
   });
 }
 
@@ -2056,7 +2054,8 @@ function attachRemoveTag(button) {
         method: "DELETE",
         body: "{}",
       });
-      button.remove();
+      const chip = button.closest(".tag-chip--removable") || button;
+      chip.remove();
     } catch (err) {
       toast(err.message || "Could not remove tag.", "error");
     }
