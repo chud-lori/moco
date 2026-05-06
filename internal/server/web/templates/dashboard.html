@@ -52,6 +52,10 @@
               <p class="form-message" data-upload-detected aria-live="polite"></p>
               <label><span>Book title</span><input type="text" name="title" autocomplete="off" data-upload-title /></label>
               <label><span>Author</span><input type="text" name="author" autocomplete="off" placeholder="Add the author if you'd like" data-upload-author /></label>
+              <label class="cover-upload">
+                <span>Cover image <small>(optional — we'll auto-extract one if possible)</small></span>
+                <input type="file" name="cover" accept="image/png,image/jpeg,image/webp,image/gif" data-upload-cover />
+              </label>
               <label><span>Visibility</span>
                 <select name="visibility">
                   <option value="private">Private — only you</option>
@@ -115,6 +119,31 @@
 {{ end }}
 
 {{ define "library_results" }}
+  {{ if .SharedBooks }}
+    <section class="library-section">
+      <div class="section-row">
+        <p class="section-label">Shared with you</p>
+        <span class="session-chip">{{ len .SharedBooks }}</span>
+      </div>
+      <div class="dashboard-grid">
+        {{ range .SharedBooks }}
+          <article class="book-panel has-cover" data-book-id="{{ .ID }}">
+            <a class="book-cover-thumb" href="/books/{{ .ID }}/read" aria-label="Open {{ .Title }}">
+              <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+            </a>
+            <div class="book-panel-top">
+              <span class="book-format">{{ .Format }}</span>
+              <span class="visibility-chip" data-visibility="shared">shared</span>
+            </div>
+            <h2>{{ .Title }}</h2>
+            <p>{{ if .Author }}{{ .Author }} · {{ end }}from {{ displayName .OwnerEmail }}</p>
+            <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
+          </article>
+        {{ end }}
+      </div>
+    </section>
+  {{ end }}
+
   <section class="library-section">
     <div class="section-row">
       <p class="section-label">Private books</p>
@@ -153,7 +182,10 @@
       </div>
       <div class="dashboard-grid">
         {{ range .WishlistBooks }}
-          <article class="book-panel" data-book-id="{{ .ID }}">
+          <article class="book-panel has-cover" data-book-id="{{ .ID }}">
+            <a class="book-cover-thumb" href="/books/{{ .ID }}/read" aria-label="Open {{ .Title }}">
+              <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+            </a>
             <div class="book-panel-top">
               <span class="book-format">{{ .Format }}</span>
               <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
@@ -181,7 +213,10 @@
         {{ $wishlisted := .WishlistedIDs }}
         {{ range .PublicBooks }}
           {{ $isOnList := isWishlisted $wishlisted .ID }}
-          <article class="book-panel" data-book-id="{{ .ID }}">
+          <article class="book-panel has-cover" data-book-id="{{ .ID }}">
+            <a class="book-cover-thumb" href="/books/{{ .ID }}/read" aria-label="Open {{ .Title }}">
+              <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+            </a>
             <div class="book-panel-top">
               <span class="book-format">{{ .Format }}</span>
               <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
@@ -207,7 +242,10 @@
   <div class="dashboard-grid">
     {{ range .Books }}
       {{ $book := . }}
-      <article class="book-panel" data-book-id="{{ .ID }}">
+      <article class="book-panel has-cover" data-book-id="{{ .ID }}">
+        <a class="book-cover-thumb" href="/books/{{ .ID }}/read" aria-label="Open {{ .Title }}">
+          <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+        </a>
         <div class="book-panel-top">
           <span class="book-format">{{ .Format }}</span>
           <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
@@ -224,6 +262,7 @@
         <div class="book-panel-actions">
           <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
           <button class="button subtle" data-toggle-visibility="{{ .ID }}" data-next-visibility="{{ if eq .Visibility "public" }}private{{ else }}public{{ end }}" type="button">{{ if eq .Visibility "public" }}Make private{{ else }}Publish{{ end }}</button>
+          {{ if eq .Visibility "private" }}<button class="button subtle" data-share-book="{{ .ID }}" type="button">Share</button>{{ end }}
           <button class="button danger book-panel-danger" data-delete-book="{{ .ID }}" type="button" aria-label="Remove book">Remove</button>
         </div>
       </article>

@@ -2087,6 +2087,89 @@ function attachAddTag(btn) {
   });
 }
 
+function attachShareBook(btn) {
+  if (btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", () => openShareModal(btn.getAttribute("data-share-book")));
+}
+
+async function openShareModal(bookID) {
+  if (!bookID) return;
+  const modal = ensureModal();
+  const card = modal.querySelector("[data-modal-card]");
+  modalLastFocus = document.activeElement;
+  card.innerHTML = `
+    <h2>Share this book</h2>
+    <p style="margin:0 0 14px;color:var(--muted);font-size:0.95rem">Anyone you share with needs a Moco account using the same email. They'll see this book in their "Shared with you" section.</p>
+    <form data-share-form>
+      <label style="display:block;margin-bottom:14px">
+        <span style="display:block;font-size:0.85rem;color:var(--muted);margin-bottom:6px">Email address</span>
+        <input type="email" name="email" autocomplete="email" required style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.6);color:var(--text)" />
+      </label>
+      <p class="form-message" data-share-message aria-live="polite"></p>
+      <div class="modal-actions">
+        <button type="button" class="button subtle" data-share-close>Close</button>
+        <button type="submit" class="button primary">Share</button>
+      </div>
+    </form>
+    <h3 style="font-size:0.95rem;margin:18px 0 8px">Currently shared with</h3>
+    <div data-share-list><p class="form-message">Loading…</p></div>
+  `;
+  modal.classList.add("is-open");
+  card.querySelector("input[name=email]").focus();
+
+  const list = card.querySelector("[data-share-list]");
+  const refreshList = async () => {
+    try {
+      const data = await requestJSON(`/api/v1/books/${bookID}/shares`);
+      const items = data.items || [];
+      if (items.length === 0) {
+        list.innerHTML = `<p class="form-message">Not shared with anyone yet.</p>`;
+        return;
+      }
+      list.innerHTML = `<ul style="list-style:none;padding:0;margin:0;display:grid;gap:8px">${items.map((s) => `
+        <li style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--accent-soft);border-radius:10px">
+          <span>${escapeHTML(s.withUserEmail)}</span>
+          <button type="button" class="text-link destructive" data-revoke="${escapeHTML(s.withUserId)}">Remove</button>
+        </li>`).join("")}</ul>`;
+      list.querySelectorAll("[data-revoke]").forEach((b) => {
+        b.addEventListener("click", async () => {
+          try {
+            await requestJSON(`/api/v1/books/${bookID}/shares/${b.dataset.revoke}`, { method: "DELETE", body: "{}" });
+            refreshList();
+          } catch (err) {
+            toast(err.message || "Could not remove.", "error");
+          }
+        });
+      });
+    } catch (err) {
+      list.innerHTML = `<p class="form-message">Could not load shares.</p>`;
+    }
+  };
+  refreshList();
+
+  card.querySelector("[data-share-close]").addEventListener("click", closeModal);
+  const form = card.querySelector("[data-share-form]");
+  const message = card.querySelector("[data-share-message]");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = form.email.value.trim();
+    if (!email) return;
+    setMessage(message, "Sending invite…");
+    try {
+      await requestJSON(`/api/v1/books/${bookID}/shares`, {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      setMessage(message, `Shared with ${email}.`, "success");
+      form.email.value = "";
+      refreshList();
+    } catch (err) {
+      setMessage(message, err.message || "Could not share.", "error");
+    }
+  });
+}
+
 function attachWishlistToggle(btn) {
   if (btn.dataset.wired === "1") return;
   btn.dataset.wired = "1";
@@ -2119,11 +2202,13 @@ function wireBookCardActions(scope) {
   scope.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
   scope.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
   scope.querySelectorAll("[data-wishlist-toggle]").forEach(attachWishlistToggle);
+  scope.querySelectorAll("[data-share-book]").forEach(attachShareBook);
 }
 
 document.querySelectorAll("[data-remove-tag]").forEach(attachRemoveTag);
 document.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
 document.querySelectorAll("[data-wishlist-toggle]").forEach(attachWishlistToggle);
+document.querySelectorAll("[data-share-book]").forEach(attachShareBook);
 
 // ---------- Auto-submitting filter forms (AJAX swap) ----------
 // Forms with data-results-target="<selector>" fetch ?fragment=1 and replace

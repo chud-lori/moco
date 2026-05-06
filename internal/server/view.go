@@ -36,6 +36,7 @@ type dashboardPageData struct {
 	MyPublicBooks  []store.Book
 	PublicBooks    []store.Book
 	WishlistBooks  []store.Book
+	SharedBooks    []store.Book
 	BookTags       map[string][]string
 	AllTags        []store.TagCount
 	Sort           string

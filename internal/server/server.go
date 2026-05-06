@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -17,7 +18,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -74,7 +77,63 @@ func New(cfg Config) *Server {
 
 	s.templates = template.Must(template.New("").Funcs(templateFuncs()).ParseFS(embeddedFiles, "web/templates/*.html"))
 	s.routes()
+	go runTempCleanupWorker(context.Background())
 	return s
+}
+
+// runTempCleanupWorker scans the OS temp dir hourly and removes Moco's
+// conversion / inspect artefacts older than 24h. Keeps the host disk lean.
+func runTempCleanupWorker(ctx context.Context) {
+	const ttl = 24 * time.Hour
+	const interval = time.Hour
+	prefixes := []string{"moco-pdf-", "moco-pdf-cal-", "moco-pdf-mu-", "moco-cover-", "moco-inspect-"}
+
+	sweep := func() {
+		entries, err := os.ReadDir(os.TempDir())
+		if err != nil {
+			return
+		}
+		now := time.Now()
+		removed := 0
+		for _, e := range entries {
+			matched := false
+			for _, p := range prefixes {
+				if strings.HasPrefix(e.Name(), p) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if now.Sub(info.ModTime()) < ttl {
+				continue
+			}
+			full := filepath.Join(os.TempDir(), e.Name())
+			if err := os.RemoveAll(full); err == nil {
+				removed++
+			}
+		}
+		if removed > 0 {
+			log.Printf("temp cleanup: removed %d stale artefacts", removed)
+		}
+	}
+
+	sweep() // run once at boot
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -121,6 +180,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/books/inspect", s.handleInspectBook)
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/visibility", s.handleUpdateVisibility)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/content", s.handleServeBookContent)
+	s.mux.HandleFunc("GET /api/v1/books/{id}/cover", s.handleServeBookCover)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/progress", s.handleGetProgress)
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/progress", s.handlePutProgress)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/highlights", s.handleGetHighlights)
@@ -132,6 +192,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/wishlist/{id}", s.handleAddWishlist)
 	s.mux.HandleFunc("DELETE /api/v1/wishlist/{id}", s.handleRemoveWishlist)
 	s.mux.HandleFunc("GET /api/v1/wishlist", s.handleListWishlist)
+	s.mux.HandleFunc("GET /api/v1/books/{id}/shares", s.handleListBookShares)
+	s.mux.HandleFunc("POST /api/v1/books/{id}/shares", s.handleAddBookShare)
+	s.mux.HandleFunc("DELETE /api/v1/books/{id}/shares/{userID}", s.handleRemoveBookShare)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/download", s.handleDownloadBook)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/converted.epub", s.handleDownloadConvertedEPUB)
 	s.mux.HandleFunc("DELETE /api/v1/books/{id}", s.handleDeleteBook)
@@ -230,6 +293,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	allTags, _ := s.store.ListTagCounts(r.Context(), user.ID)
 	publicBooks, _ := s.store.ListPublicBooks(r.Context(), user.ID)
 	wishlistBooks, _ := s.store.ListWishlist(r.Context(), user.ID)
+	sharedBooks, _ := s.store.ListBooksSharedWithUser(r.Context(), user.ID)
 	privateBooks, ownPublic := splitBooksByVisibility(books)
 
 	// Mark which books in the public-from-others list are already wishlisted.
@@ -249,6 +313,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		MyPublicBooks:  ownPublic,
 		PublicBooks:    publicBooks,
 		WishlistBooks:  wishlistBooks,
+		SharedBooks:    sharedBooks,
 		BookTags:       bookTags,
 		AllTags:        allTags,
 		Sort:           filter.Sort,
@@ -637,6 +702,32 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Cover handling: prefer user-uploaded image, then auto-extracted, else
+	// leave empty (placeholder SVG is generated on demand).
+	coverPath := ""
+	if cover, coverHeader, cerr := r.FormFile("cover"); cerr == nil {
+		defer cover.Close()
+		ext := strings.ToLower(filepath.Ext(coverHeader.Filename))
+		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".gif" {
+			dst := filepath.Join(bookDir, "cover"+ext)
+			if f, err := os.Create(dst); err == nil {
+				if _, copyErr := io.Copy(f, cover); copyErr == nil {
+					coverPath = dst
+				}
+				f.Close()
+			}
+		}
+	}
+	if coverPath == "" {
+		// Try auto-extraction from the stored file (best effort).
+		if extracted, ext, ok := tryExtractCover(storedPath, storedFormat); ok {
+			dst := filepath.Join(bookDir, "cover"+ext)
+			if err := os.WriteFile(dst, extracted, 0o644); err == nil {
+				coverPath = dst
+			}
+		}
+	}
+
 	now := time.Now().UTC()
 	book := store.Book{
 		ID:               bookID,
@@ -651,6 +742,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		OriginalFilename: header.Filename,
 		MIMEType:         storedMIME,
 		DerivedEPUBPath:  derivedEPUBPath,
+		CoverPath:        coverPath,
 		FileSize:         storedSize,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -708,6 +800,54 @@ func (s *Server) handleServeBookContent(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", safeMIME(book.MIMEType, filepath.Ext(book.OriginalFilename)))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", book.OriginalFilename))
 	http.ServeFile(w, r, book.StoragePath)
+}
+
+func (s *Server) handleServeBookCover(w http.ResponseWriter, r *http.Request) {
+	book, _, err := s.resolveBookAccess(r, r.PathValue("id"), false)
+	if err != nil || book.CoverPath == "" {
+		// Synthesize a placeholder SVG so cards always render something.
+		writePlaceholderCover(w, book.Title)
+		return
+	}
+	if _, statErr := os.Stat(book.CoverPath); statErr != nil {
+		writePlaceholderCover(w, book.Title)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeFile(w, r, book.CoverPath)
+}
+
+func writePlaceholderCover(w http.ResponseWriter, title string) {
+	if title == "" {
+		title = "Untitled"
+	}
+	// Pick a calm gradient hue from the title hash so each book looks distinct.
+	h := 0
+	for _, c := range title {
+		h = (h*31 + int(c)) & 0xffff
+	}
+	hue := h % 360
+	display := title
+	if len(display) > 40 {
+		display = display[:37] + "…"
+	}
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 480" width="320" height="480">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%%" stop-color="hsl(%d,40%%,80%%)"/><stop offset="100%%" stop-color="hsl(%d,38%%,55%%)"/>
+  </linearGradient></defs>
+  <rect width="320" height="480" fill="url(#g)" rx="14"/>
+  <foreignObject x="20" y="20" width="280" height="440">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Georgia,serif;color:#27201a;font-size:22px;font-weight:700;line-height:1.25;">%s</div>
+  </foreignObject>
+</svg>`, hue, (hue+30)%360, htmlEscape(display))
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write([]byte(svg))
+}
+
+func htmlEscape(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
+	return r.Replace(s)
 }
 
 func (s *Server) handleGetProgress(w http.ResponseWriter, r *http.Request) {
@@ -1029,6 +1169,13 @@ func (s *Server) resolveBookAccess(r *http.Request, id string, requireOwner bool
 	if book.Visibility == "public" {
 		return book, user, nil
 	}
+	// Private books may have been shared explicitly with this user.
+	if user != nil {
+		shared, _ := s.store.IsBookSharedWith(r.Context(), book.ID, user.ID)
+		if shared {
+			return book, user, nil
+		}
+	}
 	if user == nil {
 		return store.Book{}, nil, errNeedsLogin
 	}
@@ -1087,6 +1234,144 @@ func safeMIME(given, ext string) string {
 // fragment (used by AJAX-driven filter forms) rather than the full page.
 func isFragmentRequest(r *http.Request) bool {
 	return r.URL.Query().Get("fragment") == "1" || r.Header.Get("X-Fragment") == "1"
+}
+
+// tryExtractCover pulls a cover image out of the stored book file when
+// possible. EPUB covers come from the OPF manifest; PDF covers are extracted
+// via Calibre or mutool. Returns image bytes + extension on success.
+func tryExtractCover(path, format string) ([]byte, string, bool) {
+	switch format {
+	case "epub":
+		if data, ext, ok := extractEPUBCover(path); ok {
+			return data, ext, true
+		}
+	case "pdf":
+		if data, ok := extractPDFCoverPNG(path); ok {
+			return data, ".png", true
+		}
+	}
+	return nil, "", false
+}
+
+// extractEPUBCover reads the OPF, finds the item flagged with
+// `properties="cover-image"` (or referenced from `<meta name="cover">`), and
+// returns its bytes + extension.
+func extractEPUBCover(path string) ([]byte, string, bool) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, "", false
+	}
+	defer zr.Close()
+
+	// Find OPF.
+	var opfPath string
+	for _, f := range zr.File {
+		if f.Name == "META-INF/container.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				continue
+			}
+			body, _ := io.ReadAll(rc)
+			rc.Close()
+			if m := regexp.MustCompile(`full-path="([^"]+)"`).FindStringSubmatch(string(body)); len(m) >= 2 {
+				opfPath = m[1]
+			}
+			break
+		}
+	}
+	if opfPath == "" {
+		return nil, "", false
+	}
+	var opfBody []byte
+	for _, f := range zr.File {
+		if f.Name == opfPath {
+			rc, _ := f.Open()
+			opfBody, _ = io.ReadAll(rc)
+			rc.Close()
+			break
+		}
+	}
+	if len(opfBody) == 0 {
+		return nil, "", false
+	}
+
+	// Method 1: EPUB 3 properties="cover-image"
+	hrefRE := regexp.MustCompile(`<item[^>]*properties="[^"]*\bcover-image\b[^"]*"[^>]*href="([^"]+)"|<item[^>]*href="([^"]+)"[^>]*properties="[^"]*\bcover-image\b[^"]*"`)
+	href := ""
+	if m := hrefRE.FindStringSubmatch(string(opfBody)); len(m) > 0 {
+		for i := 1; i < len(m); i++ {
+			if m[i] != "" {
+				href = m[i]
+				break
+			}
+		}
+	}
+	// Method 2: EPUB 2 <meta name="cover" content="ID"/> + matching item id.
+	if href == "" {
+		if m := regexp.MustCompile(`<meta[^>]*name="cover"[^>]*content="([^"]+)"`).FindStringSubmatch(string(opfBody)); len(m) >= 2 {
+			coverID := m[1]
+			itemRE := regexp.MustCompile(`<item[^>]*id="` + regexp.QuoteMeta(coverID) + `"[^>]*href="([^"]+)"`)
+			if mm := itemRE.FindStringSubmatch(string(opfBody)); len(mm) >= 2 {
+				href = mm[1]
+			}
+		}
+	}
+	if href == "" {
+		return nil, "", false
+	}
+
+	// Resolve href relative to the OPF directory.
+	opfDir := path_dir(opfPath)
+	full := opfDir + href
+	full = strings.ReplaceAll(full, "//", "/")
+	for _, f := range zr.File {
+		if f.Name == full || strings.HasSuffix(f.Name, "/"+href) {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, "", false
+			}
+			defer rc.Close()
+			body, err := io.ReadAll(rc)
+			if err != nil {
+				return nil, "", false
+			}
+			return body, strings.ToLower(filepath.Ext(f.Name)), true
+		}
+	}
+	return nil, "", false
+}
+
+func path_dir(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[:i+1]
+	}
+	return ""
+}
+
+// extractPDFCoverPNG renders page 1 of a PDF as PNG. Prefers mutool (fast),
+// falls back to nothing if not available.
+func extractPDFCoverPNG(pdfPath string) ([]byte, bool) {
+	bin, err := exec.LookPath("mutool")
+	if err != nil {
+		return nil, false
+	}
+	tmp, err := os.CreateTemp("", "moco-cover-*.png")
+	if err != nil {
+		return nil, false
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	cmd := exec.Command(bin, "draw", "-r", "120", "-o", tmpPath, pdfPath, "1")
+	if err := cmd.Run(); err != nil {
+		return nil, false
+	}
+	body, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, false
+	}
+	return body, true
 }
 
 // bookJSONLD returns a schema.org Book JSON-LD payload for the reader page.
@@ -1302,6 +1587,75 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusNotFound
 		}
 		writeJSON(w, status, map[string]any{"error": "tag not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ----- Book sharing -----
+
+func (s *Server) handleListBookShares(w http.ResponseWriter, r *http.Request) {
+	book, user, err := s.resolveBookAccess(r, r.PathValue("id"), true)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "owner only"})
+		return
+	}
+	shares, err := s.store.ListShares(r.Context(), book.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to list shares"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": shares})
+}
+
+func (s *Server) handleAddBookShare(w http.ResponseWriter, r *http.Request) {
+	book, user, err := s.resolveBookAccess(r, r.PathValue("id"), true)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "owner only"})
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid request body"})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(body.Email))
+	if email == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "email is required"})
+		return
+	}
+	if email == strings.ToLower(user.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "you already own this book"})
+		return
+	}
+	recipient, _, err := s.store.GetUserByEmail(r.Context(), email)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no Moco account uses that email"})
+		return
+	}
+	if err := s.store.ShareBook(r.Context(), book.ID, recipient.ID, user.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to share"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"share": map[string]any{
+			"bookId":        book.ID,
+			"withUserId":    recipient.ID,
+			"withUserEmail": recipient.Email,
+		},
+	})
+}
+
+func (s *Server) handleRemoveBookShare(w http.ResponseWriter, r *http.Request) {
+	book, user, err := s.resolveBookAccess(r, r.PathValue("id"), true)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "owner only"})
+		return
+	}
+	if err := s.store.UnshareBook(r.Context(), book.ID, r.PathValue("userID")); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to remove"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

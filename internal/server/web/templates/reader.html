@@ -94,7 +94,12 @@
                 <button class="button subtle" type="button" data-epub-prev aria-label="Previous page">← Previous</button>
                 <button class="button subtle" type="button" data-epub-next aria-label="Next page">Next →</button>
               </div>
-              <div class="epub-stage" id="reader-content"><p class="reader-loading" data-reader-loading>Loading book…</p></div>
+              <div class="epub-stage" id="reader-content">
+                <div class="reader-loading" data-reader-loading>
+                  <div class="reader-spinner" aria-hidden="true"></div>
+                  <p>Loading book…</p>
+                </div>
+              </div>
             </div>
           {{ else }}
             <div class="ebook-stage ebook-stage-full">
