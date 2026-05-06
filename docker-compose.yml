@@ -6,10 +6,9 @@ services:
     container_name: moco
     restart: unless-stopped
     ports:
-      # Host bind + port come from .env so multi-app servers can avoid
-      # collisions without editing this file. Defaults bind to 127.0.0.1
-      # only — set MOCO_HOST_BIND=0.0.0.0 if you really want public exposure.
-      - "${MOCO_HOST_BIND:-127.0.0.1}:${MOCO_HOST_PORT:-6666}:8080"
+      # Bound to 127.0.0.1 only — public access goes through nginx.
+      # Override MOCO_PORT in .env if 6666 is taken on the host.
+      - "127.0.0.1:${MOCO_PORT:-6666}:8080"
     env_file:
       - .env
     environment:

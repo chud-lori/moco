@@ -123,8 +123,7 @@ All config is via env vars. `.env` is loaded automatically at startup (gitignore
 | `MOCO_R2_SECRET_ACCESS_KEY`    |         | R2 API token secret                                                                   |
 | `MOCO_R2_BUCKET`               |         | Bucket name (e.g. `moco`)                                                             |
 | `MOCO_STORAGE_PREFIX`          | (empty) | Prepends to every storage key — use `prod` in production                              |
-| `MOCO_HOST_BIND`               | `127.0.0.1` | (compose only) host interface to bind                                             |
-| `MOCO_HOST_PORT`               | `6666`  | (compose only) host port mapped to container `:8080`                                  |
+| `MOCO_PORT`                    | `6666`  | (compose only) host port mapped to container `:8080`. Always bound to `127.0.0.1`     |
 
 Default is `local` so dev environments can have R2 credentials in `.env` for poking at the bucket without accidentally writing real uploads there. Set `MOCO_STORAGE=r2` explicitly in production.
 
@@ -305,7 +304,7 @@ Use **one R2 bucket** with key prefixes — simpler ops than two buckets, and yo
 | `MOCO_PUBLIC_URL` | (unset) | `https://moco.example.com` |
 | `MOCO_SECURE_COOKIES` | `false` | `true` |
 | `MOCO_DATA_DIR` | `var` | `/app/var` |
-| `MOCO_HOST_PORT` | `6666` | (whatever's free on the host) |
+| `MOCO_PORT` | `6666` | (whatever's free on the host) |
 
 Dev keeps book files on local disk under `var/`. Prod writes to R2 with keys like `moco/prod/books/...`. R2 credentials can be in both `.env` files — they're only consumed when `MOCO_STORAGE=r2` is set, so dev safely ignores them.
 

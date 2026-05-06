@@ -1108,7 +1108,9 @@ func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: remove every object under this book's storage prefix.
 	prefix := keyForBook(book.UserID, book.ID, "")
 	prefix = strings.TrimSuffix(prefix, "/")
-	_ = s.storage.DeletePrefix(r.Context(), prefix)
+	if err := s.storage.DeletePrefix(r.Context(), prefix); err != nil {
+		log.Printf("delete book %s: storage cleanup under %q failed: %v", book.ID, prefix, err)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
