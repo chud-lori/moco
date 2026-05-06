@@ -152,7 +152,9 @@ func renderParagraphs(lines []string) string {
 
 		if strings.HasPrefix(line, "- ") {
 			flush()
-			paragraphs = append(paragraphs, "<p>&bull; "+inlineMarkdown(strings.TrimSpace(strings.TrimPrefix(line, "- ")))+"</p>")
+			// Use the literal Unicode bullet — XHTML strict only knows the 5
+			// named entities, so &bull; would break epub.js parsing.
+			paragraphs = append(paragraphs, "<p>• "+inlineMarkdown(strings.TrimSpace(strings.TrimPrefix(line, "- ")))+"</p>")
 			continue
 		}
 

@@ -26,24 +26,49 @@
           </div>
           <form class="upload-card stack-form" data-upload-form enctype="multipart/form-data" id="upload">
             <p class="section-label" style="margin:0">Add a book</p>
-            <label><span>Book title</span><input type="text" name="title" autocomplete="off" placeholder="Optional title override" /></label>
-            <label><span>Author</span><input type="text" name="author" autocomplete="off" placeholder="Optional author" /></label>
-            <label><span>Visibility</span>
-              <select name="visibility">
-                <option value="private">Private — only you</option>
-                <option value="public">Public — listed on the public shelf</option>
-              </select>
-            </label>
-            <label><span>Book file</span><input type="file" name="file" accept=".pdf,.epub,.md,.markdown" required data-upload-file /></label>
-            <label class="checkbox-row" data-convert-row hidden>
-              <input type="checkbox" name="convertToEpub" value="1" data-convert-checkbox />
-              <span>
-                <strong>Convert to EPUB for a better reader experience</strong>
-                <small data-convert-hint>Reflowable text, dark theme, font size — like a real Kindle book.</small>
-              </span>
-            </label>
+
+            <div class="dropzone" data-dropzone tabindex="0" role="button" aria-label="Choose a book file or drop one here">
+              <input type="file" name="file" accept=".pdf,.epub,.md,.markdown" required data-upload-file class="dropzone-input" />
+              <div class="dropzone-empty" data-dropzone-empty>
+                <svg class="dropzone-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <p class="dropzone-headline">Drop a book here, or <span class="text-link">choose a file</span></p>
+                <p class="dropzone-sub">PDF, EPUB, or Markdown — up to 100 MB</p>
+              </div>
+              <div class="dropzone-filled" data-dropzone-filled hidden>
+                <div class="dropzone-file">
+                  <span class="dropzone-format" data-dropzone-format>EPUB</span>
+                  <div class="dropzone-file-info">
+                    <p class="dropzone-filename" data-dropzone-filename></p>
+                    <p class="dropzone-filesize" data-dropzone-filesize></p>
+                  </div>
+                  <button type="button" class="dropzone-remove" data-dropzone-remove aria-label="Remove file">
+                    <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="upload-meta-fields" data-upload-meta hidden>
+              <p class="form-message" data-upload-detected aria-live="polite"></p>
+              <label><span>Book title</span><input type="text" name="title" autocomplete="off" data-upload-title /></label>
+              <label><span>Author</span><input type="text" name="author" autocomplete="off" placeholder="Add the author if you'd like" data-upload-author /></label>
+              <label><span>Visibility</span>
+                <select name="visibility">
+                  <option value="private">Private — only you</option>
+                  <option value="public">Public — listed on the public shelf</option>
+                </select>
+              </label>
+              <label class="checkbox-row" data-convert-row hidden>
+                <input type="checkbox" name="convertToEpub" value="1" data-convert-checkbox />
+                <span>
+                  <strong>Convert to EPUB for a better reader experience</strong>
+                  <small data-convert-hint>Reflowable text, dark theme, font size — like a real Kindle book.</small>
+                </span>
+              </label>
+            </div>
+
             <p class="form-message" data-upload-message aria-live="polite"></p>
-            <button class="button primary" type="submit">Upload to library</button>
+            <button class="button primary" type="submit" data-upload-submit disabled>Upload to library</button>
           </form>
         </section>
 

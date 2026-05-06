@@ -6,57 +6,385 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	pdfReader "github.com/ledongthuc/pdf"
 )
 
-// PDFToEPUB converts a PDF on disk to an EPUB byte slice. It prefers external
-// converters (Calibre's ebook-convert, then poppler's pdftotext) for higher
-// fidelity output and falls back to pure-Go text extraction when neither is
-// installed. The resulting EPUB is always a valid EPUB 3 archive.
-func PDFToEPUB(title, author string, pdfPath string) ([]byte, error) {
+// PDFConverter names a converter that's been chosen to handle a PDF.
+type PDFConverter string
+
+const (
+	ConverterEbookConvert PDFConverter = "ebook-convert" // Calibre — best
+	ConverterMutool       PDFConverter = "mutool"        // MuPDF — text + images
+	ConverterPdftotext    PDFConverter = "pdftotext"     // Poppler — text only
+	ConverterPureGo       PDFConverter = "pure-go"       // Last resort
+	ConverterUnavailable  PDFConverter = ""
+)
+
+// DetectPDFConverter returns the highest-fidelity PDF converter available on
+// the host PATH. Pure-Go is always available so this function never returns
+// the empty string in normal builds.
+func DetectPDFConverter() PDFConverter {
+	if _, err := exec.LookPath("ebook-convert"); err == nil {
+		return ConverterEbookConvert
+	}
+	if _, err := exec.LookPath("mutool"); err == nil {
+		return ConverterMutool
+	}
+	if _, err := exec.LookPath("pdftotext"); err == nil {
+		return ConverterPdftotext
+	}
+	return ConverterPureGo
+}
+
+// PDFToEPUB converts a PDF on disk to an EPUB byte slice. It walks the
+// converter chain (ebook-convert → mutool → pdftotext → pure-Go) and returns
+// the first successful output. Each tier preserves more fidelity than the next.
+func PDFToEPUB(title, author string, pdfPath string) ([]byte, PDFConverter, error) {
 	if data, err := convertWithEbookConvert(pdfPath); err == nil {
-		return data, nil
+		return data, ConverterEbookConvert, nil
+	}
+	if data, err := convertWithMutool(title, author, pdfPath); err == nil {
+		return data, ConverterMutool, nil
 	}
 	if text, err := convertWithPdftotext(pdfPath); err == nil {
-		return buildEPUBFromPlainText(title, author, text), nil
+		return buildEPUBFromPlainText(title, author, text), ConverterPdftotext, nil
 	}
 	text, err := extractPDFTextPureGo(pdfPath)
 	if err != nil {
-		return nil, fmt.Errorf("pdf to epub: %w", err)
+		return nil, ConverterUnavailable, fmt.Errorf("pdf to epub: %w", err)
 	}
 	if strings.TrimSpace(text) == "" {
-		return nil, errors.New("pdf appears to contain no extractable text (scanned PDFs need OCR)")
+		return nil, ConverterUnavailable, errors.New("pdf appears to contain no extractable text — install Calibre, mupdf-tools, or poppler-utils for better results, or this is a scanned PDF needing OCR")
 	}
-	return buildEPUBFromPlainText(title, author, text), nil
+	return buildEPUBFromPlainText(title, author, text), ConverterPureGo, nil
 }
 
-// convertWithEbookConvert shells out to Calibre's ebook-convert when present.
-// This produces the best PDF→EPUB output but requires Calibre installed.
+// ----- Tier 1: Calibre's ebook-convert (best fidelity) -----
+
 func convertWithEbookConvert(pdfPath string) ([]byte, error) {
 	bin, err := exec.LookPath("ebook-convert")
 	if err != nil {
 		return nil, err
 	}
-	tmpDir, err := os.MkdirTemp("", "moco-pdf-")
+	tmpDir, err := os.MkdirTemp("", "moco-pdf-cal-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmpDir)
 	outPath := filepath.Join(tmpDir, "out.epub")
-	cmd := exec.Command(bin, pdfPath, outPath)
+
+	// Calibre's ebook-convert pulls in Qt; force headless rendering so it
+	// works in containers and on servers without an X display.
+	//
+	// Flag rationale:
+	//   --no-default-epub-cover: skip Calibre's ornamental fallback cover
+	//     (the decorated frame with just the title) when it can't detect a
+	//     real cover. We'd rather have no cover than a misleading one.
+	//   --remove-first-image: PDF importers commonly use page 1 as the
+	//     EPUB cover AND include it as the first chapter image — this
+	//     dedupes that.
+	//   --pretty-print: cleaner XHTML inside the EPUB (better for our reader).
+	cmd := exec.Command(bin, pdfPath, outPath,
+		"--no-default-epub-cover",
+		"--remove-first-image",
+		"--pretty-print",
+	)
+	cmd.Env = append(os.Environ(),
+		"QT_QPA_PLATFORM=offscreen",
+		"DISPLAY=", // explicitly empty so Calibre doesn't try to use a host display
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ebook-convert: %w (%s)", err, stderr.String())
 	}
 	return os.ReadFile(outPath)
 }
 
-// convertWithPdftotext uses poppler's pdftotext to extract layout-aware text,
-// which gives much better paragraph reconstruction than the pure-Go path.
+// ----- Tier 2: MuPDF's mutool (text + images, lightweight) -----
+
+// convertWithMutool runs `mutool convert -F xhtml` for text + structure and
+// `mutool extract` to recover raster images from the PDF, then packages them
+// into a valid EPUB archive. Vector graphics in the PDF are not preserved
+// (mutool's text-mode output drops drawing operators) — install Calibre's
+// ebook-convert for full image fidelity.
+func convertWithMutool(title, author, pdfPath string) ([]byte, error) {
+	bin, err := exec.LookPath("mutool")
+	if err != nil {
+		return nil, err
+	}
+	tmpDir, err := os.MkdirTemp("", "moco-pdf-mu-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Step 1: text+structure as XHTML.
+	outPath := filepath.Join(tmpDir, "book.xhtml")
+	cmd := exec.Command(bin, "convert", "-F", "xhtml", "-o", outPath, pdfPath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("mutool convert: %w (%s)", err, stderr.String())
+	}
+	xhtml, err := os.ReadFile(outPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 2: explicit raster-image extraction. mutool's xhtml output only
+	// emits inline data URIs for embedded raster XObjects when it can decode
+	// them; for many real-world PDFs the images aren't there. `mutool
+	// extract` runs at the PDF-object level and dumps every image it finds.
+	extractDir := filepath.Join(tmpDir, "extract")
+	if err := os.MkdirAll(extractDir, 0o755); err == nil {
+		extractCmd := exec.Command(bin, "extract", pdfPath)
+		extractCmd.Dir = extractDir
+		_ = extractCmd.Run() // best-effort: we still build an EPUB even if this fails
+	}
+
+	// Collect images from BOTH locations: inline siblings of the xhtml, and
+	// the explicit extract dump.
+	var images []imgFile
+	for _, dir := range []string{tmpDir, extractDir} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if name == filepath.Base(outPath) {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(name))
+			if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".gif" && ext != ".webp" && ext != ".bmp" {
+				continue
+			}
+			body, rerr := os.ReadFile(filepath.Join(dir, name))
+			if rerr != nil || len(body) < 256 {
+				continue // skip tiny noise images / read errors
+			}
+			images = append(images, imgFile{origName: uniqueImageName(name, images), body: body})
+		}
+	}
+
+	// Rewrite any inline image references inside the XHTML to use
+	// `images/<basename>` so they resolve inside the EPUB.
+	xhtmlStr := string(xhtml)
+	for _, img := range images {
+		xhtmlStr = strings.ReplaceAll(xhtmlStr, img.origName, "images/"+img.origName)
+	}
+
+	body := extractXHTMLBody(xhtmlStr)
+	if strings.TrimSpace(body) == "" {
+		return nil, errors.New("mutool produced empty XHTML")
+	}
+
+	chapters := splitXHTMLByPages(title, body)
+
+	// If extract recovered images that aren't already referenced in the
+	// xhtml, append them as a final "Figures" chapter so the user at least
+	// sees them. Position info isn't recoverable cheaply.
+	orphanImages := imagesNotReferenced(images, xhtmlStr)
+	if len(orphanImages) > 0 {
+		chapters = append(chapters, Chapter{
+			ID:    "figures",
+			Title: "Figures",
+			HTML:  wrapXHTMLChapter("Figures", buildFiguresHTML(orphanImages)),
+		})
+	}
+
+	// Build EPUB.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	_ = writeStoredFile(zw, "mimetype", []byte("application/epub+zip"))
+	_ = writeFile(zw, "META-INF/container.xml", []byte(containerXML))
+	_ = writeFile(zw, "OEBPS/styles.css", []byte(defaultCSS))
+
+	for idx, ch := range chapters {
+		_ = writeFile(zw, fmt.Sprintf("OEBPS/chapter-%02d.xhtml", idx+1), []byte(ch.HTML))
+	}
+	for _, img := range images {
+		_ = writeFile(zw, "OEBPS/images/"+img.origName, img.body)
+	}
+
+	_ = writeFile(zw, "OEBPS/content.opf", []byte(buildOPFWithImages(title, author, chapters, images)))
+	_ = writeFile(zw, "OEBPS/nav.xhtml", []byte(buildNav(title, chapters)))
+	_ = zw.Close()
+	return buf.Bytes(), nil
+}
+
+// uniqueImageName returns a name that doesn't collide with already-collected images.
+func uniqueImageName(name string, existing []imgFile) string {
+	taken := map[string]bool{}
+	for _, e := range existing {
+		taken[e.origName] = true
+	}
+	if !taken[name] {
+		return name
+	}
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+}
+
+func imagesNotReferenced(images []imgFile, xhtml string) []imgFile {
+	var orphans []imgFile
+	for _, img := range images {
+		if !strings.Contains(xhtml, img.origName) {
+			orphans = append(orphans, img)
+		}
+	}
+	return orphans
+}
+
+func buildFiguresHTML(images []imgFile) string {
+	var sb strings.Builder
+	sb.WriteString(`<section><h1>Figures</h1><p>Images recovered from the original PDF:</p>`)
+	for _, img := range images {
+		sb.WriteString(fmt.Sprintf(
+			`<figure style="margin:1.5em 0;text-align:center"><img src="images/%s" alt="%s" style="max-width:100%%;height:auto"/></figure>`,
+			html.EscapeString(img.origName),
+			html.EscapeString(img.origName),
+		))
+	}
+	sb.WriteString(`</section>`)
+	return sb.String()
+}
+
+var bodyOpen = regexp.MustCompile(`(?is)<body[^>]*>`)
+var bodyClose = regexp.MustCompile(`(?is)</body>`)
+
+// extractXHTMLBody returns just the inner content between <body>...</body>.
+func extractXHTMLBody(doc string) string {
+	openLoc := bodyOpen.FindStringIndex(doc)
+	closeLoc := bodyClose.FindStringIndex(doc)
+	if openLoc == nil || closeLoc == nil || closeLoc[0] < openLoc[1] {
+		return doc
+	}
+	return doc[openLoc[1]:closeLoc[0]]
+}
+
+// pageDivRE matches mutool's per-page wrapper (`<div id="page1" ...>`). The
+// exact attribute order varies across mutool versions, so we match flexibly.
+var pageDivRE = regexp.MustCompile(`(?is)<div[^>]*\bid=["']?page\d+["']?[^>]*>`)
+
+// splitXHTMLByPages chunks mutool's body XHTML into chapters of ~10 pages.
+// Falls back to one big chapter if no page divs are detected.
+func splitXHTMLByPages(title, body string) []Chapter {
+	indices := pageDivRE.FindAllStringIndex(body, -1)
+	if len(indices) < 2 {
+		return []Chapter{{
+			ID:    slugID(title, 1),
+			Title: title,
+			HTML:  wrapXHTMLChapter(title, body),
+		}}
+	}
+	const pagesPerChapter = 10
+	var chapters []Chapter
+	groupStart := 0
+	for i := pagesPerChapter; i < len(indices); i += pagesPerChapter {
+		segment := body[indices[groupStart][0]:indices[i][0]]
+		chapters = append(chapters, Chapter{
+			ID:    slugID(title, len(chapters)+1),
+			Title: fmt.Sprintf("Pages %d–%d", groupStart+1, i),
+			HTML:  wrapXHTMLChapter(fmt.Sprintf("%s — pages %d–%d", title, groupStart+1, i), segment),
+		})
+		groupStart = i
+	}
+	// Trailing pages.
+	if groupStart < len(indices) {
+		segment := body[indices[groupStart][0]:]
+		chapters = append(chapters, Chapter{
+			ID:    slugID(title, len(chapters)+1),
+			Title: fmt.Sprintf("Pages %d–%d", groupStart+1, len(indices)),
+			HTML:  wrapXHTMLChapter(fmt.Sprintf("%s — pages %d–%d", title, groupStart+1, len(indices)), segment),
+		})
+	}
+	return chapters
+}
+
+func wrapXHTMLChapter(title, body string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>%s</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    %s
+  </body>
+</html>`, html.EscapeString(title), body)
+}
+
+type imgFile struct {
+	origName string
+	body     []byte
+}
+
+// buildOPFWithImages is like buildOPF but also lists image files in the
+// manifest so they're recognized by EPUB readers.
+func buildOPFWithImages(title, author string, chapters []Chapter, images []imgFile) string {
+	manifest := []string{
+		`    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
+		`    <item id="css" href="styles.css" media-type="text/css"/>`,
+	}
+	spine := make([]string, 0, len(chapters))
+	for idx := range chapters {
+		id := fmt.Sprintf("chap-%02d", idx+1)
+		manifest = append(manifest, fmt.Sprintf(
+			`    <item id="%s" href="chapter-%02d.xhtml" media-type="application/xhtml+xml"/>`, id, idx+1))
+		spine = append(spine, fmt.Sprintf(`    <itemref idref="%s"/>`, id))
+	}
+	for i, img := range images {
+		mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(img.origName)))
+		if mt == "" {
+			mt = "image/png"
+		}
+		manifest = append(manifest, fmt.Sprintf(
+			`    <item id="img-%d" href="images/%s" media-type="%s"/>`,
+			i+1, html.EscapeString(img.origName), mt))
+	}
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">urn:moco:%s</dc:identifier>
+    <dc:title>%s</dc:title>
+    <dc:creator>%s</dc:creator>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+%s
+  </manifest>
+  <spine>
+%s
+  </spine>
+</package>`,
+		slugID(title, 0),
+		html.EscapeString(title),
+		html.EscapeString(author),
+		strings.Join(manifest, "\n"),
+		strings.Join(spine, "\n"))
+}
+
+// ----- Tier 3: pdftotext (text only, layout-aware) -----
+
 func convertWithPdftotext(pdfPath string) (string, error) {
 	bin, err := exec.LookPath("pdftotext")
 	if err != nil {
@@ -70,6 +398,8 @@ func convertWithPdftotext(pdfPath string) (string, error) {
 	}
 	return out.String(), nil
 }
+
+// ----- Tier 4: pure-Go fallback (no images, basic text) -----
 
 func extractPDFTextPureGo(path string) (string, error) {
 	f, r, err := pdfReader.Open(path)
@@ -95,9 +425,8 @@ func extractPDFTextPureGo(path string) (string, error) {
 	return sb.String(), nil
 }
 
-// buildEPUBFromPlainText splits a plain text dump into paragraphs (and
-// best-effort chapter sections from "Chapter N" headings or all-caps lines)
-// and assembles a valid EPUB 3 archive.
+// ----- Plain-text → EPUB packaging (used by tier 3 + 4) -----
+
 func buildEPUBFromPlainText(title, author, text string) []byte {
 	chapters := splitTextIntoChapters(title, text)
 
@@ -126,11 +455,10 @@ func splitTextIntoChapters(fallbackTitle, text string) []Chapter {
 			return
 		}
 		body := paragraphsToHTML(paragraphs)
-		doc := chapterXHTML(currentTitle, body)
 		chapters = append(chapters, Chapter{
 			ID:    slugID(currentTitle, len(chapters)+1),
 			Title: currentTitle,
-			HTML:  doc,
+			HTML:  chapterXHTML(currentTitle, body),
 		})
 		paragraphs = nil
 	}
@@ -158,8 +486,6 @@ func splitTextIntoChapters(fallbackTitle, text string) []Chapter {
 	return chapters
 }
 
-// detectHeading recognizes obvious chapter markers ("Chapter 1", "CHAPTER I",
-// or all-uppercase short lines). Returns the heading text or "" if not.
 func detectHeading(line string) string {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
@@ -172,7 +498,6 @@ func detectHeading(line string) string {
 	if strings.HasPrefix(lower, "part ") && len(trimmed) <= 80 {
 		return trimmed
 	}
-	// Short ALL-CAPS line: likely a section heading.
 	if len(trimmed) <= 60 && trimmed == strings.ToUpper(trimmed) && hasAlpha(trimmed) {
 		return trimmed
 	}
@@ -229,4 +554,3 @@ func chapterXHTML(title, body string) string {
   </body>
 </html>`, html.EscapeString(title), html.EscapeString(title), body)
 }
-

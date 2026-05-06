@@ -27,7 +27,7 @@
     <a class="reader-floating-close" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Close book and return to library" title="Close">
       <svg class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </a>
-    <div class="reader-app" data-reader data-book-id="{{ .Book.ID }}" data-reader-kind="{{ .ReaderKind }}" data-file-url="{{ .FileURL }}">
+    <div class="reader-app" data-reader data-book-id="{{ .Book.ID }}" data-reader-kind="{{ .ReaderKind }}" data-file-url="{{ .FileURL }}" {{ if not .CurrentUser }}data-guest="1"{{ end }}>
       <header class="reader-topbar">
         <div class="reader-topbar-left">
           <a class="brand" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Back to library"><span class="brand-mark">M</span><span class="brand-name">moco</span></a>
@@ -49,8 +49,22 @@
           <button class="button subtle" type="button" data-fullscreen-toggle aria-label="Toggle fullscreen" title="Toggle fullscreen">
             <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
           </button>
+          <a class="button subtle reader-close" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Close book and return to library" title="Close book">
+            <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </a>
         </div>
       </header>
+      {{ if not .CurrentUser }}
+        <div class="guest-banner" role="status">
+          <span class="guest-banner-text">
+            You're reading as a guest. <strong>Sign in</strong> to save reading progress, highlights, and bookmarks across devices.
+          </span>
+          <span class="guest-banner-actions">
+            <a class="button subtle" href="/login">Sign in</a>
+            <a class="button primary" href="/signup">Create account</a>
+          </span>
+        </div>
+      {{ end }}
       <main class="reader-layout reader-layout-full">
         <aside class="toc-panel reader-sidebar" data-reader-panel="toc" aria-label="Table of contents">
           <p class="section-label">Contents</p>
@@ -78,6 +92,9 @@
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
                 <button class="button subtle" type="button" data-epub-prev aria-label="Previous page">← Previous</button>
+                <select class="select-input page-jumper-select" data-epub-chapter-jump aria-label="Jump to chapter" hidden>
+                  <option value="">Jump to chapter…</option>
+                </select>
                 <button class="button subtle" type="button" data-epub-next aria-label="Next page">Next →</button>
               </div>
               <div class="epub-stage" id="reader-content"><p class="reader-loading" data-reader-loading>Loading book…</p></div>
@@ -86,7 +103,11 @@
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
                 <button class="button subtle" type="button" data-pdf-prev aria-label="Previous page">← Previous</button>
-                <span class="session-chip" data-pdf-page>Page 1</span>
+                <span class="page-jumper" data-page-jumper>
+                  Page
+                  <input type="number" min="1" data-pdf-page-input aria-label="Jump to page" value="1" />
+                  <span class="page-jumper-total" data-pdf-page-total>/ 1</span>
+                </span>
                 <button class="button subtle" type="button" data-pdf-next aria-label="Next page">Next →</button>
               </div>
               <div class="pdf-stage"><canvas id="pdf-canvas" aria-label="PDF page"></canvas></div>

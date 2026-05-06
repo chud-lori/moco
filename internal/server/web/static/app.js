@@ -353,6 +353,19 @@ if (uploadForm) {
   const convertCheckbox = uploadForm.querySelector("[data-convert-checkbox]");
   const convertHint = uploadForm.querySelector("[data-convert-hint]");
 
+  // Drop zone + reveal-on-pick metadata fields
+  const dropzone        = uploadForm.querySelector("[data-dropzone]");
+  const dropEmpty       = uploadForm.querySelector("[data-dropzone-empty]");
+  const dropFilled      = uploadForm.querySelector("[data-dropzone-filled]");
+  const dropFilename    = uploadForm.querySelector("[data-dropzone-filename]");
+  const dropFilesize    = uploadForm.querySelector("[data-dropzone-filesize]");
+  const dropFormat      = uploadForm.querySelector("[data-dropzone-format]");
+  const dropRemove      = uploadForm.querySelector("[data-dropzone-remove]");
+  const metaFields      = uploadForm.querySelector("[data-upload-meta]");
+  const detectedMessage = uploadForm.querySelector("[data-upload-detected]");
+  const titleInput      = uploadForm.querySelector("[data-upload-title]");
+  const authorInput     = uploadForm.querySelector("[data-upload-author]");
+
   function updateConvertOption(file) {
     if (!convertRow) return;
     if (!file) {
@@ -371,32 +384,133 @@ if (uploadForm) {
     convertRow.hidden = false;
     if (convertHint) {
       convertHint.textContent = isPDF
-        ? "Reflows the PDF text into a real EPUB so you can change font size, theme, and read like a Kindle."
+        ? "Reflows the PDF text into an EPUB you can resize, theme, and dark-mode. Image fidelity depends on the original PDF — diagrams drawn as vector graphics may not transfer."
         : "Wraps the markdown into an EPUB with proper chapters and the full reading-style settings.";
+    }
+  }
+
+  function clearFileSelection() {
+    fileInput.value = "";
+    if (dropEmpty) dropEmpty.hidden = false;
+    if (dropFilled) dropFilled.hidden = true;
+    if (metaFields) metaFields.hidden = true;
+    if (titleInput) titleInput.value = "";
+    if (authorInput) authorInput.value = "";
+    if (detectedMessage) detectedMessage.textContent = "";
+    if (submitBtn) submitBtn.disabled = true;
+    updateConvertOption(null);
+  }
+
+  function applyFile(file) {
+    if (!file) { clearFileSelection(); return; }
+    if (!allowedExt.test(file.name)) {
+      setMessage(message, "Only .pdf, .epub, and .md files are supported.", "error");
+      clearFileSelection();
+      return;
+    }
+    if (file.size > maxBytes) {
+      setMessage(message, `File is too large (max ${Math.round(maxBytes / 1024 / 1024)}MB).`, "error");
+      clearFileSelection();
+      return;
+    }
+
+    // Sync into the actual file input via DataTransfer so form submit picks it up.
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+
+    if (dropEmpty) dropEmpty.hidden = true;
+    if (dropFilled) dropFilled.hidden = false;
+    if (dropFilename) dropFilename.textContent = file.name;
+    if (dropFilesize) dropFilesize.textContent = formatBytes(file.size);
+    if (dropFormat) {
+      const ext = file.name.split(".").pop().toUpperCase();
+      dropFormat.textContent = ext === "MARKDOWN" ? "MD" : ext;
+    }
+    if (metaFields) metaFields.hidden = false;
+    if (submitBtn) submitBtn.disabled = false;
+    setMessage(message, "");
+    updateConvertOption(file);
+
+    // Inspect the file to auto-fill title and author.
+    inspectFile(file);
+  }
+
+  async function inspectFile(file) {
+    if (detectedMessage) detectedMessage.textContent = "Detecting title and author…";
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const csrf = getCookie("moco_csrf");
+      const res = await fetch("/api/v1/books/inspect", {
+        method: "POST",
+        body: fd,
+        headers: csrf ? { "X-CSRF-Token": csrf } : {},
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error("inspect failed");
+      const data = await res.json();
+      if (titleInput && !titleInput.value) titleInput.value = data.title || "";
+      if (authorInput && !authorInput.value) authorInput.value = data.author || "";
+      if (detectedMessage) {
+        const detected = [];
+        if (data.title) detected.push("title");
+        if (data.author) detected.push("author");
+        detectedMessage.textContent = detected.length
+          ? `Detected ${detected.join(" and ")} from the file — edit if needed.`
+          : "We couldn't detect a title — please add one.";
+      }
+    } catch (_) {
+      if (detectedMessage) {
+        detectedMessage.textContent = "Could not auto-detect details — please fill them in.";
+      }
+      if (titleInput && !titleInput.value) {
+        // Fallback: derive from filename
+        titleInput.value = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+      }
     }
   }
 
   fileInput?.addEventListener("change", () => {
     const file = fileInput.files?.[0];
-    if (!file) {
-      updateConvertOption(null);
-      return;
-    }
-    if (!allowedExt.test(file.name)) {
-      setMessage(message, "Only .pdf, .epub, and .md files are supported.", "error");
-      fileInput.value = "";
-      updateConvertOption(null);
-      return;
-    }
-    if (file.size > maxBytes) {
-      setMessage(message, `File is too large (max ${Math.round(maxBytes / 1024 / 1024)}MB).`, "error");
-      fileInput.value = "";
-      updateConvertOption(null);
-      return;
-    }
-    setMessage(message, `Selected ${truncateFilename(file.name, 48)} (${formatBytes(file.size)})`);
-    updateConvertOption(file);
+    applyFile(file || null);
   });
+
+  dropRemove?.addEventListener("click", (event) => {
+    event.preventDefault();
+    clearFileSelection();
+  });
+
+  if (dropzone) {
+    // Click anywhere on the empty zone opens the file picker
+    dropEmpty?.addEventListener("click", () => fileInput.click());
+    dropzone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        if (dropFilled?.hidden !== false) {
+          e.preventDefault();
+          fileInput.click();
+        }
+      }
+    });
+    ["dragenter", "dragover"].forEach((ev) => {
+      dropzone.addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add("is-dragging");
+      });
+    });
+    ["dragleave", "drop"].forEach((ev) => {
+      dropzone.addEventListener(ev, (e) => {
+        if (ev === "dragleave" && dropzone.contains(e.relatedTarget)) return;
+        dropzone.classList.remove("is-dragging");
+      });
+    });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (file) applyFile(file);
+    });
+  }
 
   uploadForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -657,9 +771,17 @@ if (readerRoot) {
   const bookID = readerRoot.getAttribute("data-book-id");
   const readerKind = readerRoot.getAttribute("data-reader-kind");
   const fileURL = readerRoot.getAttribute("data-file-url");
+  const isGuest = readerRoot.getAttribute("data-guest") === "1";
+
+  function guestBlock(action) {
+    toast(`Sign in to ${action}.`, "error");
+    setTimeout(() => { window.location.href = "/login"; }, 1200);
+  }
   const progressStatus = document.querySelector("[data-progress-status]");
   const highlightsList = document.querySelector("[data-highlights-list]");
-  const saveProgress = saveReaderProgressFactory(bookID, progressStatus);
+  const saveProgress = isGuest
+    ? async () => {} // guests don't have an account to save progress to
+    : saveReaderProgressFactory(bookID, progressStatus);
   const currentHighlights = (() => {
     const raw = document.getElementById("reader-highlights-data")?.textContent?.trim();
     if (!raw) return [];
@@ -811,6 +933,11 @@ if (readerRoot) {
     const sel = window.getSelection();
     return !!(sel && sel.toString().trim());
   }
+  const floatingClose = document.querySelector(".reader-floating-close");
+  function syncFloatingClose() {
+    if (!floatingClose) return;
+    floatingClose.classList.toggle("is-visible", readerApp.classList.contains("is-immersive"));
+  }
   function clearImmersiveTimer() {
     if (immersiveTimer) { clearTimeout(immersiveTimer); immersiveTimer = null; }
   }
@@ -819,10 +946,12 @@ if (readerRoot) {
     immersiveTimer = setTimeout(() => {
       if (panelOrModalOpen() || hasSelection()) return;
       readerApp.classList.add("is-immersive");
+      syncFloatingClose();
     }, delay);
   }
   function showChrome({ keepShown = false } = {}) {
     readerApp.classList.remove("is-immersive");
+    syncFloatingClose();
     if (keepShown) clearImmersiveTimer();
     else scheduleHide();
   }
@@ -832,8 +961,10 @@ if (readerRoot) {
     } else {
       clearImmersiveTimer();
       readerApp.classList.add("is-immersive");
+      syncFloatingClose();
     }
   }
+  syncFloatingClose();
 
   // Tap on the reading area toggles chrome (skip interactive elements / sidebar / overlay)
   readerRoot.addEventListener("click", (event) => {
@@ -1153,6 +1284,11 @@ if (readerRoot) {
     });
 
     attachPopoverHighlight(async () => {
+      if (isGuest) {
+        hideSelectionPopover();
+        guestBlock("save highlights");
+        return;
+      }
       if (!mdPendingSelection) return;
       const { locator, text } = mdPendingSelection;
       const color = window.__mocoActiveHighlightColor?.() || "amber";
@@ -1372,6 +1508,7 @@ if (readerRoot) {
         console.error("EPUB display error:", err);
       }
 
+      const chapterJump = document.querySelector("[data-epub-chapter-jump]");
       book.loaded.navigation.then((navigation) => {
         tocList.innerHTML = "";
         if (!navigation.toc || navigation.toc.length === 0) {
@@ -1380,6 +1517,16 @@ if (readerRoot) {
           tocList.appendChild(li);
           return;
         }
+        // Walk top-level + nested children so users can jump to subsections too.
+        const flatten = (items, depth = 0, out = []) => {
+          items.forEach((item) => {
+            out.push({ label: "  ".repeat(depth) + item.label.trim(), href: item.href });
+            if (item.subitems?.length) flatten(item.subitems, depth + 1, out);
+          });
+          return out;
+        };
+        const flat = flatten(navigation.toc);
+
         navigation.toc.forEach((item) => {
           const li = document.createElement("li");
           const button = document.createElement("button");
@@ -1389,6 +1536,22 @@ if (readerRoot) {
           li.appendChild(button);
           tocList.appendChild(li);
         });
+
+        if (chapterJump) {
+          flat.forEach(({ label, href }) => {
+            const opt = document.createElement("option");
+            opt.value = href;
+            opt.textContent = label;
+            chapterJump.appendChild(opt);
+          });
+          chapterJump.hidden = false;
+          chapterJump.addEventListener("change", () => {
+            if (chapterJump.value) {
+              rendition.display(chapterJump.value);
+              chapterJump.value = "";
+            }
+          });
+        }
       }).catch(() => {
         tocList.innerHTML = "";
         const li = document.createElement("li");
@@ -1535,6 +1698,11 @@ if (readerRoot) {
       rendition.on("relocated", hideSelectionPopover);
 
       attachPopoverHighlight(async () => {
+        if (isGuest) {
+          hideSelectionPopover();
+          guestBlock("save highlights");
+          return;
+        }
         if (!pendingSelection) return;
         const { cfiRange, text, contents } = pendingSelection;
         const color = window.__mocoActiveHighlightColor?.() || "amber";
@@ -1610,7 +1778,8 @@ if (readerRoot) {
       const tocList = document.querySelector("[data-dynamic-toc]");
       const prev = document.querySelector("[data-pdf-prev]");
       const next = document.querySelector("[data-pdf-next]");
-      const pageLabel = document.querySelector("[data-pdf-page]");
+      const pageInput = document.querySelector("[data-pdf-page-input]");
+      const pageTotal = document.querySelector("[data-pdf-page-total]");
       let pdf;
       try {
         pdf = await pdfjsLib.getDocument(fileURL).promise;
@@ -1643,7 +1812,11 @@ if (readerRoot) {
           canvas.style.width = `${viewport.width / dpr}px`;
           canvas.style.height = `${viewport.height / dpr}px`;
           await page.render({ canvasContext: ctx, viewport }).promise;
-          if (pageLabel) pageLabel.textContent = `Page ${num} / ${pdf.numPages}`;
+          if (pageInput) {
+            pageInput.value = String(num);
+            pageInput.max = String(pdf.numPages);
+          }
+          if (pageTotal) pageTotal.textContent = `/ ${pdf.numPages}`;
           if (prev) prev.disabled = num <= 1;
           if (next) next.disabled = num >= pdf.numPages;
           await saveProgress(`page:${num}`, (num / pdf.numPages) * 100);
@@ -1682,6 +1855,21 @@ if (readerRoot) {
       };
       prev?.addEventListener("click", goPrev);
       next?.addEventListener("click", goNext);
+
+      const goToPage = (target) => {
+        const n = Math.max(1, Math.min(pdf.numPages, target | 0));
+        if (n === pageNum) return;
+        pageNum = n;
+        renderPage(pageNum);
+      };
+      pageInput?.addEventListener("change", () => goToPage(Number(pageInput.value)));
+      pageInput?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          goToPage(Number(pageInput.value));
+          pageInput.blur();
+        }
+      });
 
       document.addEventListener("keydown", (event) => {
         if (event.target.matches("input,textarea,select")) return;

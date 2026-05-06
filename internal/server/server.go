@@ -117,6 +117,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/books", s.handleBooks)
 	s.mux.HandleFunc("GET /api/v1/books/public", s.handlePublicBooks)
 	s.mux.HandleFunc("POST /api/v1/books/upload", s.handleUploadBook)
+	s.mux.HandleFunc("POST /api/v1/books/inspect", s.handleInspectBook)
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/visibility", s.handleUpdateVisibility)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/content", s.handleServeBookContent)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/progress", s.handleGetProgress)
@@ -422,6 +423,58 @@ func (s *Server) handlePublicBooks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": books})
 }
 
+// handleInspectBook accepts a multipart file, extracts metadata (title,
+// author, format) without persisting, and returns it as JSON. Used by the
+// upload form to pre-fill fields.
+func (s *Server) handleInspectBook(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireUser(r); err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid multipart request"})
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "file is required"})
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	format := formatFromExt(ext)
+	if format == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unsupported file type"})
+		return
+	}
+
+	tmpFile, err := os.CreateTemp("", "moco-inspect-*"+ext)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to stage file"})
+		return
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+	if _, err := io.Copy(tmpFile, file); err != nil {
+		tmpFile.Close()
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to write staged file"})
+		return
+	}
+	tmpFile.Close()
+
+	meta, _ := epub.ExtractMetadata(tmpPath, ext)
+	if meta.Title == "" {
+		meta.Title = epub.TitleFromFilename(header.Filename)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"title":  meta.Title,
+		"author": meta.Author,
+		"format": format,
+	})
+}
+
 func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	user, err := s.requireUser(r)
 	if err != nil {
@@ -514,13 +567,14 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else if format == "pdf" && convertToEPUB {
-		epubBytes, convErr := epub.PDFToEPUB(title, author, storagePath)
+		epubBytes, converter, convErr := epub.PDFToEPUB(title, author, storagePath)
 		if convErr != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 				"error": "could not convert PDF to EPUB: " + convErr.Error(),
 			})
 			return
 		}
+		_ = converter // could surface tier name in response if needed
 		derivedEPUBPath = filepath.Join(bookDir, "converted.epub")
 		if err := os.WriteFile(derivedEPUBPath, epubBytes, 0o644); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to persist converted epub"})

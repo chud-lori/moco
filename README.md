@@ -37,6 +37,27 @@ For production HTTPS deployments, enable secure cookies:
 MOCO_SECURE_COOKIES=true go run ./cmd/moco
 ```
 
+## PDF → EPUB Conversion
+
+When uploading a `.pdf` or `.md`, you can opt-in to convert it to EPUB on the
+server for a much better reading experience (reflow, font controls, themes).
+
+The Docker image **already includes the full conversion stack** — Calibre's
+`ebook-convert` (best fidelity: vector graphics, raster images, TOC, chapter
+detection), with `mupdf-tools` and `poppler-utils` as fallbacks. Calibre runs
+headless via `QT_QPA_PLATFORM=offscreen`, so no X server is needed.
+
+For local development outside Docker, install at least one of:
+
+| Tool                       | Quality                                | Install (macOS)                |
+|----------------------------|----------------------------------------|--------------------------------|
+| **Calibre** (`ebook-convert`) | Best — vector + raster + TOC + chapters | `brew install --cask calibre` |
+| **mupdf-tools** (`mutool`)    | Good — text + raster images             | `brew install mupdf`         |
+| **poppler-utils** (`pdftotext`) | OK — text only                        | `brew install poppler`       |
+
+The Go server walks the chain and uses the first tool found; users uploading a
+PDF just check "Convert to EPUB" and the rest is silent.
+
 ## Docker Deploy
 
 Build and run with persisted local data:
