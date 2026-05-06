@@ -15,7 +15,7 @@ fi
 
 # Pull host port out of .env (used for the post-deploy health check).
 PORT=$(grep -E '^MOCO_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | xargs || true)
-PORT=${PORT:-6666}
+PORT=${PORT:-8666}
 
 echo "==> [1/4] git pull"
 git pull --ff-only

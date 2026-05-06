@@ -7,8 +7,8 @@ services:
     restart: unless-stopped
     ports:
       # Bound to 127.0.0.1 only — public access goes through nginx.
-      # Override MOCO_PORT in .env if 6666 is taken on the host.
-      - "127.0.0.1:${MOCO_PORT:-6666}:8080"
+      # Override MOCO_PORT in .env if 8666 is taken on the host.
+      - "127.0.0.1:${MOCO_PORT:-8666}:8080"
     env_file:
       - .env
     environment:

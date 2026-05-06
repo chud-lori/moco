@@ -12,7 +12,7 @@ The examples below use placeholders — replace them with your own values:
 | `app.example.com`   | Public hostname of the app               | `reader.your-domain.tld` |
 | `user@vm`           | SSH user + host on the VM                | `deploy@1.2.3.4`         |
 | `git@github.com:me/myapp.git` | Repo SSH URL                   | your repo                |
-| `6666`              | Host port the container binds (loopback) | any free port            |
+| `8666`              | Host port the container binds (loopback) | any free port            |
 
 If you host multiple apps on the same VM, run each one through its own
 subdomain, its own nginx vhost, its own port, and its own directory under
@@ -159,7 +159,7 @@ server {
     client_max_body_size 100M;
 
     location / {
-        proxy_pass         http://127.0.0.1:6666;
+        proxy_pass         http://127.0.0.1:8666;
         proxy_http_version 1.1;
 
         proxy_set_header Host              $host;
@@ -220,7 +220,7 @@ Health check from the VM itself (replace the path with whatever the app
 exposes):
 
 ```bash
-curl -fsS http://127.0.0.1:6666/api/v1/health
+curl -fsS http://127.0.0.1:8666/api/v1/health
 ```
 
 Then hit the public URL from your laptop:
@@ -245,7 +245,7 @@ docker compose up -d --build
 
 # Poll the health endpoint until it answers (or give up).
 for i in {1..30}; do
-    if curl -fsS http://127.0.0.1:6666/api/v1/health >/dev/null 2>&1; then
+    if curl -fsS http://127.0.0.1:8666/api/v1/health >/dev/null 2>&1; then
         echo "✓ healthy"
         exit 0
     fi
