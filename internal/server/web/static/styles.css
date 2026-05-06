@@ -1896,21 +1896,8 @@ main { display: grid; gap: 28px; }
   .topbar-actions { gap: 8px; margin-left: auto; }
   .topbar-actions .session-chip { display: none; }
 
-  /* Filter toolbar — drop the pill shape and stack selects so wrap doesn't
-     leave one orphan dropdown alone on the second row. */
-  .library-toolbar, .quotes-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    border-radius: 18px;
-    padding: 12px;
-    gap: 8px;
-    width: 100%;
-  }
-  .library-toolbar .select-input,
-  .quotes-toolbar .select-input,
-  .quotes-toolbar .search-input {
-    width: 100%;
-  }
+  /* Filter toolbar mobile overrides live below the base .library-toolbar
+     declaration so cascade order keeps them winning — see end of file. */
 
   .reader-topbar {
     padding: 6px 8px;
@@ -2166,6 +2153,25 @@ main#main.is-spa-loading::before {
      the empty pill effect on wide screens. Mobile rules override below. */
   width: fit-content;
   max-width: 100%;
+}
+
+/* Mobile: stack selects vertically and drop the pill so the toolbar doesn't
+   round into a giant ellipse when the items wrap into a column. Placed after
+   the base rule so it wins the cascade at equal specificity. */
+@media (max-width: 640px) {
+  .library-toolbar, .quotes-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: 18px;
+    padding: 12px;
+    gap: 8px;
+    width: 100%;
+  }
+  .library-toolbar .select-input,
+  .quotes-toolbar .select-input,
+  .quotes-toolbar .search-input {
+    width: 100%;
+  }
 }
 .search-input, .select-input {
   display: inline-flex;
