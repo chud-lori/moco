@@ -479,17 +479,24 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = strings.TrimSuffix(header.Filename, ext)
 	}
+	convertToEPUB := r.FormValue("convertToEpub") == "1" || r.FormValue("convertToEpub") == "true"
 	readingMinutes := reader.EstimateMinutesFromBytes(format, size)
+
+	storedFormat := format
+	storedPath := storagePath
+	storedMIME := safeMIME(header.Header.Get("Content-Type"), ext)
+	storedSize := size
+
 	if format == "md" {
-		source, err := os.ReadFile(storagePath)
-		if err != nil {
+		source, readErr := os.ReadFile(storagePath)
+		if readErr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to read markdown for conversion"})
 			return
 		}
 		// Replace the byte-based estimate with a real word count for markdown.
 		readingMinutes = reader.EstimateMinutesFromMarkdown(source)
-		epubBytes, err := epub.MarkdownToEPUB(title, author, source)
-		if err != nil {
+		epubBytes, convErr := epub.MarkdownToEPUB(title, author, source)
+		if convErr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "markdown to epub conversion failed"})
 			return
 		}
@@ -497,6 +504,33 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		if err := os.WriteFile(derivedEPUBPath, epubBytes, 0o644); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to persist converted epub"})
 			return
+		}
+		if convertToEPUB {
+			storedFormat = "epub"
+			storedPath = derivedEPUBPath
+			storedMIME = "application/epub+zip"
+			if info, err := os.Stat(derivedEPUBPath); err == nil {
+				storedSize = info.Size()
+			}
+		}
+	} else if format == "pdf" && convertToEPUB {
+		epubBytes, convErr := epub.PDFToEPUB(title, author, storagePath)
+		if convErr != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": "could not convert PDF to EPUB: " + convErr.Error(),
+			})
+			return
+		}
+		derivedEPUBPath = filepath.Join(bookDir, "converted.epub")
+		if err := os.WriteFile(derivedEPUBPath, epubBytes, 0o644); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to persist converted epub"})
+			return
+		}
+		storedFormat = "epub"
+		storedPath = derivedEPUBPath
+		storedMIME = "application/epub+zip"
+		if info, err := os.Stat(derivedEPUBPath); err == nil {
+			storedSize = info.Size()
 		}
 	}
 
@@ -506,15 +540,15 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		UserID:           user.ID,
 		Title:            strings.ReplaceAll(title, "%20", " "),
 		Author:           author,
-		Format:           format,
+		Format:           storedFormat,
 		Visibility:       visibility,
 		OwnerEmail:       user.Email,
 		ReadingMinutes:   readingMinutes,
-		StoragePath:      storagePath,
+		StoragePath:      storedPath,
 		OriginalFilename: header.Filename,
-		MIMEType:         safeMIME(header.Header.Get("Content-Type"), ext),
+		MIMEType:         storedMIME,
 		DerivedEPUBPath:  derivedEPUBPath,
-		FileSize:         size,
+		FileSize:         storedSize,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}

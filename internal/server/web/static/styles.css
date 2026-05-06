@@ -756,6 +756,40 @@ main { display: grid; gap: 28px; }
 
 .stack-form input::placeholder { color: var(--muted); opacity: 0.6; }
 
+/* Convert-to-EPUB row inside the upload form */
+.stack-form .checkbox-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(85, 66, 43, 0.1);
+  border-radius: 14px;
+  cursor: pointer;
+}
+.stack-form .checkbox-row input[type="checkbox"] {
+  margin: 4px 0 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-dark);
+  cursor: pointer;
+}
+.stack-form .checkbox-row strong {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.stack-form .checkbox-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.stack-form .checkbox-row[hidden] { display: none; }
+
 /* Show/hide-password toggle inside a password input */
 .input-with-action {
   position: relative;
@@ -2013,13 +2047,15 @@ main { display: grid; gap: 28px; }
   border-left: 1px solid rgba(255, 248, 240, 0.18);
 }
 .popover-colors .swatch {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
+  min-height: 0; /* override .selection-popover button min-height */
   border-radius: 50%;
   border: 1.5px solid rgba(255, 248, 240, 0.4);
   cursor: pointer;
   padding: 0;
   background: var(--swatch-bg);
+  flex: 0 0 auto;
 }
 .popover-colors .swatch-amber { --swatch-bg: #d6ad68; }
 .popover-colors .swatch-sage  { --swatch-bg: #8d9b77; }

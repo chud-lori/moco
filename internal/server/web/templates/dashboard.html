@@ -34,7 +34,14 @@
                 <option value="public">Public — listed on the public shelf</option>
               </select>
             </label>
-            <label><span>Book file</span><input type="file" name="file" accept=".pdf,.epub,.md,.markdown" required /></label>
+            <label><span>Book file</span><input type="file" name="file" accept=".pdf,.epub,.md,.markdown" required data-upload-file /></label>
+            <label class="checkbox-row" data-convert-row hidden>
+              <input type="checkbox" name="convertToEpub" value="1" data-convert-checkbox />
+              <span>
+                <strong>Convert to EPUB for a better reader experience</strong>
+                <small data-convert-hint>Reflowable text, dark theme, font size — like a real Kindle book.</small>
+              </span>
+            </label>
             <p class="form-message" data-upload-message aria-live="polite"></p>
             <button class="button primary" type="submit">Upload to library</button>
           </form>

@@ -349,20 +349,53 @@ if (uploadForm) {
   }
   const progressBar = progressEl.querySelector("[data-upload-progress-bar]");
 
+  const convertRow = uploadForm.querySelector("[data-convert-row]");
+  const convertCheckbox = uploadForm.querySelector("[data-convert-checkbox]");
+  const convertHint = uploadForm.querySelector("[data-convert-hint]");
+
+  function updateConvertOption(file) {
+    if (!convertRow) return;
+    if (!file) {
+      convertRow.hidden = true;
+      if (convertCheckbox) convertCheckbox.checked = false;
+      return;
+    }
+    const name = file.name.toLowerCase();
+    const isPDF = name.endsWith(".pdf");
+    const isMD = name.endsWith(".md") || name.endsWith(".markdown");
+    if (!isPDF && !isMD) {
+      convertRow.hidden = true;
+      if (convertCheckbox) convertCheckbox.checked = false;
+      return;
+    }
+    convertRow.hidden = false;
+    if (convertHint) {
+      convertHint.textContent = isPDF
+        ? "Reflows the PDF text into a real EPUB so you can change font size, theme, and read like a Kindle."
+        : "Wraps the markdown into an EPUB with proper chapters and the full reading-style settings.";
+    }
+  }
+
   fileInput?.addEventListener("change", () => {
     const file = fileInput.files?.[0];
-    if (!file) return;
+    if (!file) {
+      updateConvertOption(null);
+      return;
+    }
     if (!allowedExt.test(file.name)) {
       setMessage(message, "Only .pdf, .epub, and .md files are supported.", "error");
       fileInput.value = "";
+      updateConvertOption(null);
       return;
     }
     if (file.size > maxBytes) {
       setMessage(message, `File is too large (max ${Math.round(maxBytes / 1024 / 1024)}MB).`, "error");
       fileInput.value = "";
+      updateConvertOption(null);
       return;
     }
     setMessage(message, `Selected ${truncateFilename(file.name, 48)} (${formatBytes(file.size)})`);
+    updateConvertOption(file);
   });
 
   uploadForm.addEventListener("submit", (event) => {
@@ -389,6 +422,15 @@ if (uploadForm) {
         progressBar.style.width = `${pct}%`;
         progressEl.setAttribute("aria-valuenow", String(Math.round(pct)));
         setMessage(message, `Uploading ${Math.round(pct)}%…`);
+      }
+    });
+    xhr.upload.addEventListener("load", () => {
+      // Upload finished; if conversion is requested the server may take a few
+      // seconds to extract text and rebuild the EPUB. Tell the user.
+      if (convertCheckbox?.checked) {
+        setMessage(message, "Converting to EPUB… this can take a few seconds for large books.");
+      } else {
+        setMessage(message, "Saving…");
       }
     });
     xhr.addEventListener("load", () => {
@@ -1079,7 +1121,10 @@ if (readerRoot) {
       return anchor?.id || "start";
     }
 
-    document.addEventListener("selectionchange", () => {
+    // Show the popover only AFTER the user releases the pointer — not on
+    // every selectionchange tick. Otherwise the popover jitters during drag
+    // and lingers when the selection is dismissed via keyboard / focus.
+    function settleMarkdownSelection() {
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : "";
       const inReader = !!(text && sel.anchorNode && readerContent.contains(sel.anchorNode));
@@ -1092,6 +1137,19 @@ if (readerRoot) {
       const rect = range.getBoundingClientRect();
       mdPendingSelection = { text, locator: locatorFromNode(sel.anchorNode) };
       showSelectionPopoverNear(rect);
+    }
+
+    document.addEventListener("mouseup", () => setTimeout(settleMarkdownSelection, 10));
+    document.addEventListener("touchend", () => setTimeout(settleMarkdownSelection, 10), { passive: true });
+
+    // Hard hide whenever the document selection is cleared (catches keyboard
+    // deselect, focus changes, page navigation).
+    document.addEventListener("selectionchange", () => {
+      const sel = window.getSelection();
+      if (!sel || !sel.toString().trim()) {
+        hideSelectionPopover();
+        mdPendingSelection = null;
+      }
     });
 
     attachPopoverHighlight(async () => {
@@ -1348,10 +1406,12 @@ if (readerRoot) {
         const locator = location?.start?.cfi || "";
         const progressPercent = location?.start?.percentage ? location.start.percentage * 100 : 0;
         saveProgress(locator, progressPercent);
+        if (prev) prev.disabled = !!location?.atStart;
+        if (next) next.disabled = !!location?.atEnd;
       });
 
-      prev?.addEventListener("click", () => rendition.prev());
-      next?.addEventListener("click", () => rendition.next());
+      prev?.addEventListener("click", () => { if (!prev.disabled) rendition.prev(); });
+      next?.addEventListener("click", () => { if (!next.disabled) rendition.next(); });
 
       document.addEventListener("keydown", (event) => {
         if (event.target.matches("input,textarea,select")) return;
@@ -1369,9 +1429,14 @@ if (readerRoot) {
         const VERTICAL_TOLERANCE = 60;
         const TIME_LIMIT = 600;
 
+        // Any new pointer interaction inside the page tears the popover down.
+        // A fresh selection will re-summon it via the `selected` event.
+        doc.addEventListener("mousedown", hideSelectionPopover);
+
         doc.addEventListener("touchstart", (e) => {
           const t = e.touches[0];
           sx = t.clientX; sy = t.clientY; st = Date.now(); moved = false;
+          hideSelectionPopover();
         }, { passive: true });
 
         doc.addEventListener("touchmove", (e) => {
@@ -1578,6 +1643,8 @@ if (readerRoot) {
           canvas.style.height = `${viewport.height / dpr}px`;
           await page.render({ canvasContext: ctx, viewport }).promise;
           if (pageLabel) pageLabel.textContent = `Page ${num} / ${pdf.numPages}`;
+          if (prev) prev.disabled = num <= 1;
+          if (next) next.disabled = num >= pdf.numPages;
           await saveProgress(`page:${num}`, (num / pdf.numPages) * 100);
         } finally {
           rendering = false;
