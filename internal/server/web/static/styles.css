@@ -1092,11 +1092,17 @@ main { display: grid; gap: 28px; }
 
 .empty-state {
   text-align: left;
-  padding: 22px 24px;
+  padding: 26px 28px 28px;
   background: transparent;
   border: 1px dashed var(--line-strong);
   box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
+.empty-state h2, .empty-state p { margin: 0; }
+.empty-state .button { margin-top: 4px; }
 .empty-state.is-primary {
   background: rgba(255, 251, 246, 0.82);
   border-style: solid;

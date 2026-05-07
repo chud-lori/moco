@@ -1043,6 +1043,8 @@ if (readerRoot) {
     theme: "system",
     fontFamily: "serif",
     lineHeight: "normal",
+    // EPUB page layout: "auto" = two-up on wide screens, "single" = one page always.
+    spread: "auto",
   };
   const settings = { ...defaultSettings, ...safeJSON(localStorage.getItem(SETTINGS_KEY)) };
 
@@ -1050,6 +1052,8 @@ if (readerRoot) {
 
   // Re-applied to the EPUB iframe theme below; defined so applySettings can call it.
   let applyEpubTheme = () => {};
+  // Re-applied to the EPUB rendition spread mode below.
+  let applyEpubSpread = () => {};
 
   function applySettings() {
     document.documentElement.style.setProperty("--reader-font-scale", String(settings.fontScale));
@@ -1087,12 +1091,18 @@ if (readerRoot) {
       btn.setAttribute("aria-pressed", String(on));
       btn.setAttribute("aria-checked", String(on));
     });
+    document.querySelectorAll(".spread-swatch").forEach((btn) => {
+      const on = btn.dataset.spread === settings.spread;
+      btn.setAttribute("aria-pressed", String(on));
+      btn.setAttribute("aria-checked", String(on));
+    });
 
     const range = document.querySelector("[data-font-scale]");
     if (range) range.value = String(settings.fontScale);
 
     // Push changes into the EPUB iframe (no-op for non-EPUB readers)
     applyEpubTheme();
+    applyEpubSpread();
   }
   function persistSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -1125,9 +1135,25 @@ if (readerRoot) {
       persistSettings();
     });
   });
+  document.querySelectorAll(".spread-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.spread = btn.dataset.spread;
+      applySettings();
+      persistSettings();
+    });
+  });
+
+  // Hide the EPUB-only settings rows on non-EPUB readers (PDF, Markdown).
+  if (readerKind !== "epub") {
+    document.querySelectorAll("[data-epub-only]").forEach((el) => { el.style.display = "none"; });
+  }
 
   // Expose the settings + helpers so the EPUB block can build its theme.
-  window.__mocoReaderSettings = { settings, FONT_FAMILIES, LINE_HEIGHTS, registerEpubThemeHook: (fn) => { applyEpubTheme = fn; } };
+  window.__mocoReaderSettings = {
+    settings, FONT_FAMILIES, LINE_HEIGHTS,
+    registerEpubThemeHook:  (fn) => { applyEpubTheme  = fn; },
+    registerEpubSpreadHook: (fn) => { applyEpubSpread = fn; },
+  };
 
   // ----- Fullscreen API -----
   const fullscreenButton = document.querySelector("[data-fullscreen-toggle]");
@@ -1416,12 +1442,15 @@ if (readerRoot) {
       // iframes, doesn't replace, so the placeholder would otherwise stay.
       removeLoading();
 
+      // "single" forces one page even on wide screens; "auto" keeps the
+      // two-up spread above minSpreadWidth.
+      const initialSpread = (window.__mocoReaderSettings?.settings?.spread === "single") ? "none" : "auto";
       try {
         rendition = book.renderTo("reader-content", {
           width: "100%",
           height: "100%",
           flow: "paginated",          // Kindle-style page turns
-          spread: "auto",              // two-up on wide screens
+          spread: initialSpread,
           minSpreadWidth: 900,         // single-page below ~iPad portrait
           allowScriptedContent: false,
         });
@@ -1495,6 +1524,18 @@ if (readerRoot) {
       refreshTheme();
       // Wire so future setting changes re-paint the iframe.
       settingsBag?.registerEpubThemeHook(refreshTheme);
+
+      // Live spread mode updates: "single" = always one page, "auto" = two-up
+      // when the viewport is wider than minSpreadWidth.
+      settingsBag?.registerEpubSpreadHook(() => {
+        if (!rendition) return;
+        const value = (settingsBag.settings.spread === "single") ? "none" : "auto";
+        try {
+          rendition.spread(value, 900);
+        } catch (err) {
+          console.warn("EPUB spread update failed:", err);
+        }
+      });
 
       // Belt-and-braces: even if the renderer never fires "rendered",
       // make sure the placeholder is gone and we don't show a frozen UI.
