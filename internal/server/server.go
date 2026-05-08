@@ -35,6 +35,10 @@ import (
 //go:embed web/templates/*.html web/static/*
 var embeddedFiles embed.FS
 
+// maxUploadBytes caps multipart request bodies for upload + inspect endpoints.
+// 120MB ≈ client-side limit (100MB book) + cover (~5MB) + multipart overhead.
+const maxUploadBytes = 120 << 20
+
 type Config struct {
 	Addr           string
 	DataDir        string
@@ -695,7 +699,13 @@ func (s *Server) handleInspectBook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "file is too large"})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid multipart request"})
 		return
 	}
@@ -745,7 +755,13 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "file is too large"})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid multipart request"})
 		return
 	}
@@ -964,7 +980,19 @@ func (s *Server) handleServeBookContent(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleServeBookCover(w http.ResponseWriter, r *http.Request) {
 	book, _, err := s.resolveBookAccess(r, r.PathValue("id"), false)
-	if err != nil || book.CoverPath == "" {
+	if err != nil {
+		// Don't fall back to a cacheable placeholder for access errors —
+		// otherwise a pre-login cover request poisons the browser/CDN cache
+		// and the real cover keeps showing as a placeholder after auth.
+		status := http.StatusNotFound
+		if errors.Is(err, errNeedsLogin) {
+			status = http.StatusUnauthorized
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, status, map[string]any{"error": "cover not available"})
+		return
+	}
+	if book.CoverPath == "" {
 		writeGeneratedCover(w, book)
 		return
 	}
@@ -1022,11 +1050,17 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 	if req.Locator == "" {
 		req.Locator = "start"
 	}
+	pct := req.ProgressPercent
+	if pct < 0 {
+		pct = 0
+	} else if pct > 100 {
+		pct = 100
+	}
 	progress := store.ReadingProgress{
 		UserID:          user.ID,
 		BookID:          book.ID,
 		Locator:         req.Locator,
-		ProgressPercent: req.ProgressPercent,
+		ProgressPercent: pct,
 		UpdatedAt:       time.Now().UTC(),
 	}
 	if err := s.store.UpsertProgress(r.Context(), progress); err != nil {
@@ -1072,9 +1106,15 @@ func (s *Server) handleCreateHighlight(w http.ResponseWriter, r *http.Request) {
 	if req.Locator == "" {
 		req.Locator = "start"
 	}
-	if req.Color == "" {
-		req.Color = "amber"
+	color := strings.TrimSpace(req.Color)
+	if color == "" {
+		color = "amber"
 	}
+	if !validHighlightColor(color) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid color"})
+		return
+	}
+	req.Color = color
 	highlight := store.Highlight{
 		ID:           randomID("hl"),
 		UserID:       user.ID,
@@ -1102,8 +1142,30 @@ func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]any{"error": "book not found"})
 		return
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", book.OriginalFilename))
-	s.serveBackendObject(w, r, book.StoragePath, safeMIME(book.MIMEType, filepath.Ext(book.OriginalFilename)), book.OriginalFilename)
+	// When the source was converted (e.g. md/pdf → epub), OriginalFilename
+	// still carries the source extension. Align the served filename with the
+	// stored format so downloads don't claim ".pdf" while serving epub bytes.
+	filename := downloadFilename(book.OriginalFilename, book.Format)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	s.serveBackendObject(w, r, book.StoragePath, safeMIME(book.MIMEType, filepath.Ext(filename)), filename)
+}
+
+// downloadFilename returns the original filename when its extension matches
+// the stored format, or rewrites the extension to match the format when the
+// source was converted at upload (md/pdf → epub).
+func downloadFilename(original, format string) string {
+	if original == "" {
+		return original
+	}
+	wanted := "." + strings.ToLower(strings.TrimSpace(format))
+	if wanted == "." {
+		return original
+	}
+	have := strings.ToLower(filepath.Ext(original))
+	if have == wanted {
+		return original
+	}
+	return strings.TrimSuffix(original, filepath.Ext(original)) + wanted
 }
 
 func (s *Server) handleDownloadConvertedEPUB(w http.ResponseWriter, r *http.Request) {
@@ -1649,6 +1711,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to change password"})
 		return
 	}
+	// Revoke every other session so a stolen cookie loses access on password change.
+	currentToken, _ := s.sessionToken(r)
+	_ = s.store.DeleteUserSessionsExcept(r.Context(), user.ID, currentToken)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1673,8 +1738,13 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to delete account"})
 		return
 	}
-	// Best-effort: remove the user's book directory.
-	_ = os.RemoveAll(filepath.Join(s.cfg.DataDir, "books", user.ID))
+	// Best-effort: purge the user's stored objects from whatever backend is
+	// configured. Goes through the storage interface so R2 / future remotes
+	// get cleaned up too — the previous local-only RemoveAll left objects
+	// behind on remote backends.
+	if err := s.storage.DeletePrefix(r.Context(), fmt.Sprintf("books/%s/", user.ID)); err != nil {
+		log.Printf("delete-account: storage cleanup for user %s failed: %v", user.ID, err)
+	}
 	// Drop the session cookie.
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.cfg.CookieName,

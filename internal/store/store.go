@@ -270,6 +270,20 @@ func (s *Store) DeleteSession(ctx context.Context, rawToken string) error {
 	return err
 }
 
+// DeleteUserSessionsExcept removes every session for the given user, leaving
+// only the session matching keepRawToken (pass empty string to revoke all).
+// Used after password change so existing sessions cannot keep authenticating.
+func (s *Store) DeleteUserSessionsExcept(ctx context.Context, userID, keepRawToken string) error {
+	if keepRawToken == "" {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?`,
+		userID, hashToken(keepRawToken))
+	return err
+}
+
 func (s *Store) CreateBook(ctx context.Context, book Book) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO books (

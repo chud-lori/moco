@@ -396,6 +396,11 @@ if (uploadForm) {
     }
   }
 
+  // Tracks the in-flight inspect request so a fast file swap can cancel the
+  // previous one — without this, a slow first response can land after a
+  // newer file is selected and clobber its title/author fields.
+  let inspectAbort = null;
+
   function clearFileSelection() {
     fileInput.value = "";
     if (dropEmpty) dropEmpty.hidden = false;
@@ -405,6 +410,10 @@ if (uploadForm) {
     if (authorInput) authorInput.value = "";
     if (detectedMessage) detectedMessage.textContent = "";
     if (submitBtn) submitBtn.disabled = true;
+    if (inspectAbort) {
+      inspectAbort.abort();
+      inspectAbort = null;
+    }
     updateConvertOption(null);
   }
 
@@ -444,6 +453,9 @@ if (uploadForm) {
   }
 
   async function inspectFile(file) {
+    if (inspectAbort) inspectAbort.abort();
+    const ctrl = new AbortController();
+    inspectAbort = ctrl;
     if (detectedMessage) detectedMessage.textContent = "Detecting title and author…";
     try {
       const fd = new FormData();
@@ -454,9 +466,11 @@ if (uploadForm) {
         body: fd,
         headers: csrf ? { "X-CSRF-Token": csrf } : {},
         credentials: "same-origin",
+        signal: ctrl.signal,
       });
       if (!res.ok) throw new Error("inspect failed");
       const data = await res.json();
+      if (ctrl.signal.aborted) return;
       if (titleInput && !titleInput.value) titleInput.value = data.title || "";
       if (authorInput && !authorInput.value) authorInput.value = data.author || "";
       if (detectedMessage) {
@@ -467,7 +481,8 @@ if (uploadForm) {
           ? `Detected ${detected.join(" and ")} from the file — edit if needed.`
           : "We couldn't detect a title — please add one.";
       }
-    } catch (_) {
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
       if (detectedMessage) {
         detectedMessage.textContent = "Could not auto-detect details — please fill them in.";
       }
@@ -475,6 +490,8 @@ if (uploadForm) {
         // Fallback: derive from filename
         titleInput.value = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
       }
+    } finally {
+      if (inspectAbort === ctrl) inspectAbort = null;
     }
   }
 
@@ -2070,7 +2087,7 @@ if (readerRoot) {
     if (!bookmarksList || isGuest) return;
     try {
       const data = await requestJSON(`/api/v1/books/${bookID}/bookmarks`);
-      renderBookmarks(data.bookmarks || []);
+      renderBookmarks(data.items || []);
     } catch (_) {
       bookmarksList.innerHTML = `<article class="note-card"><p>Couldn't load bookmarks.</p></article>`;
     }

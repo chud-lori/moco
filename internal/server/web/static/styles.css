@@ -1516,7 +1516,7 @@ main { display: grid; gap: 22px; }
   .book-detail-meta h1 { font-size: 1.7rem; line-height: 1.15; }
 }
 .book-detail-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.book-detail-author { font-size: 0.95rem; margin: 0; color: var(--ink); }
+.book-detail-author { font-size: 0.95rem; margin: 0; color: var(--text); }
 .book-detail-owner, .book-detail-time { margin: 0; font-size: 0.85rem; color: var(--muted); }
 .book-detail-tags { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .book-detail-tags a {
@@ -1742,7 +1742,8 @@ main { display: grid; gap: 22px; }
 /* Paginated reader stage (EPUB iframe / PDF canvas).
    Mobile-first: viewport minus reader-app top/bottom paddings (~22px) and
    the floating bottom-bar reserve (~78px + safe area) ≈ 100dvh - 100px.
-   Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px. */
+   Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px.
+   Guest banner adds ~56px on mobile / ~48px on desktop when shown. */
 .epub-stage, .pdf-stage {
   width: 100%;
   height: calc(100dvh - 100px - env(safe-area-inset-bottom));
@@ -1758,10 +1759,26 @@ main { display: grid; gap: 22px; }
     height: calc(100vh - 100px - env(safe-area-inset-bottom));
   }
 }
+.reader-app[data-guest] .epub-stage,
+.reader-app[data-guest] .pdf-stage {
+  height: calc(100dvh - 156px - env(safe-area-inset-bottom));
+}
+@supports not (height: 100dvh) {
+  .reader-app[data-guest] .epub-stage,
+  .reader-app[data-guest] .pdf-stage {
+    height: calc(100vh - 156px - env(safe-area-inset-bottom));
+  }
+}
 @media (min-width: 768px) {
   .epub-stage, .pdf-stage { height: calc(100dvh - 180px); }
   @supports not (height: 100dvh) {
     .epub-stage, .pdf-stage { height: calc(100vh - 180px); }
+  }
+  .reader-app[data-guest] .epub-stage,
+  .reader-app[data-guest] .pdf-stage { height: calc(100dvh - 228px); }
+  @supports not (height: 100dvh) {
+    .reader-app[data-guest] .epub-stage,
+    .reader-app[data-guest] .pdf-stage { height: calc(100vh - 228px); }
   }
 }
 
@@ -2365,7 +2382,7 @@ main { display: grid; gap: 22px; }
   border-radius: 999px;
   border: 0;
   background: rgba(34, 28, 22, 0.08);
-  color: var(--ink);
+  color: var(--text);
   font-size: 1.2rem;
   line-height: 1;
   cursor: pointer;
