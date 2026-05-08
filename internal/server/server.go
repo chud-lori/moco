@@ -282,6 +282,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /api/v1/books/{id}", s.handleUpdateBookMetadata)
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/cover", s.handleUploadBookCover)
 	s.mux.HandleFunc("POST /api/v1/books/{id}/cover/regenerate", s.handleRegenerateBookCover)
+	s.mux.HandleFunc("GET /api/v1/cover/preview", s.handleCoverPreview)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/content", s.handleServeBookContent)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/cover", s.handleServeBookCover)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/progress", s.handleGetProgress)
@@ -892,6 +893,21 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// If we still have no cover and the upload form picked a generated
+	// variant, persist the SVG so the preview the user saw on the form is
+	// what actually shows up afterwards. Without this, the cover endpoint's
+	// fallback would re-derive a cover from the book ID and might not match
+	// what was previewed.
+	if coverKey == "" {
+		if salt := strings.TrimSpace(r.FormValue("coverSalt")); salt != "" {
+			previewBook := store.Book{ID: bookID, Title: title, Author: author, Format: storedFormat}
+			svg := generateCoverSVGWithSalt(previewBook, salt)
+			coverKey = keyForBook(user.ID, bookID, "cover.svg")
+			if err := s.storage.Put(r.Context(), coverKey, strings.NewReader(svg), "image/svg+xml", int64(len(svg))); err != nil {
+				coverKey = ""
+			}
+		}
+	}
 
 	now := time.Now().UTC()
 	book := store.Book{
@@ -1090,6 +1106,32 @@ func (s *Server) handleRegenerateBookCover(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "coverPath": newKey})
+}
+
+// handleCoverPreview renders an in-memory generated SVG for the upload form's
+// cover preview. Auth-required (still inside requireUser-protected mux paths
+// at deploy via auth middleware? — explicit check below to be safe). No DB
+// lookup, no storage write. Inputs are query params: title, author, format,
+// salt. The salt lets the upload form re-roll the variant before submitting.
+func (s *Server) handleCoverPreview(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireUser(r); err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	q := r.URL.Query()
+	preview := store.Book{
+		// ID is mixed into the seed; for previews we use the salt as the
+		// stable identifier so the same (title, salt) reproduces the same
+		// design regardless of when it's rendered.
+		ID:     "preview",
+		Title:  q.Get("title"),
+		Author: q.Get("author"),
+		Format: q.Get("format"),
+	}
+	svg := generateCoverSVGWithSalt(preview, q.Get("salt"))
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(svg))
 }
 
 func (s *Server) handleServeBookContent(w http.ResponseWriter, r *http.Request) {

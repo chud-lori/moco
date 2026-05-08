@@ -1410,6 +1410,42 @@ main { display: grid; gap: 22px; }
 }
 .cover-upload small { color: var(--muted); font-weight: 400; }
 
+/* Auto-generated cover preview shown on the upload form. Mobile-first:
+   stacked column with thumbnail centered. Desktop: thumbnail next to label
+   and re-roll button. */
+.cover-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--m-radius-card);
+  background: rgba(255, 251, 246, 0.8);
+}
+.cover-preview[hidden] { display: none; }
+.cover-preview-img {
+  width: 120px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  align-self: center;
+}
+.cover-preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.cover-preview-label { margin: 0; color: var(--muted); font-size: 0.88rem; }
+@media (min-width: 768px) {
+  .cover-preview { flex-direction: row; align-items: center; gap: 16px; }
+  .cover-preview-img { align-self: flex-start; }
+  .cover-preview-actions { flex: 1 1 auto; }
+}
+
 .book-panel-top, .book-panel-actions {
   display: flex;
   align-items: center;

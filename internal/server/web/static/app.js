@@ -372,6 +372,57 @@ if (uploadForm) {
   const detectedMessage = uploadForm.querySelector("[data-upload-detected]");
   const titleInput      = uploadForm.querySelector("[data-upload-title]");
   const authorInput     = uploadForm.querySelector("[data-upload-author]");
+  const coverFileInput  = uploadForm.querySelector("[data-upload-cover]");
+  const coverPreview    = uploadForm.querySelector("[data-cover-preview]");
+  const coverPreviewImg = uploadForm.querySelector("[data-cover-preview-img]");
+  const coverSaltInput  = uploadForm.querySelector("[data-cover-salt-input]");
+  const coverRerollBtn  = uploadForm.querySelector("[data-cover-preview-reroll]");
+
+  // Auto-generated cover preview state. The salt is what makes a re-roll
+  // produce a different palette/variant; a random alphanumeric is enough
+  // since it just feeds a hash. The preview <img> uses the /cover/preview
+  // endpoint (no DB / storage write). When user uploads their own cover
+  // file, the preview is hidden and salt is cleared so the upload handler
+  // doesn't persist a generated cover.
+  let coverSalt = randomShortSalt();
+  function randomShortSalt() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+  function refreshCoverPreview() {
+    if (!coverPreview || !coverPreviewImg || !coverSaltInput) return;
+    if (coverFileInput?.files?.[0]) {
+      coverPreview.hidden = true;
+      coverSaltInput.value = "";
+      return;
+    }
+    const title = (titleInput?.value || "").trim();
+    if (!title) {
+      coverPreview.hidden = true;
+      coverSaltInput.value = "";
+      return;
+    }
+    const f = fileInput?.files?.[0];
+    const ext = f ? f.name.split(".").pop().toLowerCase() : "";
+    const params = new URLSearchParams({
+      title,
+      author: (authorInput?.value || "").trim(),
+      format: ext === "markdown" ? "md" : ext,
+      salt: coverSalt,
+    });
+    coverPreviewImg.src = `/api/v1/cover/preview?${params.toString()}`;
+    coverSaltInput.value = coverSalt;
+    coverPreview.hidden = false;
+  }
+  coverRerollBtn?.addEventListener("click", () => {
+    coverSalt = randomShortSalt();
+    refreshCoverPreview();
+  });
+  // When the user picks their own cover file, hide the preview and drop
+  // the salt so the server doesn't persist a generated SVG instead.
+  coverFileInput?.addEventListener("change", refreshCoverPreview);
+  // Title edits update the preview so it reflects the actual stored title.
+  titleInput?.addEventListener("input", refreshCoverPreview);
+  authorInput?.addEventListener("input", refreshCoverPreview);
 
   function updateConvertOption(file) {
     if (!convertRow) return;
@@ -414,6 +465,9 @@ if (uploadForm) {
       inspectAbort.abort();
       inspectAbort = null;
     }
+    if (coverPreview) coverPreview.hidden = true;
+    if (coverSaltInput) coverSaltInput.value = "";
+    if (coverFileInput) coverFileInput.value = "";
     updateConvertOption(null);
   }
 
@@ -481,6 +535,7 @@ if (uploadForm) {
           ? `Detected ${detected.join(" and ")} from the file — edit if needed.`
           : "We couldn't detect a title — please add one.";
       }
+      refreshCoverPreview();
     } catch (err) {
       if (err && err.name === "AbortError") return;
       if (detectedMessage) {
@@ -490,6 +545,7 @@ if (uploadForm) {
         // Fallback: derive from filename
         titleInput.value = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
       }
+      refreshCoverPreview();
     } finally {
       if (inspectAbort === ctrl) inspectAbort = null;
     }

@@ -53,9 +53,17 @@
               <label><span>Book title</span><input type="text" name="title" autocomplete="off" data-upload-title /></label>
               <label><span>Author</span><input type="text" name="author" autocomplete="off" placeholder="Add the author if you'd like" data-upload-author /></label>
               <label class="cover-upload">
-                <span>Cover image <small>(optional — we'll auto-extract one if possible)</small></span>
+                <span>Cover image <small>(optional — we'll auto-extract from the file, or generate a stylized cover from the title)</small></span>
                 <input type="file" name="cover" accept="image/png,image/jpeg,image/webp,image/gif" data-upload-cover />
               </label>
+              <div class="cover-preview" data-cover-preview hidden>
+                <img class="cover-preview-img" data-cover-preview-img alt="Generated cover preview" />
+                <div class="cover-preview-actions">
+                  <p class="cover-preview-label">Auto-generated from the title</p>
+                  <button type="button" class="button subtle" data-cover-preview-reroll>↻ Try another style</button>
+                </div>
+                <input type="hidden" name="coverSalt" data-cover-salt-input value="" />
+              </div>
               <label><span>Visibility</span>
                 <select name="visibility">
                   <option value="private">Private — only you</option>
