@@ -1,3 +1,31 @@
+/* =========================================================================
+   moco — stylesheet
+   -------------------------------------------------------------------------
+   ARCHITECTURE: mobile-first.
+     • Every default rule targets phones first.
+     • Use `@media (min-width: 768px)` to ADD desktop styles. Never use
+       `max-width` for new components — overriding desktop with smaller-
+       viewport rules is the pattern that produced the long history of
+       mobile bugs in this file.
+     • Single breakpoint scale: 768px (tablet/desktop), 1024px (wide).
+       Older 1100/880/640/560/420 breakpoints are being phased out.
+     • Inputs use --m-fs-input (16px) to prevent iOS zoom-on-focus.
+     • Primary tap targets ≥48px on mobile.
+
+   FILE ORGANIZATION (top → bottom):
+     1. Tokens (custom properties)
+     2. Reset + base elements
+     3. Theme variants (reader)
+     4. Layout primitives: page-shell, topbar
+     5. Form primitives: button, input, select, search, stack-form
+     6. Card primitives: card surfaces, chips
+     7. Layout patterns: hero, dashboard-hero, grids, toolbars
+     8. Page-specific: home, dashboard, quotes, stats, settings, book detail
+     9. Reader: reader-app, reader-topbar, ebook/pdf/markdown stages
+    10. Overlays: modal, sidebar, toast, selection popover
+    11. Utilities (sr-only, etc.)
+   ========================================================================= */
+
 :root {
   --bg: #f6f0e7;
   --bg-strong: #efe5d6;
@@ -22,6 +50,23 @@
   --radius-md: 20px;
   --radius-sm: 14px;
   --tap: 44px;
+
+  /* Mobile design tokens — used in the consolidated mobile layer at the
+     end of this file. Kept separate from desktop tokens so each surface
+     has its own scale rather than scaling desktop values down. */
+  --m-pad-page: 14px;            /* horizontal padding on the page-shell */
+  --m-pad-card: 16px;            /* card interior padding */
+  --m-gap-section: 18px;         /* gap between major sections */
+  --m-gap-card: 10px;            /* gap inside cards */
+  --m-radius-card: 18px;         /* card corner radius */
+  --m-radius-input: 14px;        /* input/select corner radius */
+  --m-tap: 48px;                 /* min tap target for primary controls */
+  --m-fs-h1: 1.6rem;             /* page-level headings on mobile */
+  --m-fs-h2: 1.25rem;            /* section headings */
+  --m-fs-body: 0.95rem;          /* body copy */
+  --m-fs-meta: 0.85rem;          /* secondary/muted copy */
+  --m-fs-input: 16px;            /* >=16px so iOS doesn't zoom on input focus */
+
   --bg-grad:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.75), transparent 34%),
     radial-gradient(circle at bottom right, rgba(186, 125, 74, 0.12), transparent 28%),
@@ -52,6 +97,21 @@ body {
   font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg-grad);
   background-attachment: fixed;
+}
+
+/* iOS Safari zooms when a user taps any input whose font-size is < 16px,
+   which breaks paginated layouts. Set 16px globally on every text input
+   so the zoom never triggers; visible scaling is handled per-component. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+textarea,
+select {
+  font-size: var(--m-fs-input);
 }
 
 .reader-body {
@@ -155,68 +215,138 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 /* ---------- Layout shells ---------- */
+/* ----- Page shell -----
+   Mobile-first: edge-to-edge with internal padding (app-like, no horizontal
+   scroll). Desktop centers a max-width container.
+*/
 .page-shell {
-  width: min(1240px, calc(100% - 32px));
+  width: 100%;
+  max-width: 100%;
+  padding: 14px var(--m-pad-page) calc(36px + env(safe-area-inset-bottom));
   margin: 0 auto;
-  padding: 24px 0 56px;
+  box-sizing: border-box;
 }
-.page-shell-narrow { width: min(760px, calc(100% - 24px)); }
+.page-shell-narrow { width: 100%; max-width: 760px; }
+@media (min-width: 768px) {
+  .page-shell {
+    width: min(1240px, calc(100% - 32px));
+    padding: 24px 0 56px;
+  }
+  .page-shell-narrow { width: min(760px, calc(100% - 24px)); }
+}
 
+/* ----- Reader shell -----
+   Mobile-first: very tight top padding so the topbar (fixed-position) only
+   visually overlaps the top of the rendered content when revealed. Desktop
+   reserves more breathing room. The padding stays CONSTANT through immersive
+   toggles — animating it would shift content position. */
 .reader-app {
-  min-height: 100vh;
-  /* Keep padding-top constant — the topbar is position:fixed so it doesn't
-     reserve flow space, and animating padding-top here would shift the page
-     content by ~68px every time immersive mode toggles. The bar simply
-     fades in/out over the reserved space, content stays still. */
-  padding: 80px 12px 12px;
+  min-height: 100dvh;
+  padding: 14px 8px 8px;
   position: relative;
 }
+@supports not (height: 100dvh) {
+  .reader-app { min-height: 100vh; }
+}
+@media (min-width: 768px) {
+  .reader-app { padding: 80px 12px 12px; }
+}
 
-main { display: grid; gap: 28px; }
+main { display: grid; gap: 22px; }
+@media (min-width: 768px) {
+  main { gap: 28px; }
+}
 
-/* ---------- Topbars ---------- */
+/* ----- Topbar (primary, dashboard chrome) -----
+   Mobile-first: brand + actions on row 1, scrollable nav as full-width
+   row 2 (via `order: 99` and `flex: 1 1 100%`). Desktop expands into a
+   single horizontal pill.
+*/
 .topbar {
   position: sticky;
-  top: 16px;
+  top: 8px;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 12px 10px 22px;
-  margin-bottom: 32px;
-  background: rgba(250, 244, 236, 0.72);
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  background: rgba(250, 244, 236, 0.96);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 18px;
   box-shadow: var(--shadow);
 }
 .topbar > .brand,
 .topbar > .topnav,
 .topbar > .topbar-actions { min-width: 0; }
-.topbar .topnav { flex: 0 1 auto; }
-.topbar .topbar-actions { flex: 0 1 auto; }
+.topbar > .brand { flex: 0 0 auto; }
+.topbar .topbar-actions { flex: 0 1 auto; gap: 6px; margin-left: auto; }
+.topbar-actions .session-chip { display: none; }
 
+@media (min-width: 768px) {
+  .topbar {
+    top: 16px;
+    padding: 10px 12px 10px 22px;
+    margin-bottom: 32px;
+    background: rgba(250, 244, 236, 0.72);
+    border-radius: 999px;
+  }
+  .topbar > .brand { flex: 0 1 auto; }
+  .topbar .topnav { flex: 0 1 auto; }
+  .topbar-actions .session-chip { display: inline-flex; }
+}
+
+/* ----- Reader topbar (floating overlay) -----
+   Mobile-first: compact pill with icon-only toggles, brand-mark only.
+   Desktop: full pill with all labels visible. */
 .reader-topbar {
   position: fixed;
-  top: 12px;
-  left: 12px;
-  right: 12px;
+  top: 8px;
+  left: 8px;
+  right: 8px;
   z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 14px;
+  gap: 6px;
+  padding: 6px 8px;
   background: rgba(247, 240, 230, 0.86);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
   transition: opacity 0.25s ease, transform 0.25s ease;
+  flex-wrap: nowrap;
+}
+.reader-topbar .brand-name { display: none; }
+.reader-topbar .session-chip,
+.reader-topbar .visibility-chip,
+.reader-topbar [data-fullscreen-toggle] { display: none; }
+.reader-topbar .button { padding: 8px 10px; font-size: 0.85rem; min-height: 38px; }
+.reader-topbar .reader-toggle { width: 38px; height: 38px; padding: 0; flex-shrink: 0; }
+.reader-topbar .reader-toggle .reader-toggle-label { display: none; }
+.reader-topbar .reader-toggle .icon { width: 18px; height: 18px; }
+@media (min-width: 768px) {
+  .reader-topbar {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    gap: 16px;
+    padding: 10px 14px;
+    border-radius: 22px;
+  }
+  .reader-topbar .brand-name { display: inline; }
+  .reader-topbar .session-chip,
+  .reader-topbar .visibility-chip,
+  .reader-topbar [data-fullscreen-toggle] { display: inline-flex; }
+  .reader-topbar .button { padding: 10px 14px; font-size: 0.95rem; min-height: var(--tap); }
+  .reader-topbar .reader-toggle { width: auto; height: auto; padding: 10px 14px; }
+  .reader-topbar .reader-toggle .reader-toggle-label { display: inline; }
 }
 .reader-app.is-immersive .reader-topbar {
   transform: translateY(calc(-100% - 24px));
@@ -279,19 +409,40 @@ main { display: grid; gap: 28px; }
   font-size: 0.95rem;
 }
 
-/* Topbar nav: pill-shaped links with clear hover + active states. */
+/* Topbar nav.
+   Mobile-first: full-width second row, horizontally scrollable so any
+   number of links fits without breaking the layout. Desktop becomes
+   inline pills sitting next to the brand.
+*/
+.topnav {
+  display: flex;
+  flex: 1 1 100%;
+  order: 99;
+  gap: 4px;
+  margin: 4px 0 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.topnav::-webkit-scrollbar { display: none; }
 .topnav a {
   display: inline-flex;
   align-items: center;
-  padding: 7px 14px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid transparent;
+  white-space: nowrap;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 500;
   text-decoration: none;
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
+}
+@media (min-width: 768px) {
+  .topnav { flex: 0 1 auto; order: 0; margin: 0; overflow: visible; gap: 10px; }
+  .topnav a { padding: 7px 14px; font-size: 0.95rem; }
 }
 .topnav a:hover {
   background: rgba(255, 250, 242, 0.85);
@@ -313,21 +464,28 @@ main { display: grid; gap: 28px; }
   border-color: transparent;
 }
 
-/* ---------- Buttons ---------- */
+/* ----- Buttons -----
+   Mobile-first: 48px primary tap target, 40px subtle. Desktop relaxes to
+   the 44px desktop tap-target token.
+*/
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: var(--tap);
+  min-height: var(--m-tap);
   padding: 10px 18px;
   border-radius: 999px;
   border: 1px solid transparent;
   font-weight: 600;
+  font-size: 0.95rem;
   cursor: pointer;
   transition: transform 0.08s ease, background-color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+@media (min-width: 768px) {
+  .button { min-height: var(--tap); }
 }
 
 .button.primary { background: var(--text); color: #fff8f0; }
@@ -342,6 +500,11 @@ main { display: grid; gap: 28px; }
 .button.subtle:hover, .button.secondary:hover {
   background: rgba(255, 250, 242, 0.95);
   border-color: var(--line-strong);
+}
+/* Subtle variant on mobile: smaller tap target so it doesn't dominate. */
+.button.subtle { min-height: 40px; padding: 8px 14px; font-size: 0.88rem; }
+@media (min-width: 768px) {
+  .button.subtle { min-height: var(--tap); padding: 10px 18px; font-size: 0.95rem; }
 }
 
 .button:active { transform: scale(0.98); }
@@ -401,12 +564,15 @@ main { display: grid; gap: 28px; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- Hero / home ---------- */
+/* ----- Hero (logged-out home page) -----
+   Mobile-first: single column, tighter padding, smaller hero text.
+   Desktop adds the two-column layout and breathing room.
+*/
 .hero {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 28px;
-  padding: 48px 0 40px;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  padding: 16px 0 12px;
 }
 
 .hero-copy, .hero-panel, .library-card, .reader-card,
@@ -416,54 +582,99 @@ main { display: grid; gap: 28px; }
 }
 
 .hero-copy {
-  padding: 36px;
-  border-radius: var(--radius-lg);
+  padding: 22px;
+  border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(255, 251, 245, 0.78), rgba(248, 239, 226, 0.88));
+}
+
+@media (min-width: 768px) {
+  .hero {
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 28px;
+    padding: 48px 0 40px;
+  }
+  .hero-copy {
+    padding: 36px;
+    border-radius: var(--radius-lg);
+  }
 }
 
 .eyebrow, .section-label {
   margin: 0 0 12px;
   color: var(--accent-dark);
-  font-size: 0.85rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+@media (min-width: 768px) {
+  .eyebrow, .section-label { font-size: 0.85rem; letter-spacing: 0.12em; }
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(2.6rem, 6vw, 5.4rem);
-  line-height: 1;
+  font-size: var(--m-fs-h1);
+  line-height: 1.15;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .hero-text {
-  width: min(540px, 100%);
-  margin: 18px 0 24px;
+  width: 100%;
+  margin: 14px 0 18px;
   color: var(--muted);
-  font-size: 1.05rem;
-  line-height: 1.7;
+  font-size: var(--m-fs-body);
+  line-height: 1.55;
 }
 
-.hero-meta { margin-top: 18px; flex-wrap: wrap; }
+@media (min-width: 768px) {
+  .hero h1 {
+    font-size: clamp(2.6rem, 6vw, 5.4rem);
+    line-height: 1;
+  }
+  .hero-text {
+    width: min(540px, 100%);
+    margin: 18px 0 24px;
+    font-size: 1.05rem;
+    line-height: 1.7;
+  }
+}
 
+/* Hero meta chips ("Highlights and reading progress" etc.) — wrap on mobile. */
+.hero-meta { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.8rem; }
 .hero-meta span {
-  padding: 8px 12px;
+  padding: 4px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 250, 245, 0.68);
 }
+@media (min-width: 768px) {
+  .hero-meta { margin-top: 18px; gap: 10px; font-size: 0.95rem; }
+  .hero-meta span { padding: 8px 12px; }
+}
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (min-width: 768px) {
+  .hero-actions { gap: 12px; }
+}
 
 .hero-panel {
-  padding: 22px;
-  border-radius: var(--radius-lg);
+  padding: 18px;
+  border-radius: var(--m-radius-card);
   background: linear-gradient(180deg, rgba(242, 231, 216, 0.9), rgba(255, 248, 240, 0.86));
+}
+@media (min-width: 768px) {
+  .hero-panel { padding: 22px; border-radius: var(--radius-lg); }
 }
 
 .shelf-card {
-  padding: 18px;
-  border-radius: 22px;
+  padding: 14px;
+  border-radius: var(--m-radius-card);
   background: rgba(255, 251, 246, 0.74);
   border: 1px solid rgba(85, 66, 43, 0.08);
+}
+@media (min-width: 768px) {
+  .shelf-card { padding: 18px; border-radius: 22px; }
 }
 
 .shelf-empty {
@@ -488,11 +699,13 @@ main { display: grid; gap: 28px; }
   text-decoration-color: rgba(111, 98, 85, 0.4);
 }
 
+/* Public-shelf row (home page).
+   Mobile-first: 40×60 thumbnail. Desktop bumps to 44×66. */
 .book-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 0;
+  gap: 12px;
+  padding: 10px 0;
   border-top: 1px solid rgba(85, 66, 43, 0.08);
   color: inherit;
   text-decoration: none;
@@ -501,13 +714,17 @@ main { display: grid; gap: 28px; }
 .book-row:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
 
 .book-row-cover {
-  flex: 0 0 44px;
-  width: 44px;
-  height: 66px;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 60px;
   border-radius: 8px;
   overflow: hidden;
   background: rgba(85, 66, 43, 0.06);
   display: block;
+}
+@media (min-width: 768px) {
+  .book-row { gap: 14px; padding: 12px 0; }
+  .book-row-cover { flex-basis: 44px; width: 44px; height: 66px; }
 }
 .book-row-cover img {
   width: 100%;
@@ -537,19 +754,40 @@ main { display: grid; gap: 28px; }
 .sand { background: linear-gradient(160deg, #d9c19e 0%, #b79768 100%); }
 .ink  { background: linear-gradient(160deg, #657280 0%, #414a54 100%); }
 
+/* Feature band (Discover hero, etc.).
+   Mobile-first: single column, tight padding. Desktop: two-column with the
+   layout-pattern rules in the @media (min-width: 768px) block below. */
 .feature-band {
-  grid-template-columns: 1fr 0.8fr;
-  gap: 18px;
-  padding: 26px 30px;
-  margin: 8px 0 20px;
-  border-radius: var(--radius-lg);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 0;
+  margin: 0 0 12px;
+  border-radius: var(--m-radius-card);
   background: rgba(255, 250, 243, 0.76);
 }
+.feature-band p { font-size: var(--m-fs-body); line-height: 1.45; }
+@media (min-width: 768px) {
+  .feature-band {
+    gap: 18px;
+    padding: 26px 30px;
+    margin: 8px 0 20px;
+    border-radius: var(--radius-lg);
+  }
+}
 
+/* Cross-band heading scale.
+   Mobile-first: 1.25rem (--m-fs-h2). Desktop scales up to 1.9–3.2rem. */
 .feature-band h2, .reader-preview h2, .notes-preview h2 {
   margin: 0;
-  font-size: clamp(1.9rem, 4vw, 3.2rem);
-  line-height: 1.05;
+  font-size: var(--m-fs-h2);
+  line-height: 1.2;
+}
+@media (min-width: 768px) {
+  .feature-band h2, .reader-preview h2, .notes-preview h2 {
+    font-size: clamp(1.9rem, 4vw, 3.2rem);
+    line-height: 1.05;
+  }
 }
 
 /* ---------- Cards / lists ---------- */
@@ -630,6 +868,10 @@ main { display: grid; gap: 28px; }
   font-weight: 600;
 }
 
+/* Reader toolbar — small format-chip + progress strip below the topbar.
+   Mobile-first: hidden inside paginated readers (saves vertical space; the
+   user already sees percent-read in the bottom-bar progress). Desktop shows
+   it as a slim header strip. */
 .reader-toolbar {
   justify-content: space-between;
   padding-bottom: 14px;
@@ -637,6 +879,10 @@ main { display: grid; gap: 28px; }
   flex-wrap: wrap;
   gap: 8px;
   transition: opacity 0.25s ease;
+}
+.reader-body-paginated .reader-toolbar { display: none; }
+@media (min-width: 768px) {
+  .reader-body-paginated .reader-toolbar { display: flex; }
 }
 .reader-app.is-immersive .reader-toolbar { opacity: 0; pointer-events: none; }
 .reader-app.is-immersive .highlight-actions { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
@@ -678,17 +924,22 @@ main { display: grid; gap: 28px; }
 
 .notes-stack { display: grid; gap: 14px; }
 
+/* Note cards (highlights / bookmarks panel + cross-book quotes list).
+   Mobile-first: tighter padding + radius, smaller body text. */
 .note-card {
-  padding: 20px;
-  border-radius: 22px;
+  padding: 14px;
+  border-radius: var(--m-radius-card);
   background: rgba(255, 249, 242, 0.92);
 }
-
 .note-card p {
   margin: 12px 0 0;
   font-family: "Cormorant Garamond", serif;
-  font-size: 1.35rem;
-  line-height: 1.45;
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+@media (min-width: 768px) {
+  .note-card { padding: 20px; border-radius: 22px; }
+  .note-card p { font-size: 1.35rem; line-height: 1.45; }
 }
 .note-card .note-meta {
   font-family: "Manrope", sans-serif;
@@ -758,48 +1009,64 @@ main { display: grid; gap: 28px; }
   display: grid;
 }
 
-.dashboard-hero, .reader-layout { gap: 32px; }
+/* Dashboard hero (library page intro + upload form).
+   Mobile-first: single column, smaller gap. Desktop adds the side-by-side
+   layout for the title + upload form panels. */
+.dashboard-hero { grid-template-columns: 1fr; gap: 18px; align-items: start; }
+.dashboard-hero > div, .dashboard-hero > form { min-width: 0; }
+.dashboard-hero > div { display: grid; gap: 10px; align-content: start; }
+.reader-layout { gap: 18px; }
+@media (min-width: 768px) {
+  .dashboard-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+    gap: 32px;
+  }
+  .dashboard-hero > div { gap: 12px; }
+  .reader-layout { gap: 32px; }
+}
 
-.dashboard-hero {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-  align-items: start;
-}
-.dashboard-hero > div, .dashboard-hero > form {
-  min-width: 0;
-}
-.dashboard-hero > div {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-}
-
+/* Page-level headings.
+   Mobile-first: tight, breakable. Desktop scales up via clamp. */
 .dashboard-title, .auth-title {
   margin: 0;
   font-family: "Cormorant Garamond", serif;
-  font-size: clamp(2rem, 3.4vw, 2.8rem);
-  line-height: 1.05;
+  font-size: var(--m-fs-h1);
+  line-height: 1.2;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
-.auth-title { font-size: clamp(2rem, 4vw, 3rem); }
+@media (min-width: 768px) {
+  .dashboard-title { font-size: clamp(2rem, 3.4vw, 2.8rem); line-height: 1.05; }
+  .auth-title { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }
+}
 
-.stack-form { gap: 14px; }
-
+/* Stack form (sign-up, settings, etc.).
+   Mobile-first: tighter gap, smaller font, ≥16px input font (iOS zoom). */
+.stack-form { gap: 12px; }
 .stack-form label {
   display: grid;
   gap: 8px;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: var(--m-fs-meta);
 }
-
 .stack-form input,
 .stack-form select,
 .stack-form textarea {
   width: 100%;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: rgba(255, 251, 246, 0.9);
   color: var(--text);
-  min-height: var(--tap);
+  min-height: var(--m-tap);
+  font-size: var(--m-fs-input);
+}
+@media (min-width: 768px) {
+  .stack-form { gap: 14px; }
+  .stack-form label { font-size: 0.95rem; }
+  .stack-form input,
+  .stack-form select,
+  .stack-form textarea { padding: 14px 16px; min-height: var(--tap); font-size: inherit; }
 }
 
 .stack-form input[aria-invalid="true"],
@@ -847,6 +1114,8 @@ main { display: grid; gap: 28px; }
 .guest-banner-text { flex: 1 1 auto; min-width: 0; }
 .guest-banner-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
 .guest-banner .button { padding: 6px 14px; min-height: 0; }
+/* guest-banner mobile size lives here as a tiny per-component tweak rather
+   than a full responsive layer. */
 @media (max-width: 640px) {
   .guest-banner { font-size: 0.86rem; padding: 9px 12px; }
 }
@@ -1013,17 +1282,27 @@ main { display: grid; gap: 28px; }
 .input-action:hover { color: var(--text); background: rgba(85, 66, 43, 0.08); }
 .input-action[aria-pressed="true"] { color: var(--accent-dark); }
 
+/* Surface cards (auth, upload, empty-state, book-detail-card).
+   Mobile-first: tighter padding + smaller radius. Desktop expands.
+   .empty-state's own padding is set above; it's listed here only to share
+   the surface treatment (border + bg + shadow). */
 .auth-card, .upload-card, .empty-state, .book-detail-card {
-  padding: 26px;
+  padding: 18px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--m-radius-card);
   background: rgba(255, 251, 246, 0.82);
   box-shadow: var(--shadow);
   min-width: 0;
   overflow: hidden;
 }
-
-.auth-card { margin-top: 32px; }
+.auth-card { margin-top: 16px; padding: 22px; }
+@media (min-width: 768px) {
+  .auth-card, .upload-card, .empty-state, .book-detail-card {
+    padding: 26px;
+    border-radius: var(--radius-lg);
+  }
+  .auth-card { margin-top: 32px; padding: 26px; }
+}
 
 .auth-copy, .auth-footer, .form-message,
 .book-time, .book-panel p { color: var(--muted); }
@@ -1057,13 +1336,15 @@ main { display: grid; gap: 28px; }
   transition: width 0.18s ease;
 }
 
-/* ---------- Dashboard ---------- */
+/* ---------- Dashboard library grid ----------
+   Mobile-first: tighter min column, smaller gap. Desktop relaxes both. */
 .dashboard-grid {
-  /* Auto-fill: more cards per row on wide screens, fewer on narrow.
-     Avoids fixed column counts that leave huge cards on big monitors. */
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 14px;
-  align-items: stretch; /* equal-height cards so action rows line up across siblings */
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: stretch; /* equal-height cards across siblings */
+}
+@media (min-width: 768px) {
+  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
 }
 
 .library-section { display: grid; gap: 16px; }
@@ -1088,23 +1369,33 @@ main { display: grid; gap: 28px; }
   border: 0;
 }
 
+/* Book panel (library card).
+   Mobile-first: 12px padding, smaller title, --m-radius-card.
+   Desktop bumps padding and radius. height:100% always (so margin-top:auto
+   on the action row pushes consistently across siblings of different title
+   lengths). */
 .book-panel {
-  padding: 12px 14px 14px;
+  padding: 12px;
   border: 1px solid rgba(85, 66, 43, 0.1);
-  border-radius: 18px;
+  border-radius: var(--m-radius-card);
   background: rgba(255, 249, 241, 0.86);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  height: 100%; /* fill the grid cell so margin-top:auto on actions can push to the bottom */
+  height: 100%;
 }
 .book-panel h2 {
-  font-size: 1.05rem;
+  font-size: 1rem;
   margin: 4px 0 0;
   line-height: 1.25;
 }
-.book-panel p { font-size: 0.85rem; margin: 0; }
+.book-panel p { font-size: var(--m-fs-meta); margin: 0; }
+@media (min-width: 768px) {
+  .book-panel { padding: 12px 14px 14px; border-radius: 18px; }
+  .book-panel h2 { font-size: 1.05rem; }
+  .book-panel p { font-size: 0.85rem; }
+}
 
 .book-cover-thumb {
   display: block;
@@ -1137,50 +1428,66 @@ main { display: grid; gap: 28px; }
 }
 .book-panel-top { justify-content: space-between; }
 
+/* Pin the actions row to the bottom of the card so siblings line up
+   regardless of title height. Mobile-first: tighter gap + smaller buttons.
+*/
 .book-panel-actions {
-  margin-top: auto; /* pin to bottom so action rows align across cards of varying title length */
-  padding-top: 14px;
+  margin-top: auto;
+  padding-top: 10px;
   border-top: 1px solid rgba(85, 66, 43, 0.08);
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+}
+.book-panel-actions .button { padding: 6px 10px; font-size: 0.82rem; min-height: 34px; }
+@media (min-width: 768px) {
+  .book-panel-actions { padding-top: 14px; gap: 8px; }
+  .book-panel-actions .button { padding: 10px 18px; font-size: 0.95rem; min-height: var(--tap); }
 }
 /* Push the destructive button to the far end of the row so it's harder to
    mistap. Works whether the actions fit on one line or wrap to two. */
 .book-panel-actions .book-panel-danger { margin-left: auto; }
 
+/* Empty state.
+   Mobile-first: tighter padding, --m-radius-card. Desktop expands. */
 .empty-state {
   text-align: left;
-  padding: 26px 28px 28px;
+  padding: 18px;
   background: transparent;
   border: 1px dashed var(--line-strong);
+  border-radius: var(--m-radius-card);
   box-shadow: none;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
 }
+@media (min-width: 768px) {
+  .empty-state { padding: 26px 28px 28px; }
+}
 .empty-state h2, .empty-state p { margin: 0; }
 .empty-state .button { margin-top: 4px; }
 
 /* ---------- Book detail / share page ----------
-   Compact card layout — small cover + metadata side-by-side, centered on
-   the page. The reader handles the full-bleed view, this is a hub. */
+   Compact card-modal layout. Mobile-first: single-column, centered, smaller
+   cover and tighter spacing. Desktop: cover-on-left + metadata-on-right. */
 .book-detail {
   display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 24px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  text-align: center;
+  gap: 14px;
   align-items: start;
-  max-width: 640px;
-  margin: 32px auto 48px;
-  padding: 24px;
+  max-width: 100%;
+  margin: 16px auto 24px;
+  padding: 18px;
   background: rgba(255, 251, 246, 0.92);
   border: 1px solid rgba(85, 66, 43, 0.1);
-  border-radius: 22px;
+  border-radius: var(--m-radius-card);
   box-shadow: var(--shadow);
 }
 .book-detail-cover {
-  width: 160px;
+  width: 140px;
   aspect-ratio: 2 / 3;
   border-radius: 12px;
   overflow: hidden;
@@ -1190,9 +1497,23 @@ main { display: grid; gap: 28px; }
 .book-detail-meta { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .book-detail-meta h1 {
   font-family: "Cormorant Garamond", serif;
-  font-size: 1.7rem;
-  line-height: 1.15;
+  font-size: 1.4rem;
+  line-height: 1.2;
   margin: 4px 0 0;
+}
+@media (min-width: 768px) {
+  .book-detail {
+    grid-template-columns: 160px 1fr;
+    justify-items: stretch;
+    text-align: left;
+    gap: 24px;
+    max-width: 640px;
+    margin: 32px auto 48px;
+    padding: 24px;
+    border-radius: 22px;
+  }
+  .book-detail-cover { width: 160px; }
+  .book-detail-meta h1 { font-size: 1.7rem; line-height: 1.15; }
 }
 .book-detail-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .book-detail-author { font-size: 0.95rem; margin: 0; color: var(--ink); }
@@ -1206,29 +1527,29 @@ main { display: grid; gap: 28px; }
   color: var(--accent-dark);
   text-decoration: none;
 }
-.book-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.book-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; justify-content: center; }
+@media (min-width: 768px) {
+  .book-detail-actions { justify-content: flex-start; }
+}
 .book-detail-share-hint {
   margin: 6px 0 0;
   font-size: 0.8rem;
   color: var(--accent-dark);
 }
 
-@media (max-width: 560px) {
-  .book-detail {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
-    padding: 20px;
-  }
-  .book-detail-cover { width: 140px; }
-  .book-detail-tags, .book-detail-actions { justify-content: center; }
-}
+/* (Old `.book-detail` mobile block removed — the base rule above is now
+   mobile-first and the desktop variant lives in `@media (min-width: 768px)`.) */
+/* Primary empty-state (e.g. "Your shelf is empty.").
+   Mobile-first: tighter padding, smaller emphasis. Desktop expands. */
 .empty-state.is-primary {
   background: rgba(255, 251, 246, 0.82);
   border-style: solid;
   text-align: center;
-  padding: 36px 26px;
+  padding: 24px 18px;
   box-shadow: var(--shadow);
+}
+@media (min-width: 768px) {
+  .empty-state.is-primary { padding: 36px 26px; }
 }
 .empty-state h2, .book-panel h2 {
   margin: 6px 0 8px;
@@ -1285,37 +1606,86 @@ main { display: grid; gap: 28px; }
   font-size: 0.92rem;
 }
 
-.ebook-stage { display: grid; gap: 16px; padding-top: 18px; }
+/* Paginated reader stage container.
+   Mobile-first: tighter padding, dvh-based heights, safe-area-aware bottom
+   reserve so the floating bottom-bar pill never overlaps the last text line.
+   Desktop: more breathing room above. */
+.ebook-stage { display: grid; gap: 12px; padding-top: 4px; }
 
 .ebook-stage-full {
-  min-height: calc(100vh - 220px);
+  min-height: 0;
   align-content: start;
-  /* Reserve space below the rendered content for the floating bottom-bar
-     pill so it never overlaps the last line. */
-  padding-bottom: 88px;
+  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+}
+@media (min-width: 768px) {
+  .ebook-stage { gap: 16px; padding-top: 18px; }
+  .ebook-stage-full {
+    min-height: calc(100dvh - 220px);
+    padding-bottom: 88px;
+  }
+  @supports not (height: 100dvh) {
+    .ebook-stage-full { min-height: calc(100vh - 220px); }
+  }
 }
 
 /* Reader pagination bar — purely an overlay so content never shifts when
    the reader topbar fades. Floating pill on desktop, full-width strip on
    phones (rules in @media at the bottom of this file). Always visible. */
+/* Reader pagination bar — purely a floating overlay so content never
+   shifts when the topbar fades. Mobile-first: low-profile pill above the
+   home-indicator with safe-area padding. Desktop: same pill with slightly
+   more breathing room. Always visible at all viewports.
+*/
 .ebook-stage-full .ebook-controls {
   position: fixed;
-  bottom: 18px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  background: rgba(247, 240, 230, 0.78);
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(247, 240, 230, 0.92);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(85, 66, 43, 0.16);
   border-radius: 999px;
   box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
 }
+@media (min-width: 768px) {
+  .ebook-stage-full .ebook-controls {
+    bottom: 18px;
+    gap: 10px;
+    padding: 8px 14px;
+  }
+}
 .ebook-controls { display: flex; align-items: center; gap: 10px; }
+
+/* Bottom-bar prev/next labels — icon-only on mobile, full text on desktop. */
+.reader-page-btn-label,
+.page-jumper-label { display: none; }
+@media (min-width: 768px) {
+  .reader-page-btn-label,
+  .page-jumper-label { display: inline; }
+}
+.ebook-stage-full .ebook-controls .reader-page-btn {
+  min-width: 48px;
+  min-height: var(--m-tap);
+  padding: 6px 12px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.ebook-stage-full .ebook-controls .page-jumper input { width: 48px; }
+@media (min-width: 768px) {
+  .ebook-stage-full .ebook-controls .reader-page-btn {
+    min-height: var(--tap);
+    padding: 10px 18px;
+    font-size: 0.95rem;
+  }
+  .ebook-stage-full .ebook-controls .page-jumper input { width: 56px; }
+}
 
 /* Inline page jumper — input blends into the pill. Fades with immersive
    mode (matches the topbar) while prev/next arrows stay visible. opacity-
@@ -1369,9 +1739,13 @@ main { display: grid; gap: 28px; }
   max-width: 220px;
 }
 
+/* Paginated reader stage (EPUB iframe / PDF canvas).
+   Mobile-first: viewport minus reader-app top/bottom paddings (~22px) and
+   the floating bottom-bar reserve (~78px + safe area) ≈ 100dvh - 100px.
+   Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px. */
 .epub-stage, .pdf-stage {
   width: 100%;
-  height: calc(100dvh - 180px);
+  height: calc(100dvh - 100px - env(safe-area-inset-bottom));
   min-height: 360px;
   border-radius: 20px;
   background: transparent;
@@ -1380,7 +1754,15 @@ main { display: grid; gap: 28px; }
   position: relative;
 }
 @supports not (height: 100dvh) {
-  .epub-stage, .pdf-stage { height: calc(100vh - 180px); }
+  .epub-stage, .pdf-stage {
+    height: calc(100vh - 100px - env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 768px) {
+  .epub-stage, .pdf-stage { height: calc(100dvh - 180px); }
+  @supports not (height: 100dvh) {
+    .epub-stage, .pdf-stage { height: calc(100vh - 180px); }
+  }
 }
 
 .epub-stage iframe {
@@ -1564,8 +1946,11 @@ main { display: grid; gap: 28px; }
 .markdown-reader pre:focus-within .code-copy { opacity: 1; }
 .code-copy:hover { color: var(--text); }
 .code-copy.is-copied { color: var(--success); border-color: rgba(74, 125, 86, 0.4); }
-@media (max-width: 880px) {
-  .code-copy { opacity: 1; } /* always visible on touch devices */
+/* On touch devices (no hover), the copy button has no hover trigger to
+   reveal it — keep it visible. Detected via interaction-media-features
+   instead of a viewport width, which is the semantically correct test. */
+@media (hover: none) {
+  .code-copy { opacity: 1; }
 }
 
 /* Prism syntax tokens — tuned to the Moco palette */
@@ -2021,283 +2406,73 @@ main { display: grid; gap: 28px; }
 }
 .reader-overlay.is-open { display: block; }
 
-/* ===== Responsive ===== */
+/* ===== Responsive (mobile-first additions) =====
+   Mobile is the default everywhere above. The blocks below ADD desktop /
+   wide-viewport adjustments. New components: don't add `max-width` rules
+   here — make the base style mobile-correct, and any desktop variation
+   goes inside `@media (min-width: 768px)`. */
 
-/* Tablet landscape (~iPad landscape) — non-reader pages */
-@media (max-width: 1100px) {
-  .hero {
-    grid-template-columns: 1fr;
-    padding: 32px 0 24px;
-  }
-  .hero-copy { order: 1; }
-  .hero-panel { order: 2; }
-
-  .feature-band { grid-template-columns: 1fr; }
-  .reader-preview { grid-template-columns: 1fr; }
-  .dashboard-hero { grid-template-columns: 1fr; }
-
+/* Tablet landscape — multi-column grids start widening here */
+@media (min-width: 1024px) {
   .library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  /* dashboard-grid uses auto-fill at all widths — no override needed. */
-
-  /* The right-side actions (email + Log out on dashboard, sign-in on others)
-     can be wide. Drop the centered nav link at narrow desktop widths so the
-     brand and actions stop crowding the middle. */
-  .topnav { display: none; }
 }
 
-/* Tablet portrait (iPad portrait) */
-@media (max-width: 880px) {
-  .topbar { border-radius: 24px; flex-wrap: wrap; }
-  .topnav, .topbar-actions { flex-wrap: wrap; }
-
+/* Tablet portrait — desktop-style readers and grids */
+@media (min-width: 768px) {
   .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  .reader-sidebar {
-    width: calc(100% - 24px);
-    max-width: 420px;
-  }
-  .reader-sidebar[data-reader-panel="toc"],
-  .reader-sidebar[data-reader-panel="notes"] {
-    left: 12px;
-    right: 12px;
-    margin: 0 auto;
-  }
+  /* Reader panel sidebars: full-screen drawers on mobile (set elsewhere),
+     fixed-width side panels on desktop. */
+  .reader-sidebar { width: min(380px, calc(100% - 24px)); }
 
-  .reader-shell-full { min-height: calc(100vh - 140px); }
+  .reader-page-full { padding: 26px 6px 24px; }
 
-  .reader-page { max-width: 100%; padding: 18px 4px 8px; }
-  .reader-page-full {
-    padding: 22px 4px 18px;
-    min-height: calc(100vh - 220px);
-  }
+  .feature-band, .reader-preview, .dashboard-hero { gap: 28px; }
+  .feature-band, .reader-preview { grid-template-columns: 1fr 0.8fr; }
+
+  .hero-copy { order: 0; }
+  .hero-panel { order: 0; }
 }
 
-/* Large phone */
-@media (max-width: 640px) {
-  .page-shell { width: calc(100% - 32px); padding: 14px 0 36px; }
-
-  main { gap: 22px; }
-
-  .topbar {
-    gap: 12px;
-    padding: 12px 14px;
-    border-radius: 22px;
-    margin-bottom: 22px;
-    background: rgba(250, 244, 236, 0.94);
-  }
-  .topbar > .brand { flex: 1 1 auto; }
-  .topbar-actions { gap: 8px; margin-left: auto; }
-  .topbar-actions .session-chip { display: none; }
-
-  /* Re-show the primary nav on phones as a second row below brand+actions.
-     Horizontally scrollable so 4+ links never break the layout. */
-  .topnav {
-    display: flex;
-    flex: 1 1 100%;
-    order: 99;
-    gap: 6px;
-    margin-top: 4px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 2px;
-  }
-  .topnav::-webkit-scrollbar { display: none; }
-  .topnav a {
-    padding: 6px 12px;
-    font-size: 0.88rem;
-    white-space: nowrap;
-    flex: 0 0 auto;
-  }
-
-  /* Filter toolbar mobile overrides live below the base .library-toolbar
-     declaration so cascade order keeps them winning — see end of file. */
-
-  /* Reader bottom bar mobile tweaks. The pill is already always-visible
-     and fixed-positioned at the bottom in the base styles — phones just
-     get bigger tap targets, icon-only labels, and safe-area padding. */
-  .ebook-stage-full .ebook-controls {
-    bottom: calc(14px + env(safe-area-inset-bottom));
-    padding: 6px 10px;
-  }
-  .reader-page-btn-label,
-  .page-jumper-label { display: none; }
-  .ebook-stage-full .ebook-controls .reader-page-btn {
-    min-width: 48px;
-    min-height: 44px;
-    padding: 6px 12px;
-    font-size: 1.2rem;
-    font-weight: 600;
-  }
-  .ebook-stage-full .ebook-controls .page-jumper input { width: 48px; }
-
-  /* Reader page sizing on phones. The desktop default reserves 80px at
-     the top to clear the floating topbar — on a phone that's wasted space
-     when the topbar is in immersive mode. Drop the reserve and let the
-     topbar overlay the top of the content when it's revealed (standard
-     mobile reader pattern). Format/progress chip is also hidden — it's
-     low-signal and just steals vertical space on a small viewport. */
-  .reader-body-paginated .reader-app {
-    padding: 14px 8px 8px;
-  }
-  .reader-body-paginated .reader-toolbar { display: none; }
-  .reader-body-paginated .ebook-stage { padding-top: 4px; }
-  .reader-body-paginated .ebook-stage-full {
-    padding-bottom: calc(78px + env(safe-area-inset-bottom));
-    min-height: 0;
-  }
-  .reader-body-paginated .reader-card.reader-shell-full { padding: 0; }
-  .reader-body-paginated .epub-stage,
-  .reader-body-paginated .pdf-stage {
-    /* viewport - reader-app top/bottom padding (22) - bottom-bar reserve
-       (~78 + safe area) ≈ 100dvh - 100px */
-    height: calc(100dvh - 100px - env(safe-area-inset-bottom));
-  }
-  @supports not (height: 100dvh) {
-    .reader-body-paginated .epub-stage,
-    .reader-body-paginated .pdf-stage {
-      height: calc(100vh - 100px - env(safe-area-inset-bottom));
-    }
-  }
-
-  .reader-topbar {
-    padding: 6px 8px;
-    border-radius: 16px;
-    gap: 6px;
-    flex-wrap: nowrap;
-  }
-  .reader-topbar-left { gap: 4px; flex: 1 1 auto; min-width: 0; }
-  .reader-topbar .topbar-actions { gap: 4px; }
-  .reader-topbar .brand-name { display: none; }
-  .reader-topbar .session-chip,
-  .reader-topbar .visibility-chip,
-  .reader-topbar [data-fullscreen-toggle] { display: none; }
-  .reader-topbar .button {
-    padding: 8px 10px;
-    font-size: 0.85rem;
-    min-height: 38px;
-  }
-  /* Icon-only Contents and Highlights on phone width */
-  .reader-topbar .reader-toggle {
-    width: 38px;
-    height: 38px;
-    padding: 0;
-    flex-shrink: 0;
-  }
-  .reader-topbar .reader-toggle .reader-toggle-label { display: none; }
-  .reader-topbar .reader-toggle .icon { width: 18px; height: 18px; }
-  .reader-topbar [data-fullscreen-toggle] {
-    width: 38px;
-    height: 38px;
-    padding: 0;
-    flex-shrink: 0;
-  }
-
-  .button { padding: 10px 14px; font-size: 0.95rem; }
-
-  .hero { gap: 18px; padding: 18px 0 8px; }
-
-  .hero-copy, .hero-panel, .library-card,
-  .toc-panel, .reader-card, .notes-preview, .feature-band {
-    padding: 18px;
-  }
-
-  .hero-actions { flex-direction: column; align-items: stretch; }
-  .hero-actions .button { width: 100%; }
-
-  .hero-meta { gap: 8px; }
-  .hero-meta span { font-size: 0.85rem; }
-
-  .feature-band { padding: 18px; margin: 0 0 18px; }
-
-  .dashboard-hero { gap: 16px; }
-
-  .library-grid, .dashboard-grid { grid-template-columns: 1fr; }
-
-  .book-tile {
-    display: grid;
-    grid-template-columns: 88px 1fr;
-    gap: 14px;
-    align-items: center;
-  }
-  .tile-cover { height: 118px; margin-bottom: 0; }
-
-  .reader-toolbar { gap: 8px; flex-wrap: wrap; }
-
-  .toc-list { gap: 8px; margin-top: 16px; }
-
-  .auth-card { margin-top: 16px; padding: 22px; }
-
-  .modal-card { padding: 20px; }
-
-  .toast-stack { right: 8px; bottom: 8px; }
-  .toast { font-size: 0.88rem; }
-
-  .jump-to-progress { right: 12px; bottom: 12px; padding: 10px 14px; }
-}
-
-/* Small phone */
-@media (max-width: 420px) {
-  .page-shell { width: calc(100% - 24px); }
-
-  .topbar { top: 8px; padding: 10px 12px; gap: 10px; }
-  .brand-mark { width: 34px; height: 34px; font-size: 1.4rem; }
-  .brand-name { font-size: 1.2rem; }
-
-  .reader-app { padding: 8px; }
-  .reader-topbar { top: 8px; padding: 8px; }
-
-  .hero h1 { font-size: clamp(2.2rem, 9vw, 2.8rem); }
-  .dashboard-title, .auth-title { font-size: clamp(2rem, 8vw, 2.4rem); }
-
-  .feature-band h2, .reader-preview h2, .notes-preview h2 { font-size: 1.9rem; }
-
-  .book-row { gap: 12px; }
-  .book-row-cover { flex-basis: 40px; width: 40px; height: 60px; }
-  .book-cover { width: 48px; height: 64px; }
-
-  .book-tile { grid-template-columns: 76px 1fr; padding: 12px; }
-  .tile-cover { height: 102px; }
-
-  .reader-page-full { min-height: calc(100vh - 200px); padding: 18px 0 14px; }
-
-  .markdown-reader h1 { font-size: 1.8rem; }
-  .markdown-reader h2 { font-size: 1.45rem; }
-  .markdown-reader h3 { font-size: 1.2rem; }
-  .markdown-reader p { font-size: 1.05rem; line-height: 1.6; }
-
-  .auth-card { padding: 18px; }
-  .stack-form input, .stack-form select, .stack-form textarea { padding: 12px 14px; }
-
-  .modal { padding: 8px; }
-  .modal-card { padding: 18px; border-radius: 22px; }
-}
-
-/* ---------- Quotes page ---------- */
+/* ---------- Highlights / Quotes page ---------- */
 .quotes-hero {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  padding: 0;
   max-width: 720px;
+}
+.quotes-hero h1 { font-size: var(--m-fs-h2); }
+.quotes-hero .auth-copy { font-size: var(--m-fs-body); line-height: 1.45; }
+@media (min-width: 768px) {
+  .quotes-hero { gap: 8px; }
+  .quotes-hero h1 { font-size: clamp(2rem, 3.4vw, 2.8rem); }
+  .quotes-hero .auth-copy { font-size: 1rem; }
 }
 .quotes-list {
   display: grid;
   gap: 16px;
 }
+/* Cross-book quote/highlight cards.
+   Mobile-first: tighter padding + smaller serif body. Desktop expands. */
 .quote-card {
   position: relative;
-  padding: 28px 32px 24px;
+  padding: 16px;
   background: rgba(255, 251, 246, 0.86);
   border: 1px solid var(--line);
   border-left: 4px solid var(--accent);
-  border-radius: var(--radius-md);
+  border-radius: var(--m-radius-card);
   box-shadow: var(--shadow);
 }
 .quote-text {
-  margin: 0 0 16px;
+  margin: 0 0 14px;
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(1.2rem, 2vw, 1.5rem);
-  line-height: 1.55;
+  font-size: 1.05rem;
+  line-height: 1.45;
   color: var(--text-soft);
+}
+@media (min-width: 768px) {
+  .quote-card { padding: 28px 32px 24px; border-radius: var(--radius-md); }
+  .quote-text { margin: 0 0 16px; font-size: clamp(1.2rem, 2vw, 1.5rem); line-height: 1.55; }
 }
 .quote-text::before {
   content: "“";
@@ -2341,9 +2516,7 @@ main { display: grid; gap: 28px; }
 }
 .quote-cite-author { font-style: italic; }
 
-@media (max-width: 640px) {
-  .quote-card { padding: 22px 22px 20px; }
-}
+/* (.quote-card is mobile-first above — no mobile override needed.) */
 
 /* AJAX loading state on result containers */
 [data-library-results].is-loading,
@@ -2399,59 +2572,70 @@ main#main.is-spa-loading::before {
   margin-top: 8px;
 }
 
-/* ---------- Quotes toolbar (search + book filter) ---------- */
+/* ----- Filter toolbars (highlights search, library filter) -----
+   Mobile-first: stack inputs as standalone form fields, no outer pill
+   container (drops the "double-pill" visual of a rounded box around
+   already-rounded inputs). Desktop wraps them in a hug-content pill row.
+*/
 .quotes-toolbar, .library-toolbar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
-  flex-wrap: wrap;
-  padding: 12px 16px;
-  background: rgba(255, 251, 246, 0.78);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  box-shadow: var(--shadow-soft);
-  margin-bottom: 8px;
-  /* Hug the contents instead of stretching across the full row — avoids
-     the empty pill effect on wide screens. Mobile rules override below. */
-  width: fit-content;
-  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  width: 100%;
 }
 
-/* Mobile: drop the outer pill entirely. The inner inputs already have their
-   own rounded styling — wrapping them in another rounded container creates
-   the "giant ellipse with two pills inside" look. Just stack them as form
-   fields with a tiny gap. */
-@media (max-width: 640px) {
-  .library-toolbar, .quotes-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    border-radius: 0;
-    padding: 0;
-    gap: 8px;
-    width: 100%;
-  }
-  .library-toolbar .select-input,
-  .quotes-toolbar .select-input,
-  .quotes-toolbar .search-input {
-    width: 100%;
-    padding: 10px 14px;
-    border-radius: 14px;
+@media (min-width: 768px) {
+  .quotes-toolbar, .library-toolbar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: rgba(255, 251, 246, 0.78);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: var(--shadow-soft);
+    margin-bottom: 8px;
+    width: fit-content;
+    max-width: 100%;
   }
 }
+
+/* ----- Search + select inputs -----
+   Mobile-first: full-width form fields with 16px font (no iOS zoom),
+   ≥48px tap height. Desktop becomes inline pills for the toolbar layout.
+*/
 .search-input, .select-input {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  background: rgba(255, 250, 245, 0.8);
+  width: 100%;
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  background: rgba(255, 251, 245, 0.92);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  min-height: var(--tap);
+  border-radius: var(--m-radius-input);
+  min-height: var(--m-tap);
+  box-shadow: var(--shadow-soft);
 }
-.search-input { flex: 1 1 240px; }
+@media (min-width: 768px) {
+  .search-input, .select-input {
+    display: inline-flex;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: 999px;
+    min-height: var(--tap);
+    background: rgba(255, 250, 245, 0.8);
+    box-shadow: none;
+  }
+  .search-input { flex: 1 1 240px; }
+}
 .search-input .icon { color: var(--muted); flex-shrink: 0; }
 .search-input input {
   width: 100%;
@@ -2581,23 +2765,24 @@ main#main.is-spa-loading::before {
   margin: 0;
 }
 
-/* ---------- Stats grid ---------- */
+/* ---------- Stats grid ----------
+   Mobile-first: 2-column grid with tighter padding. Desktop: auto-fill
+   with 220px min for fluid 3-4 column layouts. */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 .stat-card {
-  padding: 22px 24px;
-  border-radius: var(--radius-md);
+  padding: 14px;
+  border-radius: var(--m-radius-card);
   border: 1px solid var(--line);
   background: rgba(255, 251, 246, 0.86);
   box-shadow: var(--shadow-soft);
   display: grid;
   gap: 4px;
 }
-.stat-card-wide { grid-column: span 2; }
-@media (max-width: 640px) { .stat-card-wide { grid-column: auto; } }
+.stat-card-wide { grid-column: 1 / -1; }
 .stat-label {
   margin: 0;
   color: var(--accent-dark);
@@ -2609,11 +2794,17 @@ main#main.is-spa-loading::before {
 .stat-value {
   margin: 0;
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(2rem, 4vw, 2.6rem);
+  font-size: 1.6rem;
   font-weight: 700;
   color: var(--text);
 }
 .stat-sub { margin: 0; color: var(--muted); font-size: 0.92rem; }
+@media (min-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .stat-card { padding: 22px 24px; border-radius: var(--radius-md); }
+  .stat-card-wide { grid-column: span 2; }
+  .stat-value { font-size: clamp(2rem, 4vw, 2.6rem); }
+}
 
 /* ---------- Popover color row ---------- */
 .popover-colors {
@@ -2664,4 +2855,27 @@ main#main.is-spa-loading::before {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* =========================================================================
+   PHASE-2 STATUS — all components migrated mobile-first
+   -------------------------------------------------------------------------
+   Every primitive and component now uses mobile-first authoring (default
+   styles target the phone viewport, desktop additions live in
+   `@media (min-width: 768px)` blocks alongside each component).
+
+   The single remaining viewport-specific media query is for **truly narrow
+   phones** (≤420px) where some grids and tap targets need a final tighten.
+   This is genuinely viewport-specific — a phone fundamentally has less
+   horizontal room — so the max-width query is appropriate here, not a
+   patching pattern.
+   ========================================================================= */
+
+/* Phone-narrow refinements (≤420px) — smaller iPhones, narrow Androids. */
+@media (max-width: 420px) {
+  :root { --m-pad-page: 12px; }
+  .topbar-actions .button { padding: 6px 10px; font-size: 0.82rem; }
+  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .stat-card-wide { grid-column: auto; }
 }

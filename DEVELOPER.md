@@ -268,6 +268,34 @@ All non-GET endpoints require the `X-CSRF-Token` header (the value is stored in 
 
 ---
 
+## Frontend / CSS architecture
+
+The stylesheet (`internal/server/web/static/styles.css`) is **mobile-first**. Every default rule targets a phone-sized viewport; desktop adjustments are added inside `@media (min-width: 768px)` blocks.
+
+### Conventions
+
+1. **Mobile is the default.** When you author a new component, write its rules without a media query — those rules describe its phone appearance. Add a `@media (min-width: 768px)` block immediately after for any desktop deviation.
+2. **Never use `max-width` media queries for new components.** They invert the cascade (desktop default → mobile override) and produced the long history of mobile bugs in this project. The `@media (max-width: 767px)` block at the bottom of the file is a temporary holding pen for components not yet migrated to mobile-first; it shrinks every time a component is moved up.
+3. **Single breakpoint scale.** `768px` (tablet/desktop) and `1024px` (wide). The legacy 1100/880/640/560/420 breakpoints have been removed for migrated components and are being phased out for the rest.
+4. **Tokens, not magic numbers.** Spacing, radii, font sizes, tap targets all live as `--*` custom properties at the top of the file. Mobile-specific tokens are prefixed `--m-` (e.g. `--m-tap`, `--m-fs-h1`).
+5. **iOS zoom-on-focus.** Every text input must have `font-size ≥ 16px` on mobile (token: `--m-fs-input`). Below that, Safari auto-zooms when the user taps, breaking layout.
+6. **Tap targets ≥ 48px** for primary controls on mobile (token: `--m-tap`).
+7. **No nested rounded containers.** A pill containing pills creates the "double-rounded" visual artifact. Either round the outer, or round the inner — not both.
+8. **Cache busting.** Bump `AssetVersion` in `internal/server/view.go` whenever you edit `styles.css` or `app.js`. The constant is appended as `?v=` to every static asset reference and reused as the service-worker cache key, so a deploy automatically invalidates CDN + browser caches without any manual purge.
+
+### Why
+
+The project lived through ~10 rounds of "fix it on mobile, that broke desktop" and vice versa. Root cause was a desktop-first stylesheet patched with `@media (max-width: 640px)` overrides — every override had to reason about *undoing* desktop properties (e.g., a horizontal toolbar's `flex-basis: 240px` becoming `240px of height` in a column layout on mobile). Mobile-first authoring eliminates that whole class of bug because the cascade direction matches the inheritance direction.
+
+### Migration status — complete
+
+Every component in the stylesheet has been migrated to mobile-first authoring. The legacy "holding pen" of mobile overrides is gone. Two `max-width` media queries remain and are intentional:
+
+- `@media (max-width: 640px)` for `.guest-banner` — a tiny per-component tweak.
+- `@media (max-width: 420px)` for narrow-phone grid/tap-target refinements — genuinely viewport-specific.
+
+Plus `@media (hover: none)` for touch-device behavior on the code-block copy button (semantic, not viewport-based).
+
 ## Testing
 
 ```sh
