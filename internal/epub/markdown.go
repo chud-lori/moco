@@ -8,9 +8,14 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// mdLinkRE matches inline markdown links: [text](url). Non-greedy on both
+// halves so adjacent links don't merge.
+var mdLinkRE = regexp.MustCompile(`\[([^\]]+?)\]\(([^)\s]+?)\)`)
 
 type Chapter struct {
 	ID    string
@@ -202,11 +207,51 @@ func renderSingleDocument(title, markdown string) string {
 }
 
 func inlineMarkdown(s string) string {
-	escaped := html.EscapeString(strings.TrimSpace(s))
+	// Pull links out first (before HTML-escaping) so we can inspect the raw
+	// URL and skip dangerous schemes. Replace each match with a placeholder,
+	// escape the rest, then splice the rendered <a> tags back in.
+	src := strings.TrimSpace(s)
+	type linkSlot struct{ html string }
+	var slots []linkSlot
+	src = mdLinkRE.ReplaceAllStringFunc(src, func(m string) string {
+		parts := mdLinkRE.FindStringSubmatch(m)
+		text, url := parts[1], parts[2]
+		if !safeLinkURL(url) {
+			return m // leave the original text — refuses to linkify javascript:/data:
+		}
+		idx := len(slots)
+		slots = append(slots, linkSlot{
+			html: fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(url), html.EscapeString(text)),
+		})
+		return fmt.Sprintf("\x00LINK%d\x00", idx)
+	})
+	escaped := html.EscapeString(src)
 	escaped = replacePair(escaped, "**", "<strong>", "</strong>")
 	escaped = replacePair(escaped, "*", "<em>", "</em>")
 	escaped = replacePair(escaped, "`", "<code>", "</code>")
+	for i, slot := range slots {
+		escaped = strings.Replace(escaped, fmt.Sprintf("\x00LINK%d\x00", i), slot.html, 1)
+	}
 	return escaped
+}
+
+func safeLinkURL(u string) bool {
+	lower := strings.ToLower(strings.TrimSpace(u))
+	if lower == "" {
+		return false
+	}
+	// Allow relative URLs and explicit web/email schemes; block javascript:,
+	// data:, vbscript: which can execute when rendered in epub.js.
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "mailto:") || strings.HasPrefix(lower, "/") ||
+		strings.HasPrefix(lower, "#") {
+		return true
+	}
+	// Reject anything else with a scheme (`foo:`).
+	if i := strings.Index(lower, ":"); i > 0 && i < strings.Index(lower+"/", "/") {
+		return false
+	}
+	return true
 }
 
 func replacePair(src, marker, open, close string) string {
