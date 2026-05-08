@@ -12,6 +12,13 @@ import (
 // the same book always renders the same cover, but different books look
 // different.
 func generateCoverSVG(book store.Book) string {
+	return generateCoverSVGWithSalt(book, "")
+}
+
+// generateCoverSVGWithSalt renders the same cover but mixes salt into the seed
+// so the user can re-roll palette/variant without changing the book ID. Salt
+// is opaque to the generator — typically a counter or random hex.
+func generateCoverSVGWithSalt(book store.Book, salt string) string {
 	title := strings.TrimSpace(book.Title)
 	if title == "" {
 		title = "Untitled"
@@ -24,7 +31,7 @@ func generateCoverSVG(book store.Book) string {
 		author = ownerLocalPart(book.OwnerEmail)
 	}
 
-	seed := hashSeed(book.ID + title)
+	seed := hashSeed(book.ID + title + "|" + salt)
 	palette := coverPalettes[seed%uint32(len(coverPalettes))]
 	variant := (seed / 7) % uint32(len(coverVariants))
 

@@ -2540,6 +2540,143 @@ document.addEventListener("click", async (event) => {
   window.prompt("Copy this link:", url);
 });
 
+// ---------- Edit book details (owner-only modal on book detail page) ----------
+// Wires the inline modal rendered by templates/book.html when .IsOwner is true.
+// Three flows the modal handles:
+//   1. PATCH title/author      → /api/v1/books/{id}
+//   2. PUT cover (file upload) → /api/v1/books/{id}/cover
+//   3. POST regenerate cover   → /api/v1/books/{id}/cover/regenerate
+// Cover preview is busted with a timestamp query so the new image shows
+// immediately without waiting for a hard reload.
+(function () {
+  const modal = document.querySelector("[data-edit-book-modal]");
+  if (!modal) return;
+  const card = modal.querySelector(".modal-card");
+  const detail = document.querySelector("[data-book-detail]");
+  const bookID = detail?.closest("[data-book-id]")?.dataset?.bookId
+    || (window.location.pathname.match(/\/books\/([A-Za-z0-9_-]+)/) || [])[1];
+  if (!bookID) return;
+
+  const form = modal.querySelector("[data-edit-book-form]");
+  const titleInput = form.querySelector('input[name="title"]');
+  const authorInput = form.querySelector('input[name="author"]');
+  const messageEl = modal.querySelector("[data-edit-book-message]");
+  const coverPreview = modal.querySelector("[data-edit-book-cover-preview]");
+  const coverInput = modal.querySelector("[data-edit-book-cover-input]");
+  const pickBtn = modal.querySelector("[data-edit-book-cover-pick]");
+  const regenBtn = modal.querySelector("[data-edit-book-cover-regenerate]");
+  const submitBtn = form.querySelector('button[type="submit"]');
+
+  function open() {
+    modal.classList.add("is-open");
+    setMessage("");
+    requestAnimationFrame(() => titleInput?.focus());
+  }
+  function close() {
+    modal.classList.remove("is-open");
+    setMessage("");
+  }
+  function setMessage(text, kind) {
+    if (!messageEl) return;
+    messageEl.textContent = text || "";
+    messageEl.classList.toggle("is-error", kind === "error");
+    messageEl.classList.toggle("is-success", kind === "success");
+  }
+  function bustCoverCache() {
+    const url = `/api/v1/books/${bookID}/cover?t=${Date.now()}`;
+    if (coverPreview) coverPreview.src = url;
+    // Also refresh the on-page cover (book detail card) so the user sees the
+    // change without reloading.
+    document.querySelectorAll(`.book-detail-cover img, [data-book-card-cover][data-book-id="${bookID}"] img`).forEach((img) => {
+      img.src = url;
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-edit-book-open]")) {
+      event.preventDefault();
+      open();
+      return;
+    }
+    if (event.target.closest("[data-edit-book-close]")) {
+      event.preventDefault();
+      close();
+      return;
+    }
+    // Click on the dimmed backdrop (not the card) closes the modal.
+    if (event.target === modal) close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && modal.classList.contains("is-open")) close();
+  });
+
+  pickBtn?.addEventListener("click", () => coverInput?.click());
+
+  coverInput?.addEventListener("change", async () => {
+    const file = coverInput.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setMessage("Image is too large (max 10MB).", "error");
+      coverInput.value = "";
+      return;
+    }
+    setButtonLoading(pickBtn, true, "Uploading…");
+    try {
+      const fd = new FormData();
+      fd.append("cover", file);
+      await requestJSON(`/api/v1/books/${bookID}/cover`, { method: "PUT", body: fd });
+      bustCoverCache();
+      setMessage("Cover updated.", "success");
+    } catch (err) {
+      setMessage(err.message || "Failed to upload cover.", "error");
+    } finally {
+      setButtonLoading(pickBtn, false);
+      coverInput.value = "";
+    }
+  });
+
+  regenBtn?.addEventListener("click", async () => {
+    setButtonLoading(regenBtn, true, "Re-rolling…");
+    try {
+      await requestJSON(`/api/v1/books/${bookID}/cover/regenerate`, { method: "POST", body: "{}" });
+      bustCoverCache();
+      setMessage("Generated a fresh cover.", "success");
+    } catch (err) {
+      setMessage(err.message || "Failed to regenerate cover.", "error");
+    } finally {
+      setButtonLoading(regenBtn, false);
+    }
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const title = titleInput.value.trim();
+    if (!title) { setMessage("Title is required.", "error"); return; }
+    setButtonLoading(submitBtn, true, "Saving…");
+    try {
+      const data = await requestJSON(`/api/v1/books/${bookID}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title, author: authorInput.value.trim() }),
+      });
+      // Reflect the change on the page without a full reload.
+      const h1 = document.querySelector(".book-detail h1");
+      if (h1) h1.textContent = data.title || title;
+      const authorEl = document.querySelector(".book-detail-author");
+      if (authorEl) {
+        const author = data.author || "";
+        authorEl.textContent = author;
+        authorEl.hidden = !author;
+      }
+      setMessage("Saved.", "success");
+      setTimeout(close, 600);
+    } catch (err) {
+      setMessage(err.message || "Failed to save.", "error");
+    } finally {
+      setButtonLoading(submitBtn, false);
+    }
+  });
+})();
+
 // ---------- Book detail modal (SPA-style) ----------
 // Intercept clicks on book covers / row links that point at /books/{id} and
 // open the detail card as a modal instead of navigating. URL is pushed to

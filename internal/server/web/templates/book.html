@@ -63,6 +63,9 @@
       {{ if eq .Book.Visibility "public" }}
         <button class="button secondary" type="button" data-share-button data-share-url="{{ .ShareURL }}" data-share-title="{{ .Book.Title }}">Share link</button>
       {{ end }}
+      {{ if .IsOwner }}
+        <button class="button subtle" type="button" data-edit-book-open>Edit details</button>
+      {{ end }}
       {{ if and .CurrentUser (not .IsOwner) }}
         <button class="button subtle" type="button" data-wishlist-toggle="{{ .Book.ID }}" data-wishlisted="{{ if .IsWishlisted }}1{{ else }}0{{ end }}" aria-pressed="{{ if .IsWishlisted }}true{{ else }}false{{ end }}">{{ if .IsWishlisted }}✓ On list{{ else }}+ Want to read{{ end }}</button>
       {{ end }}
@@ -74,4 +77,37 @@
     <p class="book-detail-share-hint" data-share-toast hidden>Link copied to clipboard.</p>
   </div>
 </section>
+
+{{ if .IsOwner }}
+  <div class="modal" data-edit-book-modal role="dialog" aria-modal="true" aria-labelledby="edit-book-title">
+    <div class="modal-card edit-book-card">
+      <button class="modal-close" type="button" data-edit-book-close aria-label="Close">×</button>
+      <h2 id="edit-book-title">Edit details</h2>
+      <form class="stack-form" data-edit-book-form>
+        <label>
+          <span>Title</span>
+          <input type="text" name="title" value="{{ .Book.Title }}" required maxlength="300" />
+        </label>
+        <label>
+          <span>Author</span>
+          <input type="text" name="author" value="{{ .Book.Author }}" maxlength="200" />
+        </label>
+        <div class="edit-book-cover-row">
+          <img class="edit-book-cover-preview" data-edit-book-cover-preview src="/api/v1/books/{{ .Book.ID }}/cover" alt="Current cover" />
+          <div class="edit-book-cover-actions">
+            <button class="button subtle" type="button" data-edit-book-cover-pick>Replace cover…</button>
+            <input type="file" name="cover" accept="image/*" hidden data-edit-book-cover-input />
+            <button class="button subtle" type="button" data-edit-book-cover-regenerate>Re-roll generated</button>
+            <p class="form-hint">Upload an image, or click re-roll to pick a fresh palette/variant for the generated cover.</p>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button subtle" type="button" data-edit-book-close>Cancel</button>
+          <button class="button primary" type="submit">Save</button>
+        </div>
+        <p class="form-message" data-edit-book-message></p>
+      </form>
+    </div>
+  </div>
+{{ end }}
 {{ end }}

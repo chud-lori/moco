@@ -479,6 +479,46 @@ func (s *Store) UpdateBookVisibility(ctx context.Context, userID, id, visibility
 	return nil
 }
 
+// UpdateBookMetadata rewrites the editable user-facing fields (title, author).
+// Owner-scoped: returns ErrNotFound if the book doesn't exist or the caller
+// isn't the owner.
+func (s *Store) UpdateBookMetadata(ctx context.Context, userID, id, title, author string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE books
+		SET title = ?, author = ?, updated_at = ?
+		WHERE id = ? AND user_id = ?`,
+		title, author, time.Now().UTC().Format(time.RFC3339Nano), id, userID,
+	)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateBookCoverPath replaces the cover_path column on a single book. Pass an
+// empty string to clear it (handler then falls back to the on-the-fly
+// generator). Owner-scoped.
+func (s *Store) UpdateBookCoverPath(ctx context.Context, userID, id, coverPath string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE books
+		SET cover_path = ?, updated_at = ?
+		WHERE id = ? AND user_id = ?`,
+		coverPath, time.Now().UTC().Format(time.RFC3339Nano), id, userID,
+	)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) UpsertProgress(ctx context.Context, progress ReadingProgress) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO reading_progress (id, user_id, book_id, locator, progress_percent, updated_at)

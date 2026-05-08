@@ -2362,6 +2362,42 @@ main { display: grid; gap: 22px; }
   flex-wrap: wrap;
 }
 
+/* Edit-book modal — title/author inputs reuse stack-form; the cover row is
+   the only edit-specific layout. Mobile-first: stacked column with preview
+   on top; desktop puts preview beside the action buttons. */
+.edit-book-card { width: min(520px, 100%); }
+.edit-book-cover-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+.edit-book-cover-preview {
+  width: 120px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  align-self: center;
+}
+.edit-book-cover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.edit-book-cover-actions .form-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+@media (min-width: 768px) {
+  .edit-book-cover-row { flex-direction: row; align-items: flex-start; }
+  .edit-book-cover-preview { align-self: flex-start; }
+  .edit-book-cover-actions { flex: 1 1 auto; }
+}
+
 /* ---------- Reader sidebar overlay ---------- */
 .reader-overlay {
   position: fixed;

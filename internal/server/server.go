@@ -279,6 +279,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/books/upload", s.handleUploadBook)
 	s.mux.HandleFunc("POST /api/v1/books/inspect", s.handleInspectBook)
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/visibility", s.handleUpdateVisibility)
+	s.mux.HandleFunc("PATCH /api/v1/books/{id}", s.handleUpdateBookMetadata)
+	s.mux.HandleFunc("PUT /api/v1/books/{id}/cover", s.handleUploadBookCover)
+	s.mux.HandleFunc("POST /api/v1/books/{id}/cover/regenerate", s.handleRegenerateBookCover)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/content", s.handleServeBookContent)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/cover", s.handleServeBookCover)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/progress", s.handleGetProgress)
@@ -962,6 +965,131 @@ func (s *Server) handleUpdateVisibility(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "visibility": req.Visibility})
+}
+
+// handleUpdateBookMetadata edits the user-facing title/author fields. Owner-only.
+func (s *Server) handleUpdateBookMetadata(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		Title  string `json:"title"`
+		Author string `json:"author"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	author := strings.TrimSpace(req.Author)
+	if title == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "title is required"})
+		return
+	}
+	if len(title) > 300 || len(author) > 200 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "title or author is too long"})
+		return
+	}
+	if err := s.store.UpdateBookMetadata(r.Context(), user.ID, r.PathValue("id"), title, author); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]any{"error": "book not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "title": title, "author": author})
+}
+
+// handleUploadBookCover replaces the stored cover image with a fresh upload.
+// Multipart form with a single "cover" file field. Owner-only.
+func (s *Server) handleUploadBookCover(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	bookID := r.PathValue("id")
+	book, err := s.store.GetBook(r.Context(), user.ID, bookID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "book not found"})
+		return
+	}
+	// 10MB cap for cover uploads — way more than any reasonable JPEG/PNG.
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "cover image is too large"})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid multipart request"})
+		return
+	}
+	file, header, err := r.FormFile("cover")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "cover file is required"})
+		return
+	}
+	defer file.Close()
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" && ext != ".gif" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unsupported image type"})
+		return
+	}
+	newKey := keyForBook(book.UserID, book.ID, "cover"+ext)
+	if err := s.storage.Put(r.Context(), newKey, file, mime.TypeByExtension(ext), 0); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to save cover"})
+		return
+	}
+	// If the previous cover lived under a different extension, remove it so
+	// we don't leave orphan objects in storage.
+	if book.CoverPath != "" && book.CoverPath != newKey {
+		_ = s.storage.Delete(r.Context(), book.CoverPath)
+	}
+	if err := s.store.UpdateBookCoverPath(r.Context(), user.ID, book.ID, newKey); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to save cover"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "coverPath": newKey})
+}
+
+// handleRegenerateBookCover re-rolls the procedurally generated SVG cover with
+// a fresh salt so each click produces a different palette/variant. The
+// resulting SVG is persisted to storage so it stays stable across reloads
+// (and so the cover URL stays cacheable). Owner-only.
+func (s *Server) handleRegenerateBookCover(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	bookID := r.PathValue("id")
+	book, err := s.store.GetBook(r.Context(), user.ID, bookID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "book not found"})
+		return
+	}
+	salt, err := randomToken()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to seed cover"})
+		return
+	}
+	svg := generateCoverSVGWithSalt(book, salt)
+	newKey := keyForBook(book.UserID, book.ID, "cover.svg")
+	if err := s.storage.Put(r.Context(), newKey, strings.NewReader(svg), "image/svg+xml", int64(len(svg))); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to save cover"})
+		return
+	}
+	if book.CoverPath != "" && book.CoverPath != newKey {
+		_ = s.storage.Delete(r.Context(), book.CoverPath)
+	}
+	if err := s.store.UpdateBookCoverPath(r.Context(), user.ID, book.ID, newKey); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to save cover"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "coverPath": newKey})
 }
 
 func (s *Server) handleServeBookContent(w http.ResponseWriter, r *http.Request) {
