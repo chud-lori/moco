@@ -531,9 +531,21 @@ if (uploadForm) {
         const detected = [];
         if (data.title) detected.push("title");
         if (data.author) detected.push("author");
-        detectedMessage.textContent = detected.length
+        let messageText = detected.length
           ? `Detected ${detected.join(" and ")} from the file — edit if needed.`
           : "We couldn't detect a title — please add one.";
+        if (data.format === "pdf" && data.conversion) {
+          const profile = data.conversion.profile;
+          if (profile === "scanned" || profile === "scanned_with_ocr") {
+            messageText += " This looks like a scanned PDF, so conversion will use OCR and may take longer.";
+          } else if (profile === "mixed") {
+            messageText += " This PDF looks mixed-layout, so conversion may blend extracted text with page-image fallback.";
+          }
+          if (data.conversion.looksMathHeavy) {
+            messageText += " It also looks math-heavy, so the converter will prefer math-aware extraction when available.";
+          }
+        }
+        detectedMessage.textContent = messageText;
       }
       refreshCoverPreview();
     } catch (err) {
@@ -632,7 +644,12 @@ if (uploadForm) {
       const data = xhr.response || {};
       if (ok) {
         progressBar.style.width = "100%";
-        setMessage(message, "Uploaded. Refreshing library…", "success");
+        let successText = "Uploaded. Refreshing library…";
+        if (data.conversion?.report?.converter) {
+          const engine = data.conversion.report.structuredEngine || data.conversion.report.converter;
+          successText = `Uploaded. Converted with ${engine}. Refreshing library…`;
+        }
+        setMessage(message, successText, "success");
         toast("Book added to your library.", "success");
         setTimeout(() => window.location.reload(), 400);
       } else {

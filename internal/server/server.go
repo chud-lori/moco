@@ -583,7 +583,11 @@ func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "app": "moco"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"app":        "moco",
+		"conversion": epub.DetectConversionCapabilities(),
+	})
 }
 
 func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
@@ -745,12 +749,24 @@ func (s *Server) handleInspectBook(w http.ResponseWriter, r *http.Request) {
 	if meta.Title == "" {
 		meta.Title = epub.TitleFromFilename(header.Filename)
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"title":  meta.Title,
 		"author": meta.Author,
 		"format": format,
-	})
+	}
+	if format == "pdf" {
+		if analysis, err := epub.AnalyzePDF(tmpPath); err == nil {
+			resp["conversion"] = map[string]any{
+				"profile":              analysis.Profile,
+				"looksMathHeavy":       analysis.LooksMathHeavy,
+				"pageCount":            analysis.Pages,
+				"averageTextChars":     analysis.AverageTextChars,
+				"averageImagesPerPage": analysis.AverageImagesPerPage,
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
@@ -818,6 +834,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	}
 	convertToEPUB := r.FormValue("convertToEpub") == "1" || r.FormValue("convertToEpub") == "true"
 	readingMinutes := reader.EstimateMinutesFromBytes(format, size)
+	var pdfConversionReport *epub.PDFConversionReport
 
 	originalKey := keyForBook(user.ID, bookID, "original"+ext)
 	storedFormat := format
@@ -854,7 +871,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 			storedSize = int64(len(epubBytes))
 		}
 	} else if format == "pdf" && convertToEPUB {
-		epubBytes, _, convErr := epub.PDFToEPUB(title, author, tmpPath)
+		epubBytes, _, report, convErr := epub.PDFToEPUB(title, author, tmpPath)
 		if convErr != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 				"error": "could not convert PDF to EPUB: " + convErr.Error(),
@@ -870,6 +887,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		storedKey = derivedEPUBKey
 		storedMIME = "application/epub+zip"
 		storedSize = int64(len(epubBytes))
+		pdfConversionReport = &report
 	}
 
 	// Cover handling: user upload first, then auto-extract from the source.
@@ -936,6 +954,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		"book": book,
 		"conversion": map[string]any{
 			"epubGenerated": derivedEPUBKey != "",
+			"report":        pdfConversionReport,
 		},
 	})
 }

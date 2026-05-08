@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"moco/internal/epub"
 	"moco/internal/server"
 	"moco/internal/storage"
 )
@@ -41,6 +42,7 @@ func main() {
 		kind += " [prefix=" + prefix + "]"
 	}
 	log.Printf("storage backend: %s", kind)
+	log.Printf("conversion capabilities: %s", epub.DetectConversionCapabilities().Summary())
 
 	srv := server.New(server.Config{
 		Addr:           addr,

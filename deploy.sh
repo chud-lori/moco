@@ -43,5 +43,9 @@ fi
 
 echo "✓ moco is up"
 echo
-echo "==> [4/4] last 20 log lines"
+echo "==> [4/4] health payload"
+curl -fsS "http://127.0.0.1:${PORT}/api/v1/health"
+echo
+echo
+echo "==> [5/5] last 20 log lines"
 docker logs --tail 20 moco

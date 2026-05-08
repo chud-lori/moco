@@ -8,20 +8,25 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"regexp"
 	"strings"
 	"time"
-)
 
-// mdLinkRE matches inline markdown links: [text](url). Non-greedy on both
-// halves so adjacent links don't merge.
-var mdLinkRE = regexp.MustCompile(`\[([^\]]+?)\]\(([^)\s]+?)\)`)
+	"github.com/yuin/goldmark"
+	gast "github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/text"
+)
 
 type Chapter struct {
 	ID    string
 	Title string
 	HTML  string
 }
+
+var markdownParser = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+).Parser()
 
 func MarkdownToEPUB(title, author string, src []byte) ([]byte, error) {
 	body, fmTitle, fmAuthor := stripFrontMatter(string(src))
@@ -31,6 +36,10 @@ func MarkdownToEPUB(title, author string, src []byte) ([]byte, error) {
 	if author == "" && fmAuthor != "" {
 		author = fmAuthor
 	}
+	if strings.TrimSpace(title) == "" {
+		title = "Untitled"
+	}
+
 	chapters := parseMarkdown(title, body)
 
 	var buf bytes.Buffer
@@ -39,18 +48,13 @@ func MarkdownToEPUB(title, author string, src []byte) ([]byte, error) {
 	if err := writeStoredFile(zipWriter, "mimetype", []byte("application/epub+zip")); err != nil {
 		return nil, err
 	}
-
 	if err := writeFile(zipWriter, "META-INF/container.xml", []byte(containerXML)); err != nil {
 		return nil, err
 	}
-
-	opf := buildOPF(title, author, chapters)
-	nav := buildNav(title, chapters)
-
-	if err := writeFile(zipWriter, "OEBPS/content.opf", []byte(opf)); err != nil {
+	if err := writeFile(zipWriter, "OEBPS/content.opf", []byte(buildOPF(title, author, chapters))); err != nil {
 		return nil, err
 	}
-	if err := writeFile(zipWriter, "OEBPS/nav.xhtml", []byte(nav)); err != nil {
+	if err := writeFile(zipWriter, "OEBPS/nav.xhtml", []byte(buildNav(title, chapters))); err != nil {
 		return nil, err
 	}
 	if err := writeFile(zipWriter, "OEBPS/styles.css", []byte(defaultCSS)); err != nil {
@@ -67,13 +71,11 @@ func MarkdownToEPUB(title, author string, src []byte) ([]byte, error) {
 	if err := zipWriter.Close(); err != nil {
 		return nil, err
 	}
-
 	return buf.Bytes(), nil
 }
 
 // stripFrontMatter peels off a leading `--- ... ---` YAML block, returning the
-// remaining markdown body and the title/author keys if present. Without this,
-// frontmatter renders as paragraph text in the converted EPUB.
+// remaining markdown body and the title/author keys if present.
 func stripFrontMatter(src string) (body, title, author string) {
 	m := yamlBlockRE.FindStringSubmatchIndex(src)
 	if m == nil {
@@ -83,156 +85,299 @@ func stripFrontMatter(src string) (body, title, author string) {
 	return strings.TrimLeft(src[m[1]:], "\r\n"), title, author
 }
 
-func parseMarkdown(fallbackTitle, markdown string) []Chapter {
-	lines := strings.Split(markdown, "\n")
-	chapters := []Chapter{}
+type markdownSection struct {
+	title string
+	nodes []gast.Node
+}
 
-	currentTitle := fallbackTitle
-	paragraphs := []string{}
+func parseMarkdown(fallbackTitle, markdown string) []Chapter {
+	source := []byte(markdown)
+	doc := markdownParser.Parse(text.NewReader(source))
+
+	var sections []markdownSection
+	current := markdownSection{title: fallbackTitle}
 
 	flush := func() {
-		if currentTitle == "" && len(paragraphs) == 0 {
+		if strings.TrimSpace(current.title) == "" && len(current.nodes) == 0 {
 			return
 		}
-		htmlBody := renderParagraphs(paragraphs)
-		chapterID := slugID(currentTitle, len(chapters)+1)
-		doc := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-  <head>
-    <title>%s</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <section>
-      <h1>%s</h1>
-      %s
-    </section>
-  </body>
-</html>`, html.EscapeString(currentTitle), html.EscapeString(currentTitle), htmlBody)
-		chapters = append(chapters, Chapter{
-			ID:    chapterID,
-			Title: currentTitle,
-			HTML:  doc,
-		})
-		paragraphs = nil
+		sections = append(sections, current)
+		current = markdownSection{title: fallbackTitle}
 	}
 
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "# ") {
-			if len(paragraphs) > 0 || len(chapters) > 0 {
+	for node := doc.FirstChild(); node != nil; node = node.NextSibling() {
+		if heading, ok := node.(*gast.Heading); ok && heading.Level == 1 {
+			if len(current.nodes) > 0 || len(sections) > 0 {
 				flush()
 			}
-			currentTitle = strings.TrimSpace(strings.TrimPrefix(line, "# "))
+			current.title = strings.TrimSpace(extractInlineText(heading, source))
+			if current.title == "" {
+				current.title = fallbackTitle
+			}
 			continue
 		}
-		if strings.HasPrefix(line, "## ") && len(paragraphs) > 0 {
-			flush()
-			currentTitle = strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			continue
-		}
-		paragraphs = append(paragraphs, raw)
+		current.nodes = append(current.nodes, node)
 	}
-
 	flush()
 
-	if len(chapters) == 0 {
-		chapters = append(chapters, Chapter{
-			ID:    slugID(fallbackTitle, 1),
-			Title: fallbackTitle,
-			HTML:  renderSingleDocument(fallbackTitle, markdown),
-		})
+	if len(sections) == 0 {
+		sections = append(sections, markdownSection{title: fallbackTitle})
 	}
 
+	chapters := make([]Chapter, 0, len(sections))
+	for idx, section := range sections {
+		title := strings.TrimSpace(section.title)
+		if title == "" {
+			title = fallbackTitle
+		}
+		body := renderBlockList(section.nodes, source)
+		chapters = append(chapters, Chapter{
+			ID:    slugID(title, idx+1),
+			Title: title,
+			HTML:  chapterXHTML(title, body),
+		})
+	}
 	return chapters
 }
 
-func renderParagraphs(lines []string) string {
-	var paragraphs []string
-	var block []string
-
-	flush := func() {
-		if len(block) == 0 {
-			return
-		}
-		text := strings.Join(block, " ")
-		paragraphs = append(paragraphs, "<p>"+inlineMarkdown(text)+"</p>")
-		block = nil
+func renderBlockList(nodes []gast.Node, source []byte) string {
+	var sb strings.Builder
+	for _, node := range nodes {
+		sb.WriteString(renderBlock(node, source))
 	}
-
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			flush()
-			continue
-		}
-
-		if strings.HasPrefix(line, "### ") {
-			flush()
-			paragraphs = append(paragraphs, "<h2>"+html.EscapeString(strings.TrimSpace(strings.TrimPrefix(line, "### ")))+"</h2>")
-			continue
-		}
-
-		if strings.HasPrefix(line, "- ") {
-			flush()
-			// Use the literal Unicode bullet — XHTML strict only knows the 5
-			// named entities, so &bull; would break epub.js parsing.
-			paragraphs = append(paragraphs, "<p>• "+inlineMarkdown(strings.TrimSpace(strings.TrimPrefix(line, "- ")))+"</p>")
-			continue
-		}
-
-		block = append(block, line)
-	}
-
-	flush()
-	return strings.Join(paragraphs, "\n      ")
+	return sb.String()
 }
 
-func renderSingleDocument(title, markdown string) string {
-	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-  <head>
-    <title>%s</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <section>
-      <h1>%s</h1>
-      %s
-    </section>
-  </body>
-</html>`, html.EscapeString(title), html.EscapeString(title), renderParagraphs(strings.Split(markdown, "\n")))
+func renderBlock(node gast.Node, source []byte) string {
+	switch n := node.(type) {
+	case *gast.Paragraph:
+		return fmt.Sprintf("      <p>%s</p>\n", renderInlineChildren(n, source))
+	case *gast.Heading:
+		level := n.Level
+		if level < 2 {
+			level = 2
+		}
+		if level > 6 {
+			level = 6
+		}
+		return fmt.Sprintf("      <h%d>%s</h%d>\n", level, renderInlineChildren(n, source), level)
+	case *gast.Blockquote:
+		return fmt.Sprintf("      <blockquote>\n%s      </blockquote>\n", indentBlock(renderChildBlocks(n, source), 2))
+	case *gast.List:
+		tag := "ul"
+		attrs := ""
+		if n.IsOrdered() {
+			tag = "ol"
+			if n.Start > 1 {
+				attrs = fmt.Sprintf(` start="%d"`, n.Start)
+			}
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("      <%s%s>\n", tag, attrs))
+		for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+			sb.WriteString(renderBlock(child, source))
+		}
+		sb.WriteString(fmt.Sprintf("      </%s>\n", tag))
+		return sb.String()
+	case *gast.ListItem:
+		return fmt.Sprintf("        <li>%s</li>\n", renderListItemContent(n, source))
+	case *gast.FencedCodeBlock:
+		return renderCodeBlock(n.Language(source), n.Lines(), source)
+	case *gast.CodeBlock:
+		return renderCodeBlock(nil, n.Lines(), source)
+	case *gast.ThematicBreak:
+		return "      <hr />\n"
+	case *gast.HTMLBlock:
+		return fmt.Sprintf("      <pre><code>%s</code></pre>\n", html.EscapeString(string(n.Text(source))))
+	case *gast.TextBlock:
+		return fmt.Sprintf("      <p>%s</p>\n", html.EscapeString(strings.TrimSpace(string(n.Text(source)))))
+	case *extast.Table:
+		return renderTable(n, source)
+	case *extast.TableHeader:
+		return ""
+	case *extast.TableRow:
+		return ""
+	case *extast.TableCell:
+		return ""
+	default:
+		if node.HasChildren() {
+			return renderChildBlocks(node, source)
+		}
+		return ""
+	}
 }
 
-func inlineMarkdown(s string) string {
-	// Pull links out first (before HTML-escaping) so we can inspect the raw
-	// URL and skip dangerous schemes. Replace each match with a placeholder,
-	// escape the rest, then splice the rendered <a> tags back in.
-	src := strings.TrimSpace(s)
-	type linkSlot struct{ html string }
-	var slots []linkSlot
-	src = mdLinkRE.ReplaceAllStringFunc(src, func(m string) string {
-		parts := mdLinkRE.FindStringSubmatch(m)
-		text, url := parts[1], parts[2]
-		if !safeLinkURL(url) {
-			return m // leave the original text — refuses to linkify javascript:/data:
-		}
-		idx := len(slots)
-		slots = append(slots, linkSlot{
-			html: fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(url), html.EscapeString(text)),
-		})
-		return fmt.Sprintf("\x00LINK%d\x00", idx)
-	})
-	escaped := html.EscapeString(src)
-	escaped = replacePair(escaped, "**", "<strong>", "</strong>")
-	escaped = replacePair(escaped, "*", "<em>", "</em>")
-	escaped = replacePair(escaped, "`", "<code>", "</code>")
-	for i, slot := range slots {
-		escaped = strings.Replace(escaped, fmt.Sprintf("\x00LINK%d\x00", i), slot.html, 1)
+func renderChildBlocks(node gast.Node, source []byte) string {
+	var children []gast.Node
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		children = append(children, child)
 	}
-	return escaped
+	return renderBlockList(children, source)
+}
+
+func renderListItemContent(node *gast.ListItem, source []byte) string {
+	var parts []string
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		rendered := strings.TrimSpace(renderBlock(child, source))
+		if rendered != "" {
+			parts = append(parts, rendered)
+		}
+	}
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return parts[0]
+	default:
+		return "\n" + indentBlock(strings.Join(parts, "\n")+"\n", 3) + "        "
+	}
+}
+
+func renderTable(node *extast.Table, source []byte) string {
+	var sb strings.Builder
+	sb.WriteString("      <table>\n")
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch rowGroup := child.(type) {
+		case *extast.TableHeader:
+			sb.WriteString("        <thead>\n")
+			for row := rowGroup.FirstChild(); row != nil; row = row.NextSibling() {
+				sb.WriteString(renderTableRow(row, source, true))
+			}
+			sb.WriteString("        </thead>\n")
+		case *extast.TableRow:
+			sb.WriteString("        <tbody>\n")
+			for row := child; row != nil; row = row.NextSibling() {
+				if tableRow, ok := row.(*extast.TableRow); ok {
+					sb.WriteString(renderTableRow(tableRow, source, false))
+				}
+			}
+			sb.WriteString("        </tbody>\n")
+			return sb.String() + "      </table>\n"
+		}
+	}
+	sb.WriteString("      </table>\n")
+	return sb.String()
+}
+
+func renderTableRow(node gast.Node, source []byte, header bool) string {
+	tag := "td"
+	if header {
+		tag = "th"
+	}
+	var sb strings.Builder
+	sb.WriteString("          <tr>\n")
+	for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		tableCell, ok := cell.(*extast.TableCell)
+		if !ok {
+			continue
+		}
+		alignAttr := ""
+		if tableCell.Alignment != extast.AlignNone {
+			alignAttr = fmt.Sprintf(` style="text-align:%s"`, tableCell.Alignment.String())
+		}
+		sb.WriteString(fmt.Sprintf("            <%s%s>%s</%s>\n", tag, alignAttr, renderInlineChildren(tableCell, source), tag))
+	}
+	sb.WriteString("          </tr>\n")
+	return sb.String()
+}
+
+func renderCodeBlock(language []byte, lines *text.Segments, source []byte) string {
+	langClass := ""
+	if len(language) > 0 {
+		langClass = fmt.Sprintf(` class="language-%s"`, html.EscapeString(string(language)))
+	}
+	return fmt.Sprintf("      <pre><code%s>%s</code></pre>\n", langClass, html.EscapeString(renderSegments(lines, source)))
+}
+
+func renderSegments(lines *text.Segments, source []byte) string {
+	var sb strings.Builder
+	for i := 0; i < lines.Len(); i++ {
+		segment := lines.At(i)
+		sb.Write(segment.Value(source))
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func renderInlineChildren(node gast.Node, source []byte) string {
+	var sb strings.Builder
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		sb.WriteString(renderInline(child, source))
+	}
+	return sb.String()
+}
+
+func renderInline(node gast.Node, source []byte) string {
+	switch n := node.(type) {
+	case *gast.Text:
+		text := html.EscapeString(string(n.Value(source)))
+		if n.HardLineBreak() {
+			return text + "<br />"
+		}
+		if n.SoftLineBreak() {
+			return text + " "
+		}
+		return text
+	case *gast.String:
+		return html.EscapeString(string(n.Value))
+	case *gast.CodeSpan:
+		return fmt.Sprintf("<code>%s</code>", html.EscapeString(extractInlineText(n, source)))
+	case *gast.Emphasis:
+		tag := "em"
+		if n.Level >= 2 {
+			tag = "strong"
+		}
+		return fmt.Sprintf("<%s>%s</%s>", tag, renderInlineChildren(n, source), tag)
+	case *gast.Link:
+		href := strings.TrimSpace(string(n.Destination))
+		label := renderInlineChildren(n, source)
+		if !safeLinkURL(href) {
+			return label
+		}
+		return fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(href), label)
+	case *gast.Image:
+		src := strings.TrimSpace(string(n.Destination))
+		alt := extractInlineText(n, source)
+		if !safeLinkURL(src) {
+			return html.EscapeString(alt)
+		}
+		return fmt.Sprintf(`<img src="%s" alt="%s" />`, html.EscapeString(src), html.EscapeString(alt))
+	case *gast.AutoLink:
+		href := strings.TrimSpace(string(n.URL(source)))
+		label := html.EscapeString(string(n.Label(source)))
+		if !safeLinkURL(href) {
+			return label
+		}
+		return fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(href), label)
+	case *gast.RawHTML:
+		return html.EscapeString(string(n.Text(source)))
+	case *extast.Strikethrough:
+		return fmt.Sprintf("<del>%s</del>", renderInlineChildren(n, source))
+	default:
+		if node.HasChildren() {
+			return renderInlineChildren(node, source)
+		}
+		return ""
+	}
+}
+
+func extractInlineText(node gast.Node, source []byte) string {
+	var sb strings.Builder
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch n := child.(type) {
+		case *gast.Text:
+			sb.Write(n.Value(source))
+			if n.SoftLineBreak() || n.HardLineBreak() {
+				sb.WriteByte(' ')
+			}
+		case *gast.String:
+			sb.Write(n.Value)
+		case *gast.AutoLink:
+			sb.Write(n.Label(source))
+		default:
+			sb.WriteString(extractInlineText(child, source))
+		}
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func safeLinkURL(u string) bool {
@@ -240,34 +385,15 @@ func safeLinkURL(u string) bool {
 	if lower == "" {
 		return false
 	}
-	// Allow relative URLs and explicit web/email schemes; block javascript:,
-	// data:, vbscript: which can execute when rendered in epub.js.
 	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") ||
 		strings.HasPrefix(lower, "mailto:") || strings.HasPrefix(lower, "/") ||
 		strings.HasPrefix(lower, "#") {
 		return true
 	}
-	// Reject anything else with a scheme (`foo:`).
 	if i := strings.Index(lower, ":"); i > 0 && i < strings.Index(lower+"/", "/") {
 		return false
 	}
 	return true
-}
-
-func replacePair(src, marker, open, close string) string {
-	for {
-		start := strings.Index(src, marker)
-		if start == -1 {
-			return src
-		}
-		end := strings.Index(src[start+len(marker):], marker)
-		if end == -1 {
-			return src
-		}
-		end += start + len(marker)
-		content := src[start+len(marker) : end]
-		src = src[:start] + open + content + close + src[end+len(marker):]
-	}
 }
 
 func buildOPF(title, author string, chapters []Chapter) string {
@@ -364,6 +490,18 @@ func writeFile(zw *zip.Writer, name string, body []byte) error {
 	return err
 }
 
+func indentBlock(src string, levels int) string {
+	prefix := strings.Repeat("  ", levels)
+	lines := strings.Split(strings.TrimRight(src, "\n"), "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
 const containerXML = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
@@ -377,14 +515,76 @@ const defaultCSS = `body {
   margin: 5%;
 }
 
-h1, h2 {
+h1, h2, h3, h4, h5, h6 {
   font-family: "Palatino Linotype", serif;
 }
 
-p {
+p,
+blockquote,
+pre,
+ul,
+ol,
+table {
   margin: 0 0 1em;
+}
+
+blockquote {
+  border-left: 0.2rem solid #c8b89d;
+  margin-left: 0;
+  padding-left: 1rem;
+}
+
+pre {
+  background: #f5f1ea;
+  overflow-x: auto;
+  padding: 0.9rem;
 }
 
 code {
   font-family: monospace;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border: 1px solid #d9cdb8;
+  padding: 0.5rem;
+  vertical-align: top;
+}
+
+img {
+  height: auto;
+  max-width: 100%;
+}
+
+.page-gallery {
+  display: block;
+}
+
+.page-scan {
+  margin: 0 0 2rem;
+  page-break-inside: avoid;
+}
+
+.page-image {
+  border: 1px solid #d9cdb8;
+  display: block;
+  width: 100%;
+}
+
+.ocr-label {
+  font-size: 0.85rem;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  margin: 0.9rem 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.ocr-text {
+  color: #4f473d;
+  font-size: 0.95rem;
 }`

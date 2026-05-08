@@ -11,6 +11,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/moco ./cmd/moco
 
 FROM debian:bookworm-slim
 
+ARG MOCO_INSTALL_NOUGAT=false
+
 # PDF→EPUB conversion stack, ordered by fidelity. The Go server walks this
 # chain and uses the first available tool — Calibre is the gold standard
 # (preserves vector graphics, real chapter detection, table of contents).
@@ -24,17 +26,31 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
         calibre \
+        ghostscript \
         mupdf-tools \
         poppler-utils \
+        python3 \
+        python3-pip \
+        python3-venv \
+        qpdf \
+        tesseract-ocr \
+        unpaper \
         libegl1 \
         libopengl0 \
         libxcb-cursor0 \
  && rm -rf /var/lib/apt/lists/*
 
+COPY requirements-conversion.txt /tmp/requirements-conversion.txt
+
+RUN python3 -m pip install --break-system-packages --no-cache-dir -r /tmp/requirements-conversion.txt \
+ && if [ "$MOCO_INSTALL_NOUGAT" = "true" ]; then python3 -m pip install --break-system-packages --no-cache-dir nougat-ocr; fi \
+ && rm -f /tmp/requirements-conversion.txt
+
 # Calibre's ebook-convert links Qt and tries to open a display by default. In
 # a container with no X server this would fail at runtime; offscreen forces
 # Qt to render headlessly into memory. Required for ebook-convert to run.
 ENV QT_QPA_PLATFORM=offscreen
+ENV PYTHONUNBUFFERED=1
 
 RUN useradd --system --create-home --uid 10001 moco
 

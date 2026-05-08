@@ -19,12 +19,26 @@ import (
 // PDFConverter names a converter that's been chosen to handle a PDF.
 type PDFConverter string
 
+type PDFConversionReport struct {
+	Profile              PDFProfile `json:"profile"`
+	Converter            string     `json:"converter"`
+	StructuredEngine     string     `json:"structuredEngine,omitempty"`
+	OCRApplied           bool       `json:"ocrApplied"`
+	LooksMathHeavy       bool       `json:"looksMathHeavy"`
+	HybridPagesUsed      bool       `json:"hybridPagesUsed"`
+	PageCount            int        `json:"pageCount"`
+	AverageTextChars     float64    `json:"averageTextChars"`
+	AverageImagesPerPage float64    `json:"averageImagesPerPage"`
+}
+
 const (
-	ConverterEbookConvert PDFConverter = "ebook-convert" // Calibre — best
-	ConverterMutool       PDFConverter = "mutool"        // MuPDF — text + images
-	ConverterPdftotext    PDFConverter = "pdftotext"     // Poppler — text only
-	ConverterPureGo       PDFConverter = "pure-go"       // Last resort
-	ConverterUnavailable  PDFConverter = ""
+	ConverterStructuredMarkdown PDFConverter = "structured-markdown"
+	ConverterPageImages         PDFConverter = "page-images"
+	ConverterEbookConvert       PDFConverter = "ebook-convert" // Calibre — best
+	ConverterMutool             PDFConverter = "mutool"        // MuPDF — text + images
+	ConverterPdftotext          PDFConverter = "pdftotext"     // Poppler — text only
+	ConverterPureGo             PDFConverter = "pure-go"       // Last resort
+	ConverterUnavailable        PDFConverter = ""
 )
 
 // DetectPDFConverter returns the highest-fidelity PDF converter available on
@@ -43,27 +57,75 @@ func DetectPDFConverter() PDFConverter {
 	return ConverterPureGo
 }
 
-// PDFToEPUB converts a PDF on disk to an EPUB byte slice. It walks the
-// converter chain (ebook-convert → mutool → pdftotext → pure-Go) and returns
-// the first successful output. Each tier preserves more fidelity than the next.
-func PDFToEPUB(title, author string, pdfPath string) ([]byte, PDFConverter, error) {
-	if data, err := convertWithEbookConvert(pdfPath); err == nil {
-		return data, ConverterEbookConvert, nil
-	}
-	if data, err := convertWithMutool(title, author, pdfPath); err == nil {
-		return data, ConverterMutool, nil
-	}
-	if text, err := convertWithPdftotext(pdfPath); err == nil {
-		return buildEPUBFromPlainText(title, author, text), ConverterPdftotext, nil
-	}
-	text, err := extractPDFTextPureGo(pdfPath)
+// PDFToEPUB converts a PDF on disk to an EPUB byte slice. It first classifies
+// the PDF, optionally normalizes scanned input with OCR, then prefers a
+// structured markdown extractor before walking the fallback converter chain
+// (ebook-convert → mutool → pdftotext → pure-Go).
+func PDFToEPUB(title, author string, pdfPath string) ([]byte, PDFConverter, PDFConversionReport, error) {
+	analysis, err := AnalyzePDF(pdfPath)
 	if err != nil {
-		return nil, ConverterUnavailable, fmt.Errorf("pdf to epub: %w", err)
+		analysis = PDFAnalysis{Profile: ProfileDigital}
+	}
+	report := reportFromAnalysis(analysis)
+
+	preparedPath, cleanup, err := maybeOCRNormalizePDF(pdfPath, analysis)
+	if err != nil {
+		preparedPath = pdfPath
+		cleanup = func() {}
+	}
+	defer cleanup()
+	report.OCRApplied = preparedPath != pdfPath
+	if preparedPath != pdfPath {
+		if normalizedAnalysis, normErr := AnalyzePDF(preparedPath); normErr == nil {
+			analysis = normalizedAnalysis
+			report = reportFromAnalysis(analysis)
+			report.OCRApplied = true
+		}
+	}
+
+	if data, structured, err := convertWithStructuredMarkdown(title, author, preparedPath, analysis); err == nil {
+		report.Converter = string(ConverterStructuredMarkdown)
+		report.StructuredEngine = structured.Engine
+		return data, ConverterStructuredMarkdown, report, nil
+	}
+	if data, err := convertWithEbookConvert(preparedPath); err == nil {
+		report.Converter = string(ConverterEbookConvert)
+		return data, ConverterEbookConvert, report, nil
+	}
+	if analysis.Profile != ProfileDigital {
+		if data, err := buildHybridScannedEPUB(title, author, preparedPath, analysis); err == nil {
+			report.Converter = string(ConverterPageImages)
+			report.HybridPagesUsed = true
+			return data, ConverterPageImages, report, nil
+		}
+	}
+	if data, err := convertWithMutool(title, author, preparedPath); err == nil {
+		report.Converter = string(ConverterMutool)
+		return data, ConverterMutool, report, nil
+	}
+	if text, err := convertWithPdftotext(preparedPath); err == nil {
+		report.Converter = string(ConverterPdftotext)
+		return buildEPUBFromPlainText(title, author, text), ConverterPdftotext, report, nil
+	}
+	text, err := extractPDFTextPureGo(preparedPath)
+	if err != nil {
+		return nil, ConverterUnavailable, report, fmt.Errorf("pdf to epub: %w", err)
 	}
 	if strings.TrimSpace(text) == "" {
-		return nil, ConverterUnavailable, errors.New("pdf appears to contain no extractable text — install Calibre, mupdf-tools, or poppler-utils for better results, or this is a scanned PDF needing OCR")
+		return nil, ConverterUnavailable, report, errors.New("pdf appears to contain no extractable text — install Calibre, mupdf-tools, or poppler-utils for better results, or this is a scanned PDF needing OCR")
 	}
-	return buildEPUBFromPlainText(title, author, text), ConverterPureGo, nil
+	report.Converter = string(ConverterPureGo)
+	return buildEPUBFromPlainText(title, author, text), ConverterPureGo, report, nil
+}
+
+func reportFromAnalysis(analysis PDFAnalysis) PDFConversionReport {
+	return PDFConversionReport{
+		Profile:              analysis.Profile,
+		LooksMathHeavy:       analysis.LooksMathHeavy,
+		PageCount:            analysis.Pages,
+		AverageTextChars:     analysis.AverageTextChars,
+		AverageImagesPerPage: analysis.AverageImagesPerPage,
+	}
 }
 
 // ----- Tier 1: Calibre's ebook-convert (best fidelity) -----

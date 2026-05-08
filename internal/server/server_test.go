@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -195,6 +196,70 @@ func TestEPUBAndPDFReaderRoutesRenderInAppReaders(t *testing.T) {
 	assertReaderContains(t, client, baseURL+"/books/"+pdfID+"/read", `pdf.min.mjs`)
 }
 
+func TestInspectPDFIncludesConversionDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	client, baseURL := newTestClient(t)
+	seedCSRFCookie(t, client, baseURL)
+	doJSON(t, client, http.MethodPost, baseURL+"/api/v1/auth/signup", map[string]string{
+		"email":    "inspect@example.com",
+		"password": "verysecurepass",
+	}, http.StatusCreated)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "blank.pdf")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(minimalPDFBytes()); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/books/inspect", &body)
+	if err != nil {
+		t.Fatalf("new inspect request: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-CSRF-Token", csrfToken(t, client, baseURL))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("inspect request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("inspect status = %d, want %d, body=%s", resp.StatusCode, http.StatusOK, string(bodyBytes))
+	}
+
+	var payload struct {
+		Title      string `json:"title"`
+		Format     string `json:"format"`
+		Conversion struct {
+			Profile        string `json:"profile"`
+			PageCount      int    `json:"pageCount"`
+			LooksMathHeavy bool   `json:"looksMathHeavy"`
+		} `json:"conversion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode inspect body: %v", err)
+	}
+	if payload.Format != "pdf" {
+		t.Fatalf("format = %q, want pdf", payload.Format)
+	}
+	if payload.Conversion.Profile == "" {
+		t.Fatal("expected conversion profile in inspect response")
+	}
+	if payload.Conversion.PageCount < 1 {
+		t.Fatalf("pageCount = %d, want >= 1", payload.Conversion.PageCount)
+	}
+}
+
 func assertReaderContains(t *testing.T, client *http.Client, targetURL, needle string) {
 	t.Helper()
 	resp, err := client.Get(targetURL)
@@ -364,4 +429,30 @@ func uploadMultipart(t *testing.T, client *http.Client, baseURL string, fields m
 
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
+}
+
+func minimalPDFBytes() []byte {
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 4 0 R >>",
+		"<< /Length 0 >>\nstream\n\nendstream",
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	offsets := make([]int, 0, len(objects)+1)
+	offsets = append(offsets, 0)
+	for i, obj := range objects {
+		offsets = append(offsets, buf.Len())
+		fmt.Fprintf(&buf, "%d 0 obj\n%s\nendobj\n", i+1, obj)
+	}
+	xrefOffset := buf.Len()
+	fmt.Fprintf(&buf, "xref\n0 %d\n", len(offsets))
+	buf.WriteString("0000000000 65535 f \n")
+	for _, offset := range offsets[1:] {
+		fmt.Fprintf(&buf, "%010d 00000 n \n", offset)
+	}
+	fmt.Fprintf(&buf, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(offsets), xrefOffset)
+	return buf.Bytes()
 }

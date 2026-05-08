@@ -20,6 +20,8 @@
 
 ✨ **One-click EPUB conversion** — Turn an awkward PDF or a plain Markdown file into a real reflowable EPUB on upload.
 
+🧠 **Hybrid PDF conversion pipeline** — Born-digital PDFs prefer structured extraction, scanned PDFs can run through OCR, and hard pages can fall back to page images inside the EPUB instead of failing outright.
+
 🏷️ **Tags + collections** — Organize books with custom tags. Filter your shelf by tag, format, or progress.
 
 📥 **Want to read** — Save public books to your reading list. Build a wishlist of what's next.
@@ -35,3 +37,25 @@ A live instance is running at **<https://moco.lori.my.id>**. Sign up with any em
 ## For developers
 
 Architecture, project layout, API surface, configuration reference, deployment plan, and the R2 migration command live in **[DEVELOPER.md](./DEVELOPER.md)**.
+
+## Conversion Deployment
+
+The conversion pipeline in this branch expects a runtime stack, not just Go code. The included [Dockerfile](./Dockerfile) installs the default deployment toolchain:
+
+- `ebook-convert`
+- `ocrmypdf`
+- `mutool`
+- `pdftotext`
+- `pdftoppm`
+- `python3`
+- `pymupdf4llm`
+- `docling`
+- `marker`
+
+Optional:
+
+- `nougat` for math-heavy PDFs. Enable it at build time with `--build-arg MOCO_INSTALL_NOUGAT=true`.
+
+At runtime, check `GET /api/v1/health` or the startup logs to see which conversion engines were actually detected on the host.
+
+More detail lives in [docs/conversion-runtime.md](./docs/conversion-runtime.md).

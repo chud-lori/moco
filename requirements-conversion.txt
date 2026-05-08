@@ -1,0 +1,4 @@
+pymupdf4llm==0.0.27
+ocrmypdf==16.10.4
+docling==2.40.0
+marker-pdf==1.8.2
