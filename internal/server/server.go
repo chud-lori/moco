@@ -423,7 +423,51 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/books/"+r.PathValue("id")+"/read", http.StatusFound)
+	book, user, err := s.resolveBookAccess(r, r.PathValue("id"), false)
+	if err != nil {
+		if errors.Is(err, errNeedsLogin) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+
+	desc := book.Title + " on Moco."
+	if book.Author != "" {
+		desc = book.Title + " by " + book.Author + " on Moco."
+	}
+	shareURL := s.absoluteURL(r, "/books/"+book.ID)
+	jsonLD := bookJSONLD(book, shareURL)
+
+	data := bookDetailPageData{
+		pageData: pageData{
+			Title:       book.Title + " - Moco",
+			CurrentUser: user,
+			SEO: SEOData{
+				Title:       book.Title,
+				Description: desc,
+				URL:         shareURL,
+				Image:       s.absoluteURL(r, "/api/v1/books/"+book.ID+"/cover"),
+				OGType:      "book",
+				JSONLD:      template.HTML(jsonLD),
+			},
+		},
+		Book:             book,
+		IsOwner:          user != nil && user.ID == book.UserID,
+		ShareURL:         shareURL,
+		HasConvertedEPUB: book.DerivedEPUBPath != "",
+	}
+	if user != nil {
+		if tags, err := s.store.ListBookTags(r.Context(), user.ID, book.ID); err == nil {
+			data.Tags = tags
+		}
+		if wished, err := s.store.IsInWishlist(r.Context(), user.ID, book.ID); err == nil {
+			data.IsWishlisted = wished
+		}
+	}
+
+	s.renderTemplate(w, "book.html", data)
 }
 
 func (s *Server) handleQuotes(w http.ResponseWriter, r *http.Request) {

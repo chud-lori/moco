@@ -70,6 +70,16 @@ type statsPageData struct {
 	TagCounts []store.TagCount
 }
 
+type bookDetailPageData struct {
+	pageData
+	Book           store.Book
+	Tags           []string
+	IsOwner        bool
+	IsWishlisted   bool
+	ShareURL       string
+	HasConvertedEPUB bool
+}
+
 type readerPageData struct {
 	pageData
 	Book           store.Book

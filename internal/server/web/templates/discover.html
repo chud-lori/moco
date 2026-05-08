@@ -47,7 +47,7 @@
               {{ range .PublicBooks }}
                 {{ $isOnList := isWishlisted $wishlisted .ID }}
                 <article class="book-panel has-cover" data-book-id="{{ .ID }}">
-                  <a class="book-cover-thumb" href="/books/{{ .ID }}/read" aria-label="Open {{ .Title }}">
+                  <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
                     <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
                   </a>
                   <div class="book-panel-top">

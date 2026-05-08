@@ -52,13 +52,13 @@
                 <a href="/discover">See all →</a>
               </div>
               {{ range .PublicBooks }}
-                <div class="book-row">
-                  <div class="book-cover {{ if eq .Format "epub" }}moss{{ else if eq .Format "pdf" }}ink{{ else }}clay{{ end }}" aria-hidden="true"></div>
-                  <div>
+                <a class="book-row" href="/books/{{ .ID }}">
+                  <span class="book-row-cover"><img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" /></span>
+                  <span class="book-row-meta">
                     <h3>{{ .Title }}</h3>
                     <p>{{ .Format }} · by {{ ownerName .OwnerDisplayName .OwnerEmail }}</p>
-                  </div>
-                </div>
+                  </span>
+                </a>
               {{ else }}
                 <p class="shelf-empty">No public books yet — be the first to publish one.</p>
               {{ end }}

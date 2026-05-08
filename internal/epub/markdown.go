@@ -19,7 +19,14 @@ type Chapter struct {
 }
 
 func MarkdownToEPUB(title, author string, src []byte) ([]byte, error) {
-	chapters := parseMarkdown(title, string(src))
+	body, fmTitle, fmAuthor := stripFrontMatter(string(src))
+	if title == "" && fmTitle != "" {
+		title = fmTitle
+	}
+	if author == "" && fmAuthor != "" {
+		author = fmAuthor
+	}
+	chapters := parseMarkdown(title, body)
 
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
@@ -57,6 +64,18 @@ func MarkdownToEPUB(title, author string, src []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// stripFrontMatter peels off a leading `--- ... ---` YAML block, returning the
+// remaining markdown body and the title/author keys if present. Without this,
+// frontmatter renders as paragraph text in the converted EPUB.
+func stripFrontMatter(src string) (body, title, author string) {
+	m := yamlBlockRE.FindStringSubmatchIndex(src)
+	if m == nil {
+		return src, "", ""
+	}
+	title, author = readYAMLFrontMatter(src[:m[1]])
+	return strings.TrimLeft(src[m[1]:], "\r\n"), title, author
 }
 
 func parseMarkdown(fallbackTitle, markdown string) []Chapter {

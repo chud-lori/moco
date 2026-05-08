@@ -2250,6 +2250,35 @@ document.querySelectorAll("[data-add-tag]").forEach(attachAddTag);
 document.querySelectorAll("[data-wishlist-toggle]").forEach(attachWishlistToggle);
 document.querySelectorAll("[data-share-book]").forEach(attachShareBook);
 
+// ---------- Share-link button (book detail page) ----------
+// Uses the Web Share API on devices that support it (mobile share sheet);
+// falls back to clipboard copy with a brief inline confirmation.
+function attachShareLinkButton(btn) {
+  btn.addEventListener("click", async () => {
+    const url = btn.getAttribute("data-share-url") || window.location.href;
+    const title = btn.getAttribute("data-share-title") || document.title;
+    const toast = document.querySelector("[data-share-toast]");
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch (_) {
+        // user cancelled — fall through to copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      if (toast) {
+        toast.hidden = false;
+        setTimeout(() => { toast.hidden = true; }, 2400);
+      }
+    } catch (_) {
+      window.prompt("Copy this link:", url);
+    }
+  });
+}
+document.querySelectorAll("[data-share-button]").forEach(attachShareLinkButton);
+
 // ---------- Auto-submitting filter forms (AJAX swap) ----------
 // Forms with data-results-target="<selector>" fetch ?fragment=1 and replace
 // the matching container's innerHTML instead of reloading the whole page.
