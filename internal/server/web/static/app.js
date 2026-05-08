@@ -1594,12 +1594,49 @@ if (readerRoot) {
         }
       }).catch(() => {});
 
+      // EPUBs don't have intrinsic page numbers — epub.js builds "locations"
+      // from the spine. We pre-generate them so the user gets a jump-to-page
+      // input similar to the PDF reader. ~1024 chars per location is the
+      // standard heuristic.
+      const epubPageInput = document.querySelector("[data-epub-page-input]");
+      const epubPageTotal = document.querySelector("[data-epub-page-total]");
+      let epubLocationsReady = false;
+      book.locations.generate(1024).then(() => {
+        epubLocationsReady = true;
+        if (epubPageTotal) epubPageTotal.textContent = `/ ${book.locations.length()}`;
+        if (epubPageInput) {
+          epubPageInput.disabled = false;
+          epubPageInput.max = book.locations.length();
+        }
+      }).catch(() => {
+        if (epubPageTotal) epubPageTotal.textContent = "/ —";
+      });
+
       rendition.on("relocated", (location) => {
         const locator = location?.start?.cfi || "";
         const progressPercent = location?.start?.percentage ? location.start.percentage * 100 : 0;
         saveProgress(locator, progressPercent);
         if (prev) prev.disabled = !!location?.atStart;
         if (next) next.disabled = !!location?.atEnd;
+        if (epubLocationsReady && epubPageInput && document.activeElement !== epubPageInput) {
+          const idx = book.locations.locationFromCfi(locator);
+          if (idx > 0) epubPageInput.value = idx;
+        }
+      });
+
+      function jumpToEpubPage() {
+        if (!epubLocationsReady) return;
+        const total = book.locations.length();
+        let n = parseInt(epubPageInput.value, 10);
+        if (isNaN(n) || n < 1) n = 1;
+        if (n > total) n = total;
+        epubPageInput.value = n;
+        const cfi = book.locations.cfiFromLocation(n);
+        if (cfi) rendition.display(cfi);
+      }
+      epubPageInput?.addEventListener("change", jumpToEpubPage);
+      epubPageInput?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); jumpToEpubPage(); }
       });
 
       prev?.addEventListener("click", () => { if (!prev.disabled) rendition.prev(); });

@@ -91,8 +91,13 @@
           {{ else if eq .ReaderKind "epub" }}
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
-                <button class="button subtle" type="button" data-epub-prev aria-label="Previous page">← Previous</button>
-                <button class="button subtle" type="button" data-epub-next aria-label="Next page">Next →</button>
+                <button class="button subtle reader-page-btn" type="button" data-epub-prev aria-label="Previous page"><span aria-hidden="true">←</span><span class="reader-page-btn-label"> Previous</span></button>
+                <span class="page-jumper" data-page-jumper>
+                  <span class="page-jumper-label">Page</span>
+                  <input type="number" min="1" data-epub-page-input aria-label="Jump to page" value="0" disabled />
+                  <span class="page-jumper-total" data-epub-page-total>/ —</span>
+                </span>
+                <button class="button subtle reader-page-btn" type="button" data-epub-next aria-label="Next page"><span class="reader-page-btn-label">Next </span><span aria-hidden="true">→</span></button>
               </div>
               <div class="epub-stage" id="reader-content">
                 <div class="reader-loading" data-reader-loading>
@@ -104,13 +109,13 @@
           {{ else }}
             <div class="ebook-stage ebook-stage-full">
               <div class="ebook-controls">
-                <button class="button subtle" type="button" data-pdf-prev aria-label="Previous page">← Previous</button>
+                <button class="button subtle reader-page-btn" type="button" data-pdf-prev aria-label="Previous page"><span aria-hidden="true">←</span><span class="reader-page-btn-label"> Previous</span></button>
                 <span class="page-jumper" data-page-jumper>
-                  Page
+                  <span class="page-jumper-label">Page</span>
                   <input type="number" min="1" data-pdf-page-input aria-label="Jump to page" value="1" />
                   <span class="page-jumper-total" data-pdf-page-total>/ 1</span>
                 </span>
-                <button class="button subtle" type="button" data-pdf-next aria-label="Next page">Next →</button>
+                <button class="button subtle reader-page-btn" type="button" data-pdf-next aria-label="Next page"><span class="reader-page-btn-label">Next </span><span aria-hidden="true">→</span></button>
               </div>
               <div class="pdf-stage"><canvas id="pdf-canvas" aria-label="PDF page"></canvas></div>
             </div>

@@ -965,11 +965,11 @@ func (s *Server) handleServeBookContent(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleServeBookCover(w http.ResponseWriter, r *http.Request) {
 	book, _, err := s.resolveBookAccess(r, r.PathValue("id"), false)
 	if err != nil || book.CoverPath == "" {
-		writePlaceholderCover(w, book.Title)
+		writeGeneratedCover(w, book)
 		return
 	}
 	if _, exists, _ := s.storage.Stat(r.Context(), book.CoverPath); !exists {
-		writePlaceholderCover(w, book.Title)
+		writeGeneratedCover(w, book)
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=86400")
@@ -977,32 +977,10 @@ func (s *Server) handleServeBookCover(w http.ResponseWriter, r *http.Request) {
 	s.serveBackendObject(w, r, book.CoverPath, contentType, "")
 }
 
-func writePlaceholderCover(w http.ResponseWriter, title string) {
-	if title == "" {
-		title = "Untitled"
-	}
-	// Pick a calm gradient hue from the title hash so each book looks distinct.
-	h := 0
-	for _, c := range title {
-		h = (h*31 + int(c)) & 0xffff
-	}
-	hue := h % 360
-	display := title
-	if len(display) > 40 {
-		display = display[:37] + "…"
-	}
-	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 480" width="320" height="480">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%%" stop-color="hsl(%d,40%%,80%%)"/><stop offset="100%%" stop-color="hsl(%d,38%%,55%%)"/>
-  </linearGradient></defs>
-  <rect width="320" height="480" fill="url(#g)" rx="14"/>
-  <foreignObject x="20" y="20" width="280" height="440">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Georgia,serif;color:#27201a;font-size:22px;font-weight:700;line-height:1.25;">%s</div>
-  </foreignObject>
-</svg>`, hue, (hue+30)%360, htmlEscape(display))
+func writeGeneratedCover(w http.ResponseWriter, book store.Book) {
 	w.Header().Set("Content-Type", "image/svg+xml")
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	_, _ = w.Write([]byte(svg))
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write([]byte(generateCoverSVG(book)))
 }
 
 func htmlEscape(s string) string {
@@ -2052,7 +2030,7 @@ func (s *Server) handleServiceWorker(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	sw := `// Moco service worker — minimal "stale-while-revalidate" for static assets,
 // and offline fallback for the library shell.
-const CACHE = 'moco-v4';
+const CACHE = 'moco-v7';
 const STATIC = ['/static/styles.css', '/static/app.js', '/manifest.webmanifest'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(STATIC)));

@@ -141,10 +141,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 .reader-app {
   min-height: 100vh;
+  /* Keep padding-top constant — the topbar is position:fixed so it doesn't
+     reserve flow space, and animating padding-top here would shift the page
+     content by ~68px every time immersive mode toggles. The bar simply
+     fades in/out over the reserved space, content stays still. */
   padding: 80px 12px 12px;
   position: relative;
 }
-.reader-app.is-immersive { padding-top: 12px; transition: padding-top 0.25s ease; }
 
 main { display: grid; gap: 28px; }
 
@@ -1249,7 +1252,7 @@ main { display: grid; gap: 28px; }
   align-content: start;
 }
 
-.ebook-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ebook-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
 /* Inline page jumper (PDF) */
 .page-jumper {
@@ -2033,6 +2036,52 @@ main { display: grid; gap: 28px; }
 
   /* Filter toolbar mobile overrides live below the base .library-toolbar
      declaration so cascade order keeps them winning — see end of file. */
+
+  /* ----- Reader controls: bottom bar + icon-only on phones -----
+     Top-anchored Prev/Next is hard to thumb-reach on a tall phone.
+     Pin the bar to the bottom edge with safe-area padding, hide the
+     "Previous"/"Next"/"Page" labels (arrows are universal), and pump up
+     the tap targets to 44+ px. The bar slides off-screen with the rest
+     of the chrome when the user taps the page (immersive mode). */
+  .ebook-stage-full { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .ebook-stage-full .ebook-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom)) 16px;
+    background: rgba(246, 240, 231, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(85, 66, 43, 0.14);
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 8px;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+  }
+  .reader-app.is-immersive .ebook-stage-full .ebook-controls {
+    transform: translateY(110%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .reader-page-btn-label,
+  .page-jumper-label { display: none; }
+  .ebook-stage-full .ebook-controls .reader-page-btn {
+    min-width: 56px;
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 1.25rem;
+    font-weight: 600;
+    flex: 0 0 auto;
+  }
+  .ebook-stage-full .ebook-controls .page-jumper {
+    flex: 0 1 auto;
+    padding: 6px 10px;
+    min-height: 44px;
+  }
+  .ebook-stage-full .ebook-controls .page-jumper input { min-width: 44px; }
 
   .reader-topbar {
     padding: 6px 8px;
