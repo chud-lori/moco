@@ -2696,8 +2696,13 @@ async function openBookModal(href, { push = true } = {}) {
   const card = modalCardClass("is-wide");
   modalLastFocus = document.activeElement;
 
-  // Loading placeholder while we fetch.
-  card.innerHTML = `<div class="modal-loading" role="status" aria-live="polite">Loading…</div>`;
+  // Loading placeholder while we fetch — centered spinner so the modal
+  // doesn't flash blank text on a wide card before the content arrives.
+  card.innerHTML = `
+    <div class="modal-loading" role="status" aria-live="polite">
+      <span class="reader-spinner" aria-hidden="true"></span>
+      <span class="modal-loading-text">Loading book…</span>
+    </div>`;
   modal.classList.add("is-open");
   modal.dataset.bookModal = "1";
 
