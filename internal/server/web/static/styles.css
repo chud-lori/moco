@@ -1378,6 +1378,14 @@ main { display: grid; gap: 22px; }
   font-size: 1rem;
   margin: 4px 0 0;
   line-height: 1.25;
+  /* Clamp to 2 lines so a long title can't push the card height past its
+     siblings in the dashboard grid. -webkit-line-clamp is widely supported
+     and handles ellipsis automatically. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 .book-panel p { font-size: var(--m-fs-meta); margin: 0; }
 @media (min-width: 768px) {
@@ -1460,27 +1468,43 @@ main { display: grid; gap: 22px; }
   margin-top: auto;
   padding-top: 10px;
   border-top: 1px solid rgba(85, 66, 43, 0.08);
-  justify-content: flex-start;
-  flex-direction: column;
-  align-items: stretch;
+  /* Inline row: Read flexes wide, icon-only buttons stay compact at the
+     end. Wraps only if the card is unusually narrow. */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
-.book-panel-actions .button { padding: 8px 12px; font-size: 0.9rem; min-height: 40px; width: 100%; }
-@media (min-width: 768px) {
-  .book-panel-actions {
-    padding-top: 14px;
-    gap: 8px;
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .book-panel-actions .button { padding: 10px 18px; font-size: 0.95rem; min-height: var(--tap); width: auto; }
+.book-panel-actions .button.primary {
+  flex: 1 1 auto;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  min-height: 38px;
 }
-/* Push the destructive button to the far end of the row so it's harder to
-   mistap. Works whether the actions fit on one line or wrap to two. */
-.book-panel-actions .book-panel-danger { margin-left: 0; }
 @media (min-width: 768px) {
-  .book-panel-actions .book-panel-danger { margin-left: auto; }
+  .book-panel-actions { padding-top: 14px; gap: 8px; }
+  .book-panel-actions .button.primary { padding: 10px 16px; font-size: 0.95rem; min-height: 40px; }
+}
+/* Compact icon-only action buttons used on book cards. Keeps the action
+   row to a single line ("Read [🔓] [↗] [🗑]") instead of three full-width
+   stacked buttons. The `.book-panel-danger` modifier tints the trash icon
+   red so a destructive action remains visually distinct from neutral ones. */
+.button.icon-only {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.button.icon-only:hover { background: rgba(255, 250, 245, 0.9); color: var(--text); }
+.button.icon-only.book-panel-danger { color: var(--danger, #b04030); border-color: rgba(176, 64, 48, 0.25); }
+.button.icon-only.book-panel-danger:hover { background: rgba(176, 64, 48, 0.08); color: var(--danger, #b04030); }
+@media (min-width: 768px) {
+  .button.icon-only { width: 40px; min-width: 40px; min-height: 40px; }
 }
 
 /* Empty state.
