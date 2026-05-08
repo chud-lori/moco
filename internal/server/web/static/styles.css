@@ -1880,7 +1880,34 @@ main { display: grid; gap: 28px; }
   border-radius: var(--radius-lg);
   padding: 24px;
   box-shadow: var(--shadow);
+  position: relative;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
+.modal-card.is-wide { width: min(640px, 100%); padding: 0; }
+.modal-card.is-wide .book-detail {
+  margin: 0;
+  max-width: none;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(34, 28, 22, 0.08);
+  color: var(--ink);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+}
+.modal-close:hover { background: rgba(34, 28, 22, 0.16); }
 .modal-card h2 {
   margin: 0 0 8px;
   font-family: "Cormorant Garamond", serif;

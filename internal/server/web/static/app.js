@@ -65,12 +65,19 @@ let modalLastFocus = null;
 function closeModal() {
   const modal = document.querySelector("[data-modal-root]");
   if (!modal) return;
+  // If a book detail modal is open, popping history is required so the URL
+  // returns to the underlying list. Outside-click + Escape also land here.
+  const wasBookModal = modal.dataset.bookModal === "1";
   modal.classList.remove("is-open");
+  modal.dataset.bookModal = "";
   modal.querySelector("[data-modal-card]").innerHTML = "";
   if (modalLastFocus && typeof modalLastFocus.focus === "function") {
     modalLastFocus.focus();
   }
   modalLastFocus = null;
+  if (wasBookModal && history.state && history.state.bookModal) {
+    history.back();
+  }
 }
 
 function openConfirm({ title, body, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false }) {
@@ -2287,6 +2294,102 @@ document.addEventListener("click", async (event) => {
   }
   // Last-resort fallback for non-HTTPS contexts (clipboard API blocked).
   window.prompt("Copy this link:", url);
+});
+
+// ---------- Book detail modal (SPA-style) ----------
+// Intercept clicks on book covers / row links that point at /books/{id} and
+// open the detail card as a modal instead of navigating. URL is pushed to
+// history so the entry remains shareable; popstate closes the modal so the
+// browser back button works as expected.
+const bookDetailURLRE = /^\/books\/([A-Za-z0-9_-]+)\/?$/;
+
+function modalCardClass(extra = "") {
+  const modal = ensureModal();
+  const card = modal.querySelector("[data-modal-card]");
+  card.className = "modal-card" + (extra ? " " + extra : "");
+  return card;
+}
+
+async function openBookModal(href, { push = true } = {}) {
+  const modal = ensureModal();
+  const card = modalCardClass("is-wide");
+  modalLastFocus = document.activeElement;
+
+  // Loading placeholder while we fetch.
+  card.innerHTML = `<div class="modal-loading" role="status" aria-live="polite">Loading…</div>`;
+  modal.classList.add("is-open");
+  modal.dataset.bookModal = "1";
+
+  if (push && window.location.pathname + window.location.search !== href) {
+    history.pushState({ bookModal: href }, "", href);
+  }
+
+  try {
+    const res = await fetch(href + (href.includes("?") ? "&" : "?") + "fragment=1", {
+      headers: { "X-Fragment": "1", Accept: "text/html" },
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const html = await res.text();
+    card.innerHTML = `
+      <button type="button" class="modal-close" aria-label="Close" data-book-modal-close>×</button>
+      ${html}
+    `;
+    // Re-wire any interactive elements inside the injected card so the
+    // wishlist toggle, share button, etc. behave the same as on the full
+    // page. The share button is delegated globally so no wiring needed; the
+    // wishlist toggle is per-element.
+    if (typeof wireBookCardActions === "function") {
+      wireBookCardActions(card);
+    }
+  } catch (err) {
+    card.innerHTML = `<p class="form-message">Couldn't load book. <a href="${href}">Open the page instead.</a></p>`;
+  }
+}
+
+function closeBookModal({ pop = true } = {}) {
+  const modal = document.querySelector("[data-modal-root]");
+  if (!modal || modal.dataset.bookModal !== "1") return;
+  if (!pop) {
+    // Direct close without history pop (e.g. driven by popstate).
+    modal.dataset.bookModal = "";
+  }
+  closeModal();
+}
+
+document.addEventListener("click", (event) => {
+  // Close button inside modal.
+  if (event.target.closest("[data-book-modal-close]")) {
+    event.preventDefault();
+    closeBookModal();
+    return;
+  }
+  // Modifier-aware: let cmd/ctrl/middle clicks open in a new tab normally.
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1) return;
+
+  const link = event.target.closest("a[href]");
+  if (!link) return;
+  const url = new URL(link.href, window.location.origin);
+  if (url.origin !== window.location.origin) return;
+  const m = url.pathname.match(bookDetailURLRE);
+  if (!m) return;
+
+  // Skip the "Read now" / cover-on-detail-page links — those go to /read.
+  // Only intercept links that target the bare /books/{id} URL.
+  event.preventDefault();
+  openBookModal(url.pathname + url.search);
+});
+
+window.addEventListener("popstate", (event) => {
+  const modal = document.querySelector("[data-modal-root]");
+  const open = modal && modal.classList.contains("is-open") && modal.dataset.bookModal === "1";
+  // If user navigated forward to /books/{id} again, reopen.
+  if (bookDetailURLRE.test(window.location.pathname)) {
+    if (!open) openBookModal(window.location.pathname + window.location.search, { push: false });
+    return;
+  }
+  // URL no longer matches a book — close the modal without pushing more state.
+  if (open) closeBookModal({ pop: false });
 });
 
 // ---------- Auto-submitting filter forms (AJAX swap) ----------

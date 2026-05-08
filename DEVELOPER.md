@@ -368,7 +368,18 @@ The service worker (`handleServiceWorker` in `internal/server/server.go`) precac
 
 Symptom of forgetting: users report "my CSS/JS fix didn't ship" but `curl https://your-host/static/styles.css` returns the new file — the SW is intercepting the request before it hits the network. Workaround for testing without a deploy: DevTools → Application → Service Workers → **Unregister**, then reload.
 
-A future hardening would be to derive the cache version from a build hash so it self-bumps. For now, manual.
+#### Two-layer cache: SW + Cloudflare
+
+If Cloudflare (or any CDN) sits in front of the origin, bumping the SW alone is not enough — the SW's revalidation `fetch()` goes through the CDN. If the CDN has stale CSS, the SW will cache the CDN's stale bytes into `moco-vN+1`, and users still see no change.
+
+**Full purge sequence after a static-asset deploy:**
+
+1. Bump `CACHE` constant in `handleServiceWorker` and ship the binary.
+2. **Then** purge Cloudflare for the affected URLs (Dashboard → Caching → Configuration → Purge Cache → either "Purge everything" or specifically `/static/styles.css` and `/static/app.js`).
+3. Verify by hitting `https://your-host/static/styles.css` directly in the browser — `grep` for a known new selector to confirm the CDN/origin is fresh.
+4. End-user clears: DevTools → Application → Service Workers → Unregister, then reload twice (first reload installs the new SW, second reload renders against fresh assets).
+
+A future hardening would be to derive the cache version from a build hash so it self-bumps and to set explicit `Cache-Control: public, max-age=…, must-revalidate` headers on `/static/*` so the CDN behaves predictably. For now, manual.
 
 ### Health check
 
