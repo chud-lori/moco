@@ -1255,16 +1255,21 @@ main { display: grid; gap: 28px; }
 
 .reader-layout-full {
   grid-template-columns: minmax(0, 1fr);
-  min-height: calc(100vh - 108px);
+  /* dvh tracks the visible viewport on mobile — vh includes the collapsed
+     URL bar, which makes the layout taller than what's actually visible. */
+  min-height: calc(100dvh - 108px);
   gap: 0;
 }
 
 .reader-shell { min-height: 70vh; }
 
 .reader-shell-full {
-  min-height: calc(100vh - 108px);
+  min-height: calc(100dvh - 108px);
   display: grid;
   align-content: start;
+}
+@supports not (height: 100dvh) {
+  .reader-layout-full, .reader-shell-full { min-height: calc(100vh - 108px); }
 }
 
 .reader-card.reader-shell-full {
@@ -2125,6 +2130,35 @@ main { display: grid; gap: 28px; }
     font-weight: 600;
   }
   .ebook-stage-full .ebook-controls .page-jumper input { width: 48px; }
+
+  /* Reader page sizing on phones. The desktop default reserves 80px at
+     the top to clear the floating topbar — on a phone that's wasted space
+     when the topbar is in immersive mode. Drop the reserve and let the
+     topbar overlay the top of the content when it's revealed (standard
+     mobile reader pattern). Format/progress chip is also hidden — it's
+     low-signal and just steals vertical space on a small viewport. */
+  .reader-body-paginated .reader-app {
+    padding: 14px 8px 8px;
+  }
+  .reader-body-paginated .reader-toolbar { display: none; }
+  .reader-body-paginated .ebook-stage { padding-top: 4px; }
+  .reader-body-paginated .ebook-stage-full {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+    min-height: 0;
+  }
+  .reader-body-paginated .reader-card.reader-shell-full { padding: 0; }
+  .reader-body-paginated .epub-stage,
+  .reader-body-paginated .pdf-stage {
+    /* viewport - reader-app top/bottom padding (22) - bottom-bar reserve
+       (~78 + safe area) ≈ 100dvh - 100px */
+    height: calc(100dvh - 100px - env(safe-area-inset-bottom));
+  }
+  @supports not (height: 100dvh) {
+    .reader-body-paginated .epub-stage,
+    .reader-body-paginated .pdf-stage {
+      height: calc(100vh - 100px - env(safe-area-inset-bottom));
+    }
+  }
 
   .reader-topbar {
     padding: 6px 8px;

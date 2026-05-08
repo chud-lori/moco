@@ -93,8 +93,15 @@ type readerPageData struct {
 	PublicAllowed  bool
 }
 
+// AssetVersion is appended to /static/* URLs as a cache-buster. Bump it on
+// any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
+// browsers, mobile WebViews that ignore Cache-Control) treat the assets as
+// new resources. Kept in sync with the service-worker cache key.
+const AssetVersion = "v13"
+
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
+		"assetVersion": func() string { return AssetVersion },
 		"formatTime": func(t *time.Time) string {
 			if t == nil {
 				return "Not opened yet"
