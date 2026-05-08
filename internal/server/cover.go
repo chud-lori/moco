@@ -15,14 +15,17 @@ func generateCoverSVG(book store.Book) string {
 	return generateCoverSVGWithSalt(book, "")
 }
 
-// generateCoverSVGWithSalt renders the same cover but mixes salt into the seed
-// so the user can re-roll palette/variant without changing the book ID. Salt
-// is opaque to the generator — typically a counter or random hex.
+// generateCoverSVGWithSalt renders the same cover but uses salt to pick the
+// variant/palette so the user can re-roll the design without touching the
+// rendered text. Salt is opaque to the generator — typically a counter or
+// random hex.
 //
-// When salt is empty, the seed includes book.ID so each book gets a stable
-// design. When salt is provided, the seed is derived from title+salt only —
-// this lets the upload-form preview (which has no bookID yet) and the
-// persisted upload result agree on the same variant for the same salt.
+// Seed selection rule:
+//   - salt == "": seed = hash(book.ID + title) so each book gets a stable
+//     design even after title edits.
+//   - salt != "": seed = hash(salt) only. Title/author drive the rendered
+//     text but not the variant/palette — editing the title in the upload
+//     form just re-letters the cover, while "Try another style" re-rolls.
 func generateCoverSVGWithSalt(book store.Book, salt string) string {
 	title := strings.TrimSpace(book.Title)
 	if title == "" {
@@ -40,7 +43,7 @@ func generateCoverSVGWithSalt(book store.Book, salt string) string {
 	if salt == "" {
 		seed = hashSeed(book.ID + title)
 	} else {
-		seed = hashSeed(title + "|" + salt)
+		seed = hashSeed(salt)
 	}
 	palette := coverPalettes[seed%uint32(len(coverPalettes))]
 	variant := (seed / 7) % uint32(len(coverVariants))
