@@ -360,6 +360,16 @@ docker compose up -d --build
 
 The migration runner inside `Server.New` applies any new SQL migrations idempotently. No manual schema steps.
 
+#### Bump the service-worker cache version when you change CSS/JS
+
+The service worker (`handleServiceWorker` in `internal/server/server.go`) precaches `/static/styles.css` and `/static/app.js` under a fixed cache key (`const CACHE = 'moco-vN'`). It serves cached assets stale-while-revalidate, so a deploy that only changes static files will appear unchanged in users' browsers until the SW activates a new cache.
+
+**Rule of thumb: any time you change `styles.css`, `app.js`, or the SW itself, bump the cache version.** Increment `moco-v2` → `moco-v3` in the `CACHE` constant. The SW's `activate` handler then purges old caches and the next page load shows fresh assets.
+
+Symptom of forgetting: users report "my CSS/JS fix didn't ship" but `curl https://your-host/static/styles.css` returns the new file — the SW is intercepting the request before it hits the network. Workaround for testing without a deploy: DevTools → Application → Service Workers → **Unregister**, then reload.
+
+A future hardening would be to derive the cache version from a build hash so it self-bumps. For now, manual.
+
 ### Health check
 
 ```sh
