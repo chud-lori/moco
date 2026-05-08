@@ -2046,7 +2046,7 @@ func (s *Server) handleServiceWorker(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	sw := `// Moco service worker — minimal "stale-while-revalidate" for static assets,
 // and offline fallback for the library shell.
-const CACHE = 'moco-v1';
+const CACHE = 'moco-v2';
 const STATIC = ['/static/styles.css', '/static/app.js', '/manifest.webmanifest'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(STATIC)));
