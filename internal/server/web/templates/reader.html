@@ -69,7 +69,7 @@
         <aside class="toc-panel reader-sidebar" data-reader-panel="toc" aria-label="Table of contents">
           <p class="section-label">Contents</p>
           <h2>{{ .Book.Title }}</h2>
-          <p class="reader-owner">{{ if .Book.Author }}{{ .Book.Author }} · {{ end }}by {{ displayName .Book.OwnerEmail }}</p>
+          <p class="reader-owner">{{ if .Book.Author }}{{ .Book.Author }} · {{ end }}by {{ ownerName .Book.OwnerDisplayName .Book.OwnerEmail }}</p>
           {{ if eq .ReaderKind "md" }}
             <ul class="toc-list">
               {{ range .Document.Headings }}<li><a href="#{{ .ID }}">{{ .Title }}</a></li>{{ end }}

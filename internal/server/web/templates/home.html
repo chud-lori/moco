@@ -56,7 +56,7 @@
                   <div class="book-cover {{ if eq .Format "epub" }}moss{{ else if eq .Format "pdf" }}ink{{ else }}clay{{ end }}" aria-hidden="true"></div>
                   <div>
                     <h3>{{ .Title }}</h3>
-                    <p>{{ .Format }} · by {{ displayName .OwnerEmail }}</p>
+                    <p>{{ .Format }} · by {{ ownerName .OwnerDisplayName .OwnerEmail }}</p>
                   </div>
                 </div>
               {{ else }}

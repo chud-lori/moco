@@ -126,6 +126,20 @@ func templateFuncs() template.FuncMap {
 			}
 			return u.Email
 		},
+		// ownerName resolves a book owner's name preferring the live display
+		// name, falling back to the email local-part, then "a reader".
+		"ownerName": func(displayName, email string) string {
+			if strings.TrimSpace(displayName) != "" {
+				return displayName
+			}
+			if at := strings.Index(email, "@"); at > 0 {
+				return email[:at]
+			}
+			if email == "" {
+				return "a reader"
+			}
+			return email
+		},
 		"tagsForBook": func(tags map[string][]string, id string) []string {
 			if tags == nil {
 				return nil

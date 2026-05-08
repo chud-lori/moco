@@ -323,11 +323,9 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.currentUser(r)
-	excludeUserID := ""
-	if user != nil {
-		excludeUserID = user.ID
-	}
-	publicBooks, err := s.store.ListPublicBooks(r.Context(), excludeUserID)
+	// Show every public book, including the viewer's own — owners want
+	// to see their published shelf the same way readers do.
+	publicBooks, err := s.store.ListPublicBooks(r.Context(), "")
 	if err != nil {
 		http.Error(w, "failed to load public books", http.StatusInternalServerError)
 		return
