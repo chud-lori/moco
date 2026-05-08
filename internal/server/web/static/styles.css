@@ -2417,15 +2417,19 @@ main#main.is-spa-loading::before {
   max-width: 100%;
 }
 
-/* Mobile: stack selects vertically and drop the pill so the toolbar doesn't
-   round into a giant ellipse when the items wrap into a column. Placed after
-   the base rule so it wins the cascade at equal specificity. */
+/* Mobile: drop the outer pill entirely. The inner inputs already have their
+   own rounded styling — wrapping them in another rounded container creates
+   the "giant ellipse with two pills inside" look. Just stack them as form
+   fields with a tiny gap. */
 @media (max-width: 640px) {
   .library-toolbar, .quotes-toolbar {
     flex-direction: column;
     align-items: stretch;
-    border-radius: 18px;
-    padding: 12px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
     gap: 8px;
     width: 100%;
   }
@@ -2433,6 +2437,8 @@ main#main.is-spa-loading::before {
   .quotes-toolbar .select-input,
   .quotes-toolbar .search-input {
     width: 100%;
+    padding: 10px 14px;
+    border-radius: 14px;
   }
 }
 .search-input, .select-input {

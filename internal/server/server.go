@@ -493,7 +493,7 @@ func (s *Server) handleQuotes(w http.ResponseWriter, r *http.Request) {
 	bookOptions, _ := s.store.ListBooks(r.Context(), user.ID)
 	data := quotesPageData{
 		pageData: pageData{
-			Title:       "Quotes - Moco",
+			Title:       "Highlights - Moco",
 			CurrentUser: &user,
 			Nav:         "quotes",
 		},

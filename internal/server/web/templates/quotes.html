@@ -20,16 +20,16 @@
       {{ template "primary_topbar" . }}
       <main id="main">
         <section class="quotes-hero">
-          <p class="section-label">Quotes</p>
+          <p class="section-label">Highlights</p>
           <h1 class="dashboard-title">Passages you wanted to keep.</h1>
           <p class="auth-copy">Every highlight you've made across your library. Search by word, filter by book, jump back to the page anytime.</p>
         </section>
 
-        <form class="quotes-toolbar" method="get" action="/quotes" role="search" aria-label="Filter quotes" data-auto-submit data-results-target="[data-quotes-results]">
+        <form class="quotes-toolbar" method="get" action="/quotes" role="search" aria-label="Filter highlights" data-auto-submit data-results-target="[data-quotes-results]">
           <label class="search-input">
-            <span class="sr-only">Search quotes</span>
+            <span class="sr-only">Search highlights</span>
             <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="search" name="q" value="{{ .Query }}" placeholder="Search quotes…" autocomplete="off" />
+            <input type="search" name="q" value="{{ .Query }}" placeholder="Search highlights…" autocomplete="off" />
           </label>
           <label class="select-input">
             <span class="sr-only">Filter by book</span>
@@ -71,11 +71,11 @@
       {{ end }}
     </section>
   {{ else if or .Query .BookFilter }}
-    <section class="empty-state"><p>No quotes match those filters.</p></section>
+    <section class="empty-state"><p>No highlights match those filters.</p></section>
   {{ else }}
     <section class="empty-state is-primary">
-      <h2>No quotes yet.</h2>
-      <p>When you highlight a passage in any book, it'll show up here as a quote you can revisit.</p>
+      <h2>No highlights yet.</h2>
+      <p>When you highlight a passage in any book, it'll show up here so you can revisit it later.</p>
       <a class="button primary" href="/app">Open your library</a>
     </section>
   {{ end }}
