@@ -667,6 +667,12 @@ main { display: grid; gap: 28px; }
   font-size: 1.35rem;
   line-height: 1.45;
 }
+.note-card .note-meta {
+  font-family: "Manrope", sans-serif;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 400;
+}
 
 /* ---------- Badges / chips ---------- */
 .note-tag, .session-chip, .book-format, .visibility-chip {
@@ -806,8 +812,14 @@ main { display: grid; gap: 28px; }
   border-radius: 14px;
   color: var(--text);
   font-size: 0.92rem;
+  transition: opacity 0.25s ease;
 }
-.reader-app.is-immersive .guest-banner,
+/* Immersive mode fades the banner without removing it from layout — using
+   display:none here would shift content by ~70px when chrome toggles. */
+.reader-app.is-immersive .guest-banner {
+  opacity: 0;
+  pointer-events: none;
+}
 .guest-banner.is-hidden { display: none; }
 .guest-banner-text { flex: 1 1 auto; min-width: 0; }
 .guest-banner-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
@@ -1250,35 +1262,71 @@ main { display: grid; gap: 28px; }
 .ebook-stage-full {
   min-height: calc(100vh - 220px);
   align-content: start;
+  /* Reserve space below the rendered content for the floating bottom-bar
+     pill so it never overlaps the last line. */
+  padding-bottom: 88px;
 }
 
-.ebook-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+/* Reader pagination bar — purely an overlay so content never shifts when
+   the reader topbar fades. Floating pill on desktop, full-width strip on
+   phones (rules in @media at the bottom of this file). Always visible. */
+.ebook-stage-full .ebook-controls {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(247, 240, 230, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(85, 66, 43, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
+}
+.ebook-controls { display: flex; align-items: center; gap: 10px; }
 
-/* Inline page jumper (PDF) */
+/* Inline page jumper — input blends into the pill. Fades with immersive
+   mode (matches the topbar) while prev/next arrows stay visible. opacity-
+   only so the pill width never changes and prev/next don't reposition. */
 .page-jumper {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 251, 246, 0.78);
+  gap: 4px;
+  padding: 0 6px;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  transition: opacity 0.25s ease;
 }
-.page-jumper input[data-pdf-page-input] {
+.reader-app.is-immersive .page-jumper {
+  opacity: 0;
+  pointer-events: none;
+}
+.page-jumper input {
   width: 56px;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.6);
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: transparent;
   color: var(--text);
   font: inherit;
+  font-weight: 600;
   text-align: center;
+  border-radius: 0;
   -moz-appearance: textfield;
+  transition: border-color 0.15s ease;
 }
-.page-jumper input[data-pdf-page-input]::-webkit-inner-spin-button,
-.page-jumper input[data-pdf-page-input]::-webkit-outer-spin-button {
+.page-jumper input:hover { border-bottom-color: rgba(85, 66, 43, 0.25); }
+.page-jumper input:focus {
+  outline: none;
+  border-bottom-color: var(--accent-dark, #6f4a2a);
+}
+.page-jumper input::-webkit-inner-spin-button,
+.page-jumper input::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
@@ -2037,51 +2085,23 @@ main { display: grid; gap: 28px; }
   /* Filter toolbar mobile overrides live below the base .library-toolbar
      declaration so cascade order keeps them winning — see end of file. */
 
-  /* ----- Reader controls: bottom bar + icon-only on phones -----
-     Top-anchored Prev/Next is hard to thumb-reach on a tall phone.
-     Pin the bar to the bottom edge with safe-area padding, hide the
-     "Previous"/"Next"/"Page" labels (arrows are universal), and pump up
-     the tap targets to 44+ px. The bar slides off-screen with the rest
-     of the chrome when the user taps the page (immersive mode). */
-  .ebook-stage-full { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  /* Reader bottom bar mobile tweaks. The pill is already always-visible
+     and fixed-positioned at the bottom in the base styles — phones just
+     get bigger tap targets, icon-only labels, and safe-area padding. */
   .ebook-stage-full .ebook-controls {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 30;
-    margin: 0;
-    padding: 10px 16px calc(10px + env(safe-area-inset-bottom)) 16px;
-    background: rgba(246, 240, 231, 0.92);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-top: 1px solid rgba(85, 66, 43, 0.14);
-    justify-content: space-between;
-    flex-wrap: nowrap;
-    gap: 8px;
-    transition: transform 0.25s ease, opacity 0.25s ease;
-  }
-  .reader-app.is-immersive .ebook-stage-full .ebook-controls {
-    transform: translateY(110%);
-    opacity: 0;
-    pointer-events: none;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    padding: 6px 10px;
   }
   .reader-page-btn-label,
   .page-jumper-label { display: none; }
   .ebook-stage-full .ebook-controls .reader-page-btn {
-    min-width: 56px;
+    min-width: 48px;
     min-height: 44px;
-    padding: 8px 14px;
-    font-size: 1.25rem;
+    padding: 6px 12px;
+    font-size: 1.2rem;
     font-weight: 600;
-    flex: 0 0 auto;
   }
-  .ebook-stage-full .ebook-controls .page-jumper {
-    flex: 0 1 auto;
-    padding: 6px 10px;
-    min-height: 44px;
-  }
-  .ebook-stage-full .ebook-controls .page-jumper input { min-width: 44px; }
+  .ebook-stage-full .ebook-controls .page-jumper input { width: 48px; }
 
   .reader-topbar {
     padding: 6px 8px;

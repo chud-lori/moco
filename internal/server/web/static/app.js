@@ -784,6 +784,18 @@ if (readerRoot) {
     toast(`Sign in to ${action}.`, "error");
     setTimeout(() => { window.location.href = "/login"; }, 1200);
   }
+
+  // Shared bookmark state — each reader-kind block updates these on every
+  // page/scroll/relocate event so the "Bookmark current page" button always
+  // captures wherever the reader currently is. jumpToLocator is set by each
+  // reader so the bookmarks list can navigate cross-format.
+  let latestLocator = "";
+  let latestLabel = "";
+  let jumpToLocator = null;
+  function setReaderPosition(locator, label) {
+    if (locator) latestLocator = locator;
+    if (label) latestLabel = label;
+  }
   const progressStatus = document.querySelector("[data-progress-status]");
   const highlightsList = document.querySelector("[data-highlights-list]");
   const saveProgress = isGuest
@@ -927,7 +939,7 @@ if (readerRoot) {
     }
   });
 
-  // ----- Kindle-style immersive mode -----
+  // ----- Immersive mode -----
   const readerApp = readerRoot;
   let immersiveTimer = null;
   const IMMERSIVE_DELAY = 2800;
@@ -1230,6 +1242,15 @@ if (readerRoot) {
     const readerContent = document.getElementById("reader-content");
     renderMarkdownHighlights(readerContent);
     enrichCodeBlocks(readerContent);
+    jumpToLocator = (locator) => {
+      if (!locator) return;
+      if (locator === "start" || locator === "top") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      const target = document.getElementById(locator);
+      if (target) target.scrollIntoView({ block: "start", behavior: "smooth" });
+    };
     let lastProgressLocator = null;
     let activeHeadingId = null;
 
@@ -1269,7 +1290,10 @@ if (readerRoot) {
           ? Math.max(0, Math.min(100, window.scrollY / scrollHeight * 100))
           : 0;
         if (active) setActiveTOC(active.id);
-        await saveProgress(active?.id || "start", progressPercent);
+        const locator = active?.id || "start";
+        const label = active ? (active.textContent || "").trim().slice(0, 80) : "Top of book";
+        setReaderPosition(locator, label || locator);
+        await saveProgress(locator, progressPercent);
         showJumpButtonIfRelevant();
       }, 300);
     }, { passive: true });
@@ -1456,7 +1480,7 @@ if (readerRoot) {
         rendition = book.renderTo("reader-content", {
           width: "100%",
           height: "100%",
-          flow: "paginated",          // Kindle-style page turns
+          flow: "paginated",          // page-turn layout (no scroll)
           spread: initialSpread,
           minSpreadWidth: 900,         // single-page below ~iPad portrait
           allowScriptedContent: false,
@@ -1618,11 +1642,20 @@ if (readerRoot) {
         saveProgress(locator, progressPercent);
         if (prev) prev.disabled = !!location?.atStart;
         if (next) next.disabled = !!location?.atEnd;
-        if (epubLocationsReady && epubPageInput && document.activeElement !== epubPageInput) {
-          const idx = book.locations.locationFromCfi(locator);
-          if (idx > 0) epubPageInput.value = idx;
+        let pageIdx = 0;
+        if (epubLocationsReady) {
+          pageIdx = book.locations.locationFromCfi(locator);
+          if (pageIdx > 0 && epubPageInput && document.activeElement !== epubPageInput) {
+            epubPageInput.value = pageIdx;
+          }
         }
+        const label = pageIdx > 0 ? `Page ${pageIdx}` : "";
+        setReaderPosition(locator, label);
       });
+      jumpToLocator = (locator) => {
+        if (!locator) return;
+        try { rendition.display(locator); } catch (_) {}
+      };
 
       function jumpToEpubPage() {
         if (!epubLocationsReady) return;
@@ -1714,7 +1747,7 @@ if (readerRoot) {
         });
       });
 
-      // ---- Kindle-style highlight overlay ----
+      // ---- Highlight overlay ----
       const HIGHLIGHT_COLORS = {
         amber: "#d6ad68",
         sage:  "#8d9b77",
@@ -1865,7 +1898,7 @@ if (readerRoot) {
           const dpr = window.devicePixelRatio || 1;
 
           // Fit the page to the available stage area — no horizontal/vertical
-          // scrolling, Kindle-style "next page" via the Next button.
+          // scrolling; one page at a time via the Next button.
           const base = page.getViewport({ scale: 1 });
           const stageW = Math.max(stage.clientWidth - 24, 200);
           const stageH = Math.max(stage.clientHeight - 24, 200);
@@ -1884,10 +1917,19 @@ if (readerRoot) {
           if (pageTotal) pageTotal.textContent = `/ ${pdf.numPages}`;
           if (prev) prev.disabled = num <= 1;
           if (next) next.disabled = num >= pdf.numPages;
+          setReaderPosition(`page:${num}`, `Page ${num}`);
           await saveProgress(`page:${num}`, (num / pdf.numPages) * 100);
         } finally {
           rendering = false;
         }
+      };
+      jumpToLocator = (locator) => {
+        if (!locator) return;
+        const m = /^page:(\d+)$/.exec(locator);
+        if (!m) return;
+        const target = Math.min(Math.max(parseInt(m[1], 10) || 1, 1), pdf.numPages);
+        pageNum = target;
+        renderPage(pageNum);
       };
 
       // Re-render the current page when the viewport changes (rotation,
@@ -1986,6 +2028,98 @@ if (readerRoot) {
     };
     initPdf();
   }
+
+  // ---------- Bookmarks panel ----------
+  // Backend already exposes /api/v1/books/{id}/bookmarks (GET/POST) and
+  // DELETE /api/v1/bookmarks/{id}. Reader-kind blocks above keep latestLocator
+  // / latestLabel up-to-date and set jumpToLocator so this module can be
+  // format-agnostic.
+  const bookmarksList = document.querySelector("[data-bookmarks-list]");
+  const addBookmarkBtn = document.querySelector("[data-add-bookmark]");
+
+  function renderBookmarks(items) {
+    if (!bookmarksList) return;
+    if (!items.length) {
+      bookmarksList.innerHTML = `<article class="note-card" data-bookmarks-empty><p>No bookmarks yet.</p></article>`;
+      return;
+    }
+    bookmarksList.innerHTML = items.map((b) => {
+      const safeLabel = (b.label || b.locator || "Bookmark").replace(/[<>&"]/g, (c) => ({"<":"&lt;",">":"&gt;","&":"&amp;","\"":"&quot;"})[c]);
+      const safeLocator = (b.locator || "").replace(/"/g, "&quot;");
+      const when = b.createdAt ? new Date(b.createdAt).toLocaleDateString() : "";
+      return `
+        <article class="note-card" data-bookmark-id="${b.id}">
+          <p><strong>${safeLabel}</strong>${when ? ` <span class="note-meta">· ${when}</span>` : ""}</p>
+          <div class="book-panel-actions">
+            <button type="button" class="text-link" data-jump-bookmark="${safeLocator}">Jump to bookmark</button>
+            <button type="button" class="text-link destructive" data-delete-bookmark="${b.id}">Delete</button>
+          </div>
+        </article>`;
+    }).join("");
+  }
+
+  async function loadBookmarks() {
+    if (!bookmarksList || isGuest) return;
+    try {
+      const data = await requestJSON(`/api/v1/books/${bookID}/bookmarks`);
+      renderBookmarks(data.bookmarks || []);
+    } catch (_) {
+      bookmarksList.innerHTML = `<article class="note-card"><p>Couldn't load bookmarks.</p></article>`;
+    }
+  }
+
+  addBookmarkBtn?.addEventListener("click", async () => {
+    if (isGuest) { guestBlock("save bookmarks"); return; }
+    if (!latestLocator) { toast("Open a page first.", "error"); return; }
+    try {
+      await requestJSON(`/api/v1/books/${bookID}/bookmarks`, {
+        method: "POST",
+        body: JSON.stringify({ locator: latestLocator, label: latestLabel || latestLocator }),
+      });
+      toast("Bookmarked.", "success");
+      loadBookmarks();
+    } catch (_) {
+      toast("Couldn't save bookmark.", "error");
+    }
+  });
+
+  bookmarksList?.addEventListener("click", async (event) => {
+    const jump = event.target.closest("[data-jump-bookmark]");
+    if (jump) {
+      const locator = jump.getAttribute("data-jump-bookmark");
+      if (typeof jumpToLocator === "function") {
+        jumpToLocator(locator);
+      } else {
+        toast("Reader not ready.", "error");
+      }
+      // Close the panel after jumping so the user sees the page they landed on.
+      document.querySelectorAll("[data-reader-panel]").forEach((p) => p.classList.remove("is-open"));
+      return;
+    }
+    const del = event.target.closest("[data-delete-bookmark]");
+    if (del) {
+      const ok = await openConfirm({
+        title: "Delete bookmark?",
+        body: "This can't be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await requestJSON(`/api/v1/bookmarks/${del.getAttribute("data-delete-bookmark")}`, { method: "DELETE" });
+        loadBookmarks();
+      } catch (_) {
+        toast("Couldn't delete bookmark.", "error");
+      }
+    }
+  });
+
+  // Refresh the list when the panel is opened so newly added bookmarks from
+  // another tab/device show up without a hard reload.
+  document.querySelectorAll('[data-reader-toggle="bookmarks"]').forEach((btn) => {
+    btn.addEventListener("click", () => loadBookmarks());
+  });
+  loadBookmarks();
 }
 
 // ---------- Service Worker registration ----------

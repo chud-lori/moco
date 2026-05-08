@@ -311,7 +311,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 			Title:       "Moco — a calm reader for PDF, EPUB, and Markdown",
 			CurrentUser: user,
 			SEO: SEOData{
-				Title:       "Moco — read your books like Kindle, in your browser",
+				Title:       "Moco — a calm, private reader for your books",
 				Description: "Upload PDFs, EPUBs, and Markdown. Reflowable reading, themes, highlights, progress sync — your own private library.",
 				URL:         s.absoluteURL(r, "/"),
 				OGType:      "website",
@@ -2030,7 +2030,7 @@ func (s *Server) handleServiceWorker(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	sw := `// Moco service worker — minimal "stale-while-revalidate" for static assets,
 // and offline fallback for the library shell.
-const CACHE = 'moco-v8';
+const CACHE = 'moco-v11';
 const STATIC = ['/static/styles.css', '/static/app.js', '/manifest.webmanifest'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(STATIC)));

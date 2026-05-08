@@ -39,6 +39,10 @@
             <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             <span class="reader-toggle-label">Highlights</span>
           </button>
+          <button class="button subtle reader-toggle" type="button" data-reader-toggle="bookmarks" aria-label="Bookmarks" title="Bookmarks">
+            <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h14a1 1 0 0 1 1 1v17l-8-4-8 4V4a1 1 0 0 1 1-1z"/></svg>
+            <span class="reader-toggle-label">Bookmarks</span>
+          </button>
           <button class="button subtle reader-toggle" type="button" data-reader-toggle="settings" aria-label="Reading settings" title="Reading settings">
             <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
             <span class="reader-toggle-label">Aa</span>
@@ -200,6 +204,20 @@
             {{ else }}
               <article class="note-card"><p>No highlights yet.</p></article>
             {{ end }}
+          </div>
+        </aside>
+
+        <aside class="notes-preview reader-notes reader-sidebar" data-reader-panel="bookmarks" aria-label="Bookmarks">
+          <div class="notes-copy">
+            <p class="section-label">Bookmarks</p>
+            <h2>Marked pages</h2>
+            <p>{{ if .CurrentUser }}Save your spot at any page and jump back to it later.{{ else }}Sign in to save bookmarks.{{ end }}</p>
+            {{ if .CurrentUser }}
+              <button class="button primary" type="button" data-add-bookmark>+ Bookmark current page</button>
+            {{ end }}
+          </div>
+          <div class="notes-stack" data-bookmarks-list>
+            <article class="note-card" data-bookmarks-empty><p>No bookmarks yet.</p></article>
           </div>
         </aside>
       </main>

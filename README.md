@@ -1,6 +1,6 @@
 # moco
 
-**A calm, private reader for your books.** Upload your PDFs, EPUBs, and Markdown files, then read them on any device with the same Kindle-like experience — themes, font controls, highlights, and progress that follows you between phone, tablet, and laptop.
+**A calm, private reader for your books.** Upload your PDFs, EPUBs, and Markdown files, then read them on any device with a polished reading experience — themes, font controls, highlights, bookmarks, and progress that follows you between phone, tablet, and laptop.
 
 > Your library, your shelves, your highlights. Nothing tracked, nothing shared unless you choose to.
 
