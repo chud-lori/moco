@@ -22,7 +22,7 @@
       <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js" data-autoloader-path="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/" defer></script>
     {{ end }}
   </head>
-  <body class="reader-body">
+  <body class="reader-body{{ if ne .ReaderKind "md" }} reader-body-paginated{{ end }}">
     <a class="skip-link" href="#reader-content">Skip to reading area</a>
     <a class="reader-floating-close" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Close book and return to library" title="Close">
       <svg class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

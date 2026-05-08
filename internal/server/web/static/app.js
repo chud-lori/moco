@@ -1686,6 +1686,14 @@ if (readerRoot) {
       rendition.hooks.content.register((contents) => {
         const doc = contents.document;
         const win = contents.window;
+
+        // Disable iOS / mobile in-app browser double-tap-to-zoom inside the
+        // EPUB iframe. epub.js renders chapter HTML in a separate document,
+        // so touch-action on the parent body doesn't reach here.
+        const styleNode = doc.createElement("style");
+        styleNode.textContent = `html,body{touch-action:manipulation;-webkit-touch-callout:none;}`;
+        doc.head?.appendChild(styleNode);
+
         let sx = 0, sy = 0, st = 0, moved = false;
         const SWIPE_MIN = 50;
         const VERTICAL_TOLERANCE = 60;

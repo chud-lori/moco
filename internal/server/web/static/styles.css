@@ -59,6 +59,29 @@ body {
   background-attachment: fixed;
 }
 
+/* Paginated reader (EPUB / PDF) — lock viewport scroll so the page is one
+   fixed canvas instead of a scrollable document. Without this, mobile
+   in-app browsers (Instagram, etc.) let the page scroll, defeating the
+   page-turn UX. touch-action: manipulation also kills the iOS double-tap
+   zoom that interferes with our tap-to-toggle-immersive interaction. */
+.reader-body-paginated {
+  overflow: hidden;
+  height: 100dvh;
+  touch-action: manipulation;
+}
+@supports not (height: 100dvh) {
+  .reader-body-paginated { height: 100vh; }
+}
+.reader-body-paginated .reader-app {
+  /* The reader-app already has min-height:100vh; cap it to dvh inside the
+     paginated body so it never grows past the viewport. */
+  min-height: 100dvh;
+  height: 100dvh;
+}
+@supports not (height: 100dvh) {
+  .reader-body-paginated .reader-app { min-height: 100vh; height: 100vh; }
+}
+
 /* Reader theme overrides — set via data-reader-theme on the body */
 .reader-body[data-reader-theme="light"] {
   --bg: #f6f0e7;

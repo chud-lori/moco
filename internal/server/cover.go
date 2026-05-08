@@ -64,7 +64,7 @@ const labelFont = "Manrope, Helvetica, sans-serif"
 // renderBandedCover — top accent band + title block + bottom accent band with
 // author. Closely mirrors the user-supplied SVG sample.
 func renderBandedCover(p coverPalette, title, author, format string) string {
-	lines, fontSize := wrapTitle(title, coverBandedTitleWidthChars, 4)
+	lines, fontSize := wrapTitle(title, 4)
 	titleSVG := renderTitleLines(lines, 100, 760, fontSize, 1.18, p.ink)
 
 	return fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">
@@ -100,7 +100,7 @@ func renderBandedCover(p coverPalette, title, author, format string) string {
 // renderStripeCover — vertical accent stripe down the left, title and author
 // in the open space.
 func renderStripeCover(p coverPalette, title, author, format string) string {
-	lines, fontSize := wrapTitle(title, coverStripeTitleWidthChars, 4)
+	lines, fontSize := wrapTitle(title, 4)
 	titleSVG := renderTitleLines(lines, 220, 900, fontSize, 1.18, p.ink)
 
 	return fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">
@@ -125,7 +125,7 @@ func renderStripeCover(p coverPalette, title, author, format string) string {
 
 // renderFrameCover — inset frame border, title centered, author at bottom.
 func renderFrameCover(p coverPalette, title, author, format string) string {
-	lines, fontSize := wrapTitle(title, coverFrameTitleWidthChars, 4)
+	lines, fontSize := wrapTitle(title, 4)
 	startY := coverHeight/2 - (len(lines)*int(float64(fontSize)*1.15))/2 + int(float64(fontSize)*0.3)
 	titleSVG := renderTitleLinesCentered(lines, coverWidth/2, startY, fontSize, 1.15, p.ink)
 
@@ -153,63 +153,103 @@ func renderFrameCover(p coverPalette, title, author, format string) string {
 
 // ----- helpers -----
 
-const (
-	coverBandedTitleWidthChars = 16
-	coverStripeTitleWidthChars = 18
-	coverFrameTitleWidthChars  = 20
-)
-
-// wrapTitle splits a title into up to maxLines, returning the lines plus a
-// font size sized down so longer titles still fit on the canvas.
-func wrapTitle(title string, maxChars, maxLines int) ([]string, int) {
+// wrapTitle picks the smallest line count that fits the title on the canvas,
+// returning those lines plus the matching font size. Char budget per line
+// is derived from the candidate font size — bigger font means fewer chars
+// per line. Earlier versions used a single max-chars value for all line
+// counts, which let titles render fine in the 1-line/2-line decision but
+// overflow once a smaller font scaled char widths down.
+//
+// The maxLines argument is the hard cap; any title that still doesn't fit
+// at the smallest font is wrapped at that font and the last line is
+// truncated with an ellipsis.
+func wrapTitle(title string, maxLines int) ([]string, int) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return []string{"Untitled"}, 200
+	}
 	words := strings.Fields(title)
+	if len(words) == 0 {
+		return []string{title}, 200
+	}
+
+	// Calibrated against Cormorant Garamond / Palatino bold rendered against
+	// the 1400px inner width (1600 viewBox - 100px each side margin). Char
+	// width ≈ 0.48 × font-size for serif bold.
+	candidates := []struct{ font, maxChars int }{
+		{200, 14},
+		{170, 17},
+		{140, 21},
+		{110, 27},
+	}
+	if maxLines < 1 {
+		maxLines = 4
+	}
+
+	for i, c := range candidates {
+		targetLines := i + 1
+		if targetLines > maxLines {
+			break
+		}
+		lines := greedyWrap(words, c.maxChars)
+		if len(lines) <= targetLines && longestLineLen(lines) <= c.maxChars {
+			return lines, c.font
+		}
+	}
+
+	// Worst case: still doesn't fit at the smallest font. Wrap aggressively
+	// and ellipsis the last line so it never overflows.
+	last := candidates[len(candidates)-1]
+	lines := greedyWrap(words, last.maxChars)
+	if len(lines) > maxLines {
+		merged := strings.Join(lines[maxLines-1:], " ")
+		if len(merged) > last.maxChars-1 {
+			merged = strings.TrimRight(merged[:last.maxChars-1], " ") + "…"
+		}
+		lines = append(lines[:maxLines-1], merged)
+	}
+	return lines, last.font
+}
+
+// greedyWrap breaks `words` into the fewest lines such that no line exceeds
+// `maxChars`. A word longer than maxChars goes on its own line.
+func greedyWrap(words []string, maxChars int) []string {
 	var lines []string
 	var current []string
 	currentLen := 0
 	for _, w := range words {
+		// Lone over-long word: emit on its own line.
 		if len(w) > maxChars && len(current) == 0 {
 			lines = append(lines, w)
 			continue
 		}
-		if currentLen+len(w)+1 > maxChars && len(current) > 0 {
+		next := currentLen + len(w)
+		if currentLen > 0 {
+			next++ // space
+		}
+		if next > maxChars && len(current) > 0 {
 			lines = append(lines, strings.Join(current, " "))
 			current = []string{w}
 			currentLen = len(w)
 			continue
 		}
 		current = append(current, w)
-		if currentLen == 0 {
-			currentLen = len(w)
-		} else {
-			currentLen += len(w) + 1
-		}
+		currentLen = next
 	}
 	if len(current) > 0 {
 		lines = append(lines, strings.Join(current, " "))
 	}
-	if len(lines) == 0 {
-		lines = []string{title}
-	}
-	if len(lines) > maxLines {
-		// Keep first maxLines-1 lines, fold the rest into the last with ellipsis.
-		merged := strings.Join(lines[maxLines-1:], " ")
-		if len(merged) > maxChars-1 {
-			merged = strings.TrimRight(merged[:maxChars-1], " ") + "…"
+	return lines
+}
+
+func longestLineLen(lines []string) int {
+	n := 0
+	for _, l := range lines {
+		if len(l) > n {
+			n = len(l)
 		}
-		lines = append(lines[:maxLines-1], merged)
 	}
-	font := 180
-	switch len(lines) {
-	case 1:
-		font = 200
-	case 2:
-		font = 170
-	case 3:
-		font = 140
-	default:
-		font = 120
-	}
-	return lines, font
+	return n
 }
 
 func renderTitleLines(lines []string, x, y, size int, lineHeight float64, ink string) string {
