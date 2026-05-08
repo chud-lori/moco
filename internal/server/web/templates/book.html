@@ -51,7 +51,9 @@
 
             <div class="book-detail-actions">
               <a class="button primary" href="/books/{{ .Book.ID }}/read">Read now</a>
-              <button class="button secondary" type="button" data-share-button data-share-url="{{ .ShareURL }}" data-share-title="{{ .Book.Title }}">Share link</button>
+              {{ if eq .Book.Visibility "public" }}
+                <button class="button secondary" type="button" data-share-button data-share-url="{{ .ShareURL }}" data-share-title="{{ .Book.Title }}">Share link</button>
+              {{ end }}
               {{ if and .CurrentUser (not .IsOwner) }}
                 <button class="button subtle" type="button" data-wishlist-toggle="{{ .Book.ID }}" data-wishlisted="{{ if .IsWishlisted }}1{{ else }}0{{ end }}" aria-pressed="{{ if .IsWishlisted }}true{{ else }}false{{ end }}">{{ if .IsWishlisted }}✓ On list{{ else }}+ Want to read{{ end }}</button>
               {{ end }}

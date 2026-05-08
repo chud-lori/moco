@@ -2251,33 +2251,43 @@ document.querySelectorAll("[data-wishlist-toggle]").forEach(attachWishlistToggle
 document.querySelectorAll("[data-share-book]").forEach(attachShareBook);
 
 // ---------- Share-link button (book detail page) ----------
-// Uses the Web Share API on devices that support it (mobile share sheet);
-// falls back to clipboard copy with a brief inline confirmation.
-function attachShareLinkButton(btn) {
-  btn.addEventListener("click", async () => {
-    const url = btn.getAttribute("data-share-url") || window.location.href;
-    const title = btn.getAttribute("data-share-title") || document.title;
-    const toast = document.querySelector("[data-share-toast]");
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, url });
-        return;
-      } catch (_) {
-        // user cancelled — fall through to copy
-      }
+// Delegated on document so it survives any earlier scripting error and works
+// for nodes injected later. Web Share API on supported devices (mobile share
+// sheet); clipboard copy elsewhere; window.prompt as last resort.
+document.addEventListener("click", async (event) => {
+  const btn = event.target.closest("[data-share-button]");
+  if (!btn) return;
+  event.preventDefault();
+  const url = btn.getAttribute("data-share-url") || window.location.href;
+  const title = btn.getAttribute("data-share-title") || document.title;
+  const toast = document.querySelector("[data-share-toast]");
+  const showToast = (msg) => {
+    if (toast) {
+      toast.textContent = msg;
+      toast.hidden = false;
+      setTimeout(() => { toast.hidden = true; }, 2400);
     }
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url });
+      return;
+    } catch (_) {
+      // user cancelled or share failed — fall through to copy
+    }
+  }
+  if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(url);
-      if (toast) {
-        toast.hidden = false;
-        setTimeout(() => { toast.hidden = true; }, 2400);
-      }
+      showToast("Link copied to clipboard.");
+      return;
     } catch (_) {
-      window.prompt("Copy this link:", url);
+      // fall through
     }
-  });
-}
-document.querySelectorAll("[data-share-button]").forEach(attachShareLinkButton);
+  }
+  // Last-resort fallback for non-HTTPS contexts (clipboard API blocked).
+  window.prompt("Copy this link:", url);
+});
 
 // ---------- Auto-submitting filter forms (AJAX swap) ----------
 // Forms with data-results-target="<selector>" fetch ?fragment=1 and replace
