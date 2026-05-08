@@ -802,6 +802,16 @@ if (readerRoot) {
     setTimeout(() => { window.location.href = "/login"; }, 1200);
   }
 
+  // Quietly let guests know that progress / highlights / bookmarks need an
+  // account — replaces the always-on banner that used to take a chunk of
+  // vertical space at the top of the reader. Auto-dismisses; the per-action
+  // guestBlock() toasts above still fire if they try to use those features.
+  if (isGuest) {
+    setTimeout(() => {
+      toast("Reading as guest — sign in to save progress, highlights, and bookmarks.", "info");
+    }, 600);
+  }
+
   // Shared bookmark state — each reader-kind block updates these on every
   // page/scroll/relocate event so the "Bookmark current page" button always
   // captures wherever the reader currently is. jumpToLocator is set by each

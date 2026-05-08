@@ -78,7 +78,7 @@
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1086,40 +1086,6 @@ main { display: grid; gap: 22px; }
 
 .stack-form input::placeholder { color: var(--muted); opacity: 0.6; }
 
-/* ---------- Guest reading banner ---------- */
-.guest-banner {
-  position: relative;
-  z-index: 5;
-  margin: 70px 12px 0; /* clear the fixed reader-topbar */
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--accent-soft);
-  border: 1px solid rgba(85, 66, 43, 0.14);
-  border-radius: 14px;
-  color: var(--text);
-  font-size: 0.92rem;
-  transition: opacity 0.25s ease;
-}
-/* Immersive mode fades the banner without removing it from layout — using
-   display:none here would shift content by ~70px when chrome toggles. */
-.reader-app.is-immersive .guest-banner {
-  opacity: 0;
-  pointer-events: none;
-}
-.guest-banner.is-hidden { display: none; }
-.guest-banner-text { flex: 1 1 auto; min-width: 0; }
-.guest-banner-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
-.guest-banner .button { padding: 6px 14px; min-height: 0; }
-/* guest-banner mobile size lives here as a tiny per-component tweak rather
-   than a full responsive layer. */
-@media (max-width: 640px) {
-  .guest-banner { font-size: 0.86rem; padding: 9px 12px; }
-}
-
 /* ---------- Upload drop zone ---------- */
 .dropzone {
   position: relative;
@@ -1742,8 +1708,7 @@ main { display: grid; gap: 22px; }
 /* Paginated reader stage (EPUB iframe / PDF canvas).
    Mobile-first: viewport minus reader-app top/bottom paddings (~22px) and
    the floating bottom-bar reserve (~78px + safe area) ≈ 100dvh - 100px.
-   Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px.
-   Guest banner adds ~56px on mobile / ~48px on desktop when shown. */
+   Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px. */
 .epub-stage, .pdf-stage {
   width: 100%;
   height: calc(100dvh - 100px - env(safe-area-inset-bottom));
@@ -1759,26 +1724,10 @@ main { display: grid; gap: 22px; }
     height: calc(100vh - 100px - env(safe-area-inset-bottom));
   }
 }
-.reader-app[data-guest] .epub-stage,
-.reader-app[data-guest] .pdf-stage {
-  height: calc(100dvh - 156px - env(safe-area-inset-bottom));
-}
-@supports not (height: 100dvh) {
-  .reader-app[data-guest] .epub-stage,
-  .reader-app[data-guest] .pdf-stage {
-    height: calc(100vh - 156px - env(safe-area-inset-bottom));
-  }
-}
 @media (min-width: 768px) {
   .epub-stage, .pdf-stage { height: calc(100dvh - 180px); }
   @supports not (height: 100dvh) {
     .epub-stage, .pdf-stage { height: calc(100vh - 180px); }
-  }
-  .reader-app[data-guest] .epub-stage,
-  .reader-app[data-guest] .pdf-stage { height: calc(100dvh - 228px); }
-  @supports not (height: 100dvh) {
-    .reader-app[data-guest] .epub-stage,
-    .reader-app[data-guest] .pdf-stage { height: calc(100vh - 228px); }
   }
 }
 
@@ -2606,7 +2555,9 @@ main#main.is-spa-loading::before {
   border-radius: 0;
   box-shadow: none;
   width: 100%;
+  min-width: 0;
 }
+.quotes-toolbar > *, .library-toolbar > * { min-width: 0; }
 
 @media (min-width: 768px) {
   .quotes-toolbar, .library-toolbar {
@@ -2633,6 +2584,11 @@ main#main.is-spa-loading::before {
   align-items: center;
   gap: 8px;
   width: 100%;
+  /* min-width: 0 lets the input/select shrink below its intrinsic content
+     width when a parent flex column is narrower — without it, a long book
+     title in a <select> option (or a long input value) widens this row past
+     the viewport on small phones. */
+  min-width: 0;
   flex: 0 0 auto;
   padding: 10px 14px;
   background: rgba(255, 251, 245, 0.92);
@@ -2656,12 +2612,16 @@ main#main.is-spa-loading::before {
 .search-input .icon { color: var(--muted); flex-shrink: 0; }
 .search-input input {
   width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
   outline: none;
   font-size: 0.95rem;
 }
 .select-input select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: 0;
   background: transparent;
   outline: none;
@@ -2669,6 +2629,11 @@ main#main.is-spa-loading::before {
   font-weight: 500;
   color: var(--text);
   padding-right: 8px;
+  /* Truncate long book titles in the closed select so a single long option
+     can't widen the parent past the viewport on phones. */
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .quote-note {

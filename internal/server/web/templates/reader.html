@@ -58,17 +58,6 @@
           </a>
         </div>
       </header>
-      {{ if not .CurrentUser }}
-        <div class="guest-banner" role="status">
-          <span class="guest-banner-text">
-            You're reading as a guest. <strong>Sign in</strong> to save reading progress, highlights, and bookmarks across devices.
-          </span>
-          <span class="guest-banner-actions">
-            <a class="button subtle" href="/login">Sign in</a>
-            <a class="button primary" href="/signup">Create account</a>
-          </span>
-        </div>
-      {{ end }}
       <main class="reader-layout reader-layout-full">
         <aside class="toc-panel reader-sidebar" data-reader-panel="toc" aria-label="Table of contents">
           <p class="section-label">Contents</p>
