@@ -381,6 +381,12 @@ If Cloudflare (or any CDN) sits in front of the origin, bumping the SW alone is 
 
 A future hardening would be to derive the cache version from a build hash so it self-bumps and to set explicit `Cache-Control: public, max-age=…, must-revalidate` headers on `/static/*` so the CDN behaves predictably. For now, manual.
 
+#### Self-healing for users with stale SW
+
+The page registers `/sw.js` with `updateViaCache: "none"`, calls `registration.update()` on every load, and listens for `controllerchange`. Combined with the SW's existing `skipWaiting()` + `clients.claim()`, that means: deploy → user opens the page once → page detects the new SW, activates it, and auto-reloads exactly once with fresh assets. No need to ask users to unregister anything in DevTools.
+
+The reload is gated by a per-page `reloaded` flag so it can never loop. If you ever ship a SW that's so broken it can't load `/sw.js` itself, the only fallback is the manual DevTools unregister — keep at least one un-cached path (the bare HTML routes are not cached by our SW) so users can recover.
+
 ### Health check
 
 ```sh

@@ -1989,10 +1989,48 @@ if (readerRoot) {
 }
 
 // ---------- Service Worker registration ----------
+// Self-healing strategy so users with a stale SW pick up new deploys without
+// manual unregister. Three pieces:
+//  1. updateViaCache:"none" → browser never serves /sw.js from HTTP cache.
+//  2. Active update() on each page load → forces an immediate freshness check.
+//  3. controllerchange listener + one-shot reload → when the new SW takes
+//     over (skipWaiting + clients.claim already in the SW), the page reloads
+//     itself once so the user sees the fresh CSS/JS without lifting a finger.
 if ("serviceWorker" in navigator && location.protocol !== "http:") {
-  // SWs require HTTPS or localhost — quietly skip otherwise.
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((reg) => {
+        // Force an update check on every load. Cheap on the wire (sw.js is
+        // tiny and Cache-Control: no-cache means a 304 most of the time).
+        reg.update().catch(() => {});
+
+        // When a freshly installed SW finishes installing while another SW
+        // is controlling the page, ours calls skipWaiting in install — so
+        // it'll progress to "activated" quickly. Listen so we can prompt a
+        // reload (or just reload) the moment it takes control.
+        reg.addEventListener("updatefound", () => {
+          const installing = reg.installing;
+          if (!installing) return;
+          installing.addEventListener("statechange", () => {
+            if (installing.state === "activated" && navigator.serviceWorker.controller) {
+              // controllerchange handles the actual reload; this state hook
+              // is just defensive in case controllerchange doesn't fire on
+              // some browsers.
+            }
+          });
+        });
+      })
+      .catch(() => {});
+
+    // One-shot reload on controller change. The session flag stops an infinite
+    // loop on browsers that fire controllerchange more than once per claim.
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
   });
 }
 
