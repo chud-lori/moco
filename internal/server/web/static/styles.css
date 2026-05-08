@@ -78,7 +78,7 @@
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; overflow-x: hidden; }
+html { scroll-behavior: smooth; overflow-x: clip; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -92,7 +92,10 @@ html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   margin: 0;
   min-height: 100vh;
-  overflow-x: hidden;
+  /* overflow-x: clip clips at the box edge without creating a new
+     positioning context (which `hidden` does on some browsers and which
+     can let fixed/absolute children escape the clip). */
+  overflow-x: clip;
   color: var(--text);
   font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg-grad);
@@ -225,6 +228,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   padding: 14px var(--m-pad-page) calc(36px + env(safe-area-inset-bottom));
   margin: 0 auto;
   box-sizing: border-box;
+  /* min-width: 0 prevents children with intrinsic min-content (long words,
+     selects, grids with minmax floors) from blowing the shell past the
+     viewport — defensive belt against the pattern that the highlights and
+     discover pages hit on phones. */
+  min-width: 0;
+  overflow-x: clip;
 }
 .page-shell-narrow { width: 100%; max-width: 760px; }
 @media (min-width: 768px) {
@@ -759,13 +768,16 @@ main { display: grid; gap: 22px; }
    layout-pattern rules in the @media (min-width: 768px) block below. */
 .feature-band {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
-  padding: 0;
+  padding: 14px 16px;
   margin: 0 0 12px;
   border-radius: var(--m-radius-card);
   background: rgba(255, 250, 243, 0.76);
+  max-width: 100%;
+  min-width: 0;
 }
+.feature-band > * { min-width: 0; }
 .feature-band p { font-size: var(--m-fs-body); line-height: 1.45; }
 @media (min-width: 768px) {
   .feature-band {
@@ -1128,12 +1140,17 @@ main { display: grid; gap: 22px; }
   pointer-events: none;
   color: var(--muted);
 }
+/* `display: flex` above out-specifies the user-agent `[hidden] { display:none }`,
+   so without these explicit rules `el.hidden = true` would have no visual
+   effect and `applyFile()` wouldn't visibly swap empty<->filled states. */
+.dropzone-empty[hidden] { display: none; }
 .dropzone-icon { color: var(--accent-dark); }
 .dropzone-headline { margin: 0; color: var(--text); font-size: 0.98rem; }
 .dropzone-headline .text-link { font-weight: 600; }
 .dropzone-sub { margin: 0; font-size: 0.85rem; }
 
 .dropzone-filled { position: relative; z-index: 2; }
+.dropzone-filled[hidden] { display: none; }
 .dropzone-file {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1305,12 +1322,18 @@ main { display: grid; gap: 22px; }
 /* ---------- Dashboard library grid ----------
    Mobile-first: tighter min column, smaller gap. Desktop relaxes both. */
 .dashboard-grid {
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* min(150px, 100%) keeps the grid-track floor from forcing horizontal
+     overflow on viewports narrower than ~178px (150px + page-shell padding).
+     At normal phone widths it behaves identically to a fixed 150px floor. */
+  grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
   gap: 12px;
   align-items: stretch; /* equal-height cards across siblings */
+  max-width: 100%;
+  min-width: 0;
 }
+.dashboard-grid > * { min-width: 0; }
 @media (min-width: 768px) {
-  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 14px; }
 }
 
 .library-section { display: grid; gap: 16px; }
@@ -1402,17 +1425,27 @@ main { display: grid; gap: 22px; }
   padding-top: 10px;
   border-top: 1px solid rgba(85, 66, 43, 0.08);
   justify-content: flex-start;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
 }
-.book-panel-actions .button { padding: 6px 10px; font-size: 0.82rem; min-height: 34px; }
+.book-panel-actions .button { padding: 8px 12px; font-size: 0.9rem; min-height: 40px; width: 100%; }
 @media (min-width: 768px) {
-  .book-panel-actions { padding-top: 14px; gap: 8px; }
-  .book-panel-actions .button { padding: 10px 18px; font-size: 0.95rem; min-height: var(--tap); }
+  .book-panel-actions {
+    padding-top: 14px;
+    gap: 8px;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .book-panel-actions .button { padding: 10px 18px; font-size: 0.95rem; min-height: var(--tap); width: auto; }
 }
 /* Push the destructive button to the far end of the row so it's harder to
    mistap. Works whether the actions fit on one line or wrap to two. */
-.book-panel-actions .book-panel-danger { margin-left: auto; }
+.book-panel-actions .book-panel-danger { margin-left: 0; }
+@media (min-width: 768px) {
+  .book-panel-actions .book-panel-danger { margin-left: auto; }
+}
 
 /* Empty state.
    Mobile-first: tighter padding, --m-radius-card. Desktop expands. */
@@ -1425,7 +1458,7 @@ main { display: grid; gap: 22px; }
   box-shadow: none;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 12px;
 }
 @media (min-width: 768px) {
@@ -1433,6 +1466,8 @@ main { display: grid; gap: 22px; }
 }
 .empty-state h2, .empty-state p { margin: 0; }
 .empty-state .button { margin-top: 4px; }
+.empty-state > * { min-width: 0; max-width: 100%; }
+.empty-state .button { width: auto; align-self: flex-start; }
 
 /* ---------- Book detail / share page ----------
    Compact card-modal layout. Mobile-first: single-column, centered, smaller
@@ -1517,6 +1552,7 @@ main { display: grid; gap: 22px; }
 @media (min-width: 768px) {
   .empty-state.is-primary { padding: 36px 26px; }
 }
+.empty-state.is-primary .button { align-self: center; }
 .empty-state h2, .book-panel h2 {
   margin: 6px 0 8px;
   font-family: "Cormorant Garamond", serif;

@@ -806,6 +806,10 @@ if (readerRoot) {
   // account — replaces the always-on banner that used to take a chunk of
   // vertical space at the top of the reader. Auto-dismisses; the per-action
   // guestBlock() toasts above still fire if they try to use those features.
+  // Shown on every guest visit (guests have no persistent identity, so we
+  // can't reliably track "already seen this"). The tap-anywhere first-run
+  // hint below is suppressed for guests to keep the toast stack tidy — the
+  // guest hint already implies the controls are reachable.
   if (isGuest) {
     setTimeout(() => {
       toast("Reading as guest — sign in to save progress, highlights, and bookmarks.", "info");
@@ -1039,9 +1043,11 @@ if (readerRoot) {
   });
 
   // Show chrome briefly on load so users see the controls, then auto-hide.
-  // First-time users also get a one-shot toast hint.
+  // First-time logged-in users get a one-shot toast hint. Guests are skipped
+  // to avoid double-stacking with the guest welcome toast above — both are
+  // shown on first visit and would crowd the toast stack on phones.
   scheduleHide(3000);
-  if (!localStorage.getItem("moco-reader-hint-seen")) {
+  if (!isGuest && !localStorage.getItem("moco-reader-hint-seen")) {
     setTimeout(() => {
       toast("Tap anywhere to show controls.", "info");
       localStorage.setItem("moco-reader-hint-seen", "1");
@@ -2912,6 +2918,11 @@ document.addEventListener("click", (event) => {
   if (!isSpaPath(url.pathname)) return;
   // Don't intercept hash-only links.
   if (url.pathname === window.location.pathname && url.hash) return;
+  // Don't SPA-navigate AWAY from the reader: the reader puts a fixed topbar
+  // and a `reader-body-paginated` class on <body>, both outside <main>. SPA
+  // would swap <main> but leave that chrome behind, so the close buttons
+  // would appear to do nothing useful. Force a real navigation instead.
+  if (document.body.classList.contains("reader-body")) return;
   event.preventDefault();
   spaNavigate(url.pathname + url.search + url.hash, true);
 });
