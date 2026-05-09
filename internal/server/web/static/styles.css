@@ -1491,6 +1491,7 @@ main { display: grid; gap: 22px; }
    stacked buttons. The `.book-panel-danger` modifier tints the trash icon
    red so a destructive action remains visually distinct from neutral ones. */
 .button.icon-only {
+  position: relative;
   width: 36px;
   min-width: 36px;
   min-height: 36px;
@@ -1505,6 +1506,40 @@ main { display: grid; gap: 22px; }
 .button.icon-only.book-panel-danger:hover { background: rgba(176, 64, 48, 0.08); color: var(--danger, #b04030); }
 @media (min-width: 768px) {
   .button.icon-only { width: 40px; min-width: 40px; min-height: 40px; }
+}
+
+/* Custom tooltip on hover/focus — shows the icon button's aria-label as a
+   small dark pill above the button. Beats the browser's default title
+   tooltip (slow to appear, inconsistent styling). Hidden on touch devices
+   where hover doesn't apply naturally. */
+.button.icon-only[aria-label]::after {
+  content: attr(aria-label);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 4px 8px;
+  background: rgba(34, 28, 22, 0.92);
+  color: #fff8f0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 5;
+}
+.button.icon-only[aria-label]:hover::after,
+.button.icon-only[aria-label]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+@media (hover: none) {
+  /* Touch devices: skip the custom tooltip — it would stick on tap. The
+     aria-label still serves screen readers; long-press still surfaces the
+     native title attribute. */
+  .button.icon-only[aria-label]::after { display: none; }
 }
 
 /* Empty state.
