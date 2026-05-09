@@ -1,14 +1,16 @@
 # moco
 
-**A calm, private reader for your books.** Upload your PDFs, EPUBs, and Markdown files, then read them on any device with a polished reading experience — themes, font controls, highlights, bookmarks, and progress that follows you between phone, tablet, and laptop.
+**Read what you love. Publish what you write.** Moco is a reading platform for your personal library *and* a self-publishing home for your own writing. Upload PDFs, EPUBs, and Markdown — keep them private, share with one person by email, or publish to the public shelf for anyone to read. A polished reader (themes, font controls, highlights, bookmarks, progress that follows you between phone, tablet, and laptop) on every book, whether you wrote it or not.
 
-> Your library, your shelves, your highlights. Nothing tracked, nothing shared unless you choose to.
+> Your library, your shelves, your work. Nothing tracked, nothing shared unless you choose to.
 
 ---
 
 ## What you get
 
 📚 **Your private library** — Upload books once, read them anywhere. PDF, EPUB, and Markdown all land in the same calm reading interface.
+
+✍️ **Self-publishing in one click** — Drop in a Markdown draft or finished EPUB and ship it. Auto-generated covers, a public landing page per book, and a real reader your audience can finish a chapter in.
 
 🌗 **Reader you'll actually want to use** — Light, Paper, Sepia, and Dark themes. Adjust font size and line spacing. Reflowable text on any screen.
 

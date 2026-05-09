@@ -316,11 +316,11 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.currentUser(r)
 	s.renderTemplate(w, "home.html", discoverPageData{
 		pageData: pageData{
-			Title:       "Moco — a calm reader for PDF, EPUB, and Markdown",
+			Title:       "Moco — read what you love, publish what you write",
 			CurrentUser: user,
 			SEO: SEOData{
-				Title:       "Moco — a calm, private reader for your books",
-				Description: "Upload PDFs, EPUBs, and Markdown. Reflowable reading, themes, highlights, progress sync — your own private library.",
+				Title:       "Moco — read what you love, publish what you write",
+				Description: "A reader for your library and a self-publishing platform for your writing. Upload PDF, EPUB, or Markdown — keep it private, share by email, or publish to the public shelf. Reflowable reading, highlights, and progress sync across devices.",
 				URL:         s.absoluteURL(r, "/"),
 				OGType:      "website",
 			},

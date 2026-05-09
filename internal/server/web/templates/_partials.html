@@ -4,7 +4,7 @@
 */}}
 {{ define "social_meta" }}
   {{ $title := .SEO.Title }}{{ if eq $title "" }}{{ $title = .Title }}{{ end }}
-  {{ $desc := .SEO.Description }}{{ if eq $desc "" }}{{ $desc = "A calm personal reader for PDF, EPUB, and Markdown — uploads, reading progress, highlights, and a clean library on a single VM." }}{{ end }}
+  {{ $desc := .SEO.Description }}{{ if eq $desc "" }}{{ $desc = "Read what you love, publish what you write. Moco is a reading platform for PDF, EPUB, and Markdown — and a self-publishing home for writers. Private libraries, public shelves, share-by-email, highlights, and progress sync across devices." }}{{ end }}
   {{ $url := .SEO.URL }}
   {{ $image := .SEO.Image }}{{ if eq $image "" }}{{ $image = "/static/og-default.svg" }}{{ end }}
   <meta name="description" content="{{ $desc }}" />

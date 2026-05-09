@@ -788,6 +788,37 @@ main { display: grid; gap: 22px; }
   }
 }
 
+/* Audience bands (For readers / For writers) on the home page. Mobile:
+   single-column stack. Desktop: two-up grid so both audiences are visible
+   without scrolling. */
+.audience-bands {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin: 28px 0 0;
+}
+.audience-band {
+  padding: 18px 20px;
+  border-radius: var(--m-radius-card);
+  background: rgba(255, 250, 243, 0.78);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.audience-band h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  line-height: 1.2;
+  font-family: "Cormorant Garamond", serif;
+}
+.audience-band p { margin: 0; color: var(--text-soft, var(--text)); line-height: 1.5; font-size: 0.98rem; }
+@media (min-width: 768px) {
+  .audience-bands { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; margin-top: 48px; }
+  .audience-band { padding: 28px 30px; border-radius: var(--radius-lg); }
+  .audience-band h2 { font-size: clamp(1.5rem, 2.4vw, 2rem); }
+}
+
 /* Cross-band heading scale.
    Mobile-first: 1.25rem (--m-fs-h2). Desktop scales up to 1.9–3.2rem. */
 .feature-band h2, .reader-preview h2, .notes-preview h2 {

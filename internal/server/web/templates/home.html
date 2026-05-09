@@ -32,23 +32,23 @@
       <main id="main">
         <section class="hero">
           <div class="hero-copy">
-            <p class="eyebrow">Private by default, public when you want it</p>
-            <h1>Read your books. Publish the good ones.</h1>
-            <p class="hero-text">Moco is a reading app for PDF, EPUB, and Markdown with in-app readers, chapter navigation, highlights, progress resume, and optional public publishing.</p>
+            <p class="eyebrow">A reader for what you love · a publisher for what you write</p>
+            <h1>Read what you love. Publish what you write.</h1>
+            <p class="hero-text">Moco is a reading platform for your personal library and a publishing home for your own writing. Upload a PDF, EPUB, or Markdown — keep it private, share it with one person by email, or publish it to the public shelf for anyone to read.</p>
             <div class="hero-actions">
-              <a class="button primary" href="{{ if .CurrentUser }}/app{{ else }}/signup{{ end }}">Open library</a>
-              <a class="button secondary" href="/discover">Browse public books</a>
+              <a class="button primary" href="{{ if .CurrentUser }}/app{{ else }}/signup{{ end }}">{{ if .CurrentUser }}Open library{{ else }}Start your library{{ end }}</a>
+              <a class="button secondary" href="/discover">Browse what others published</a>
             </div>
             <div class="hero-meta">
-              <span>Private and public shelves</span>
-              <span>Highlights and reading progress</span>
-              <span>Read on any device</span>
+              <span>Read PDF, EPUB, and Markdown</span>
+              <span>Publish to a public shelf</span>
+              <span>Highlights and progress sync</span>
             </div>
           </div>
           <div class="hero-panel">
             <div class="shelf-card">
               <div class="shelf-header">
-                <span>Public shelf</span>
+                <span>Recently published</span>
                 <a href="/discover">See all →</a>
               </div>
               {{ range .PublicBooks }}
@@ -64,6 +64,19 @@
               {{ end }}
             </div>
           </div>
+        </section>
+
+        <section class="audience-bands">
+          <article class="audience-band">
+            <p class="section-label">For readers</p>
+            <h2>Your books, your library, your way.</h2>
+            <p>Upload anything you'd read on a Kindle. Reflowable text, dark mode, font controls, highlights, bookmarks, progress that follows you between phone, tablet, and laptop. No tracking, no ads, no algorithm picking what's next.</p>
+          </article>
+          <article class="audience-band">
+            <p class="section-label">For writers</p>
+            <h2>Self-publish without the gatekeepers.</h2>
+            <p>Drop in a Markdown draft or finished EPUB and you're already shipping. Auto-generated covers if you don't have one, a public landing page per book, share-by-email for early readers, and a real reader experience your audience can actually finish a chapter in.</p>
+          </article>
         </section>
       </main>
     </div>

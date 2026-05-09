@@ -26,8 +26,8 @@
       <main id="main">
         <section class="auth-card">
           <p class="section-label">{{ .Mode }}</p>
-          <h1 class="auth-title">{{ if eq .Mode "Sign up" }}Build your private library{{ else }}Welcome back to your shelf{{ end }}</h1>
-          <p class="auth-copy">{{ if eq .Mode "Sign up" }}Create an account to upload, read, and resume your books.{{ else }}Sign in to continue reading and review your highlights.{{ end }}</p>
+          <h1 class="auth-title">{{ if eq .Mode "Sign up" }}Read your library. Publish your work.{{ else }}Welcome back to your shelf{{ end }}</h1>
+          <p class="auth-copy">{{ if eq .Mode "Sign up" }}Create an account to upload, read, and (when you're ready) publish your own writing to the public shelf.{{ else }}Sign in to continue reading and review your highlights.{{ end }}</p>
           <form class="stack-form" data-auth-form data-mode="{{ if eq .Mode "Sign up" }}signup{{ else }}login{{ end }}" novalidate>
             <label><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" autofocus required /></label>
             <label>
