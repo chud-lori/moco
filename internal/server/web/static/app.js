@@ -377,6 +377,10 @@ if (uploadForm) {
   const coverPreviewImg = uploadForm.querySelector("[data-cover-preview-img]");
   const coverSaltInput  = uploadForm.querySelector("[data-cover-salt-input]");
   const coverRerollBtn  = uploadForm.querySelector("[data-cover-preview-reroll]");
+  const coverSkipBtn    = uploadForm.querySelector("[data-cover-preview-skip]");
+  // Once the user opts out of auto-generated covers, stay opted out for this
+  // upload — typing in the title shouldn't bring the preview back uninvited.
+  let coverGenerationOptedOut = false;
 
   // Auto-generated cover preview state. The salt is what makes a re-roll
   // produce a different palette/variant; a random alphanumeric is enough
@@ -390,7 +394,7 @@ if (uploadForm) {
   }
   function refreshCoverPreview() {
     if (!coverPreview || !coverPreviewImg || !coverSaltInput) return;
-    if (coverFileInput?.files?.[0]) {
+    if (coverGenerationOptedOut || coverFileInput?.files?.[0]) {
       coverPreview.hidden = true;
       coverSaltInput.value = "";
       return;
@@ -415,6 +419,16 @@ if (uploadForm) {
   }
   coverRerollBtn?.addEventListener("click", () => {
     coverSalt = randomShortSalt();
+    coverGenerationOptedOut = false;
+    refreshCoverPreview();
+  });
+  // Opting out hides the preview and stops the salt being submitted with the
+  // upload. The server will still try real extraction (EPUB manifest / PDF
+  // first page); only if that fails too will the cover stay empty and the
+  // serve endpoint fall back to an unstored on-the-fly SVG that the user can
+  // replace later via the book detail page.
+  coverSkipBtn?.addEventListener("click", () => {
+    coverGenerationOptedOut = true;
     refreshCoverPreview();
   });
   // When the user picks their own cover file, hide the preview and drop
@@ -468,6 +482,7 @@ if (uploadForm) {
     if (coverPreview) coverPreview.hidden = true;
     if (coverSaltInput) coverSaltInput.value = "";
     if (coverFileInput) coverFileInput.value = "";
+    coverGenerationOptedOut = false;
     updateConvertOption(null);
   }
 

@@ -1723,14 +1723,19 @@ func path_dir(p string) string {
 }
 
 // extractPDFCoverPNG renders page 1 of a PDF as PNG. Prefers mutool (fast),
-// falls back to nothing if not available.
+// falls back to nothing if not available. Logs the reason on failure so a
+// deploy without mutool installed is visible in server logs (otherwise the
+// upload silently falls back to a generated SVG and users wonder why their
+// PDF cover wasn't picked up).
 func extractPDFCoverPNG(pdfPath string) ([]byte, bool) {
 	bin, err := exec.LookPath("mutool")
 	if err != nil {
+		log.Printf("pdf cover extract: mutool not on PATH — install mupdf-tools to enable extraction (%v)", err)
 		return nil, false
 	}
 	tmp, err := os.CreateTemp("", "moco-cover-*.png")
 	if err != nil {
+		log.Printf("pdf cover extract: tempfile failed: %v", err)
 		return nil, false
 	}
 	tmpPath := tmp.Name()
@@ -1739,10 +1744,12 @@ func extractPDFCoverPNG(pdfPath string) ([]byte, bool) {
 
 	cmd := exec.Command(bin, "draw", "-r", "120", "-o", tmpPath, pdfPath, "1")
 	if err := cmd.Run(); err != nil {
+		log.Printf("pdf cover extract: mutool draw failed for %q: %v", pdfPath, err)
 		return nil, false
 	}
 	body, err := os.ReadFile(tmpPath)
 	if err != nil {
+		log.Printf("pdf cover extract: read of rendered PNG failed: %v", err)
 		return nil, false
 	}
 	return body, true
