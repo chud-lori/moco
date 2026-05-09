@@ -1552,11 +1552,6 @@ main { display: grid; gap: 22px; }
   flex-wrap: nowrap;
   gap: 4px;
 }
-/* Every non-icon button in the row shares the available width equally —
-   Read + "Want to read" each take half on the public-shelf cards; Read
-   takes 100% on owner cards (where the siblings are icon-only). Without
-   the explicit flex on every text button, the natural content width of
-   "+ Want to read" elbowed Read down to a tiny circle on phones. */
 .book-panel-actions .button:not(.icon-only) {
   flex: 1 1 0;
   min-width: 0;
@@ -1572,6 +1567,22 @@ main { display: grid; gap: 22px; }
   min-width: 34px;
   min-height: 34px;
 }
+
+/* Two-text-button rows (public-shelf cards: Read + "Want to read") need
+   different behavior than owner cards. On phone-grid widths (~150–200px
+   per card) splitting 50/50 truncates "+ Want to read" to "Want to rea…".
+   Detect this row shape with :has() and let it wrap to a second line
+   with each button claiming a readable min-width instead of being clipped. */
+.book-panel-actions:not(:has(.button.icon-only)) {
+  flex-wrap: wrap;
+}
+.book-panel-actions:not(:has(.button.icon-only)) .button:not(.icon-only) {
+  flex: 1 1 110px;
+  min-width: 110px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 @media (min-width: 768px) {
   .book-panel-actions { padding-top: 14px; gap: 8px; }
   .book-panel-actions .button:not(.icon-only) { padding: 10px 16px; font-size: 0.95rem; min-height: 40px; }
