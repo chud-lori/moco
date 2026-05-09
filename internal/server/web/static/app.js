@@ -1215,14 +1215,31 @@ if (readerRoot) {
     if (!floatingClose) return;
     floatingClose.classList.toggle("is-visible", readerApp.classList.contains("is-immersive"));
   }
-  // Defensive click handler: on some mobile browsers the bare <a href>
-  // navigation didn't fire reliably (likely a touch-event / immersive-tap
-  // interaction). Forcing window.location guarantees the close works.
+  // Defensive close-button navigation. The bare <a href> alone wasn't
+  // firing reliably on iOS Safari for this fixed-position anchor (no
+  // single smoking-gun handler — most likely a synthesized-click race
+  // when the user taps right after immersive-mode appears the button).
+  // We bind both `pointerup` (fires directly from touch, bypasses the
+  // synthesized-click pipeline) and `click` (covers desktop / browsers
+  // that dispatch click cleanly). location.assign() is the canonical
+  // navigation API; setting .href is equivalent but assign() is harder
+  // to confuse with property accessors.
+  let closeNavigating = false;
+  function navigateClose() {
+    if (closeNavigating) return;
+    closeNavigating = true;
+    const href = floatingClose.getAttribute("href") || "/app";
+    window.location.assign(href);
+  }
+  floatingClose?.addEventListener("pointerup", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    navigateClose();
+  });
   floatingClose?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const href = floatingClose.getAttribute("href");
-    if (href) window.location.href = href;
+    navigateClose();
   });
   function clearImmersiveTimer() {
     if (immersiveTimer) { clearTimeout(immersiveTimer); immersiveTimer = null; }
@@ -1471,24 +1488,6 @@ if (readerRoot) {
     });
   }
 
-  // ----- Save highlight (selection-gated) -----
-  const highlightButton = document.querySelector("[data-save-highlight]");
-  if (highlightButton) {
-    if (readerKind === "pdf") {
-      highlightButton.disabled = false;
-      highlightButton.textContent = "Add page note";
-      highlightButton.title = "Add a note for the current PDF page";
-    } else {
-      highlightButton.disabled = true;
-      highlightButton.title = "Select text in the reader to enable.";
-    }
-  }
-  function setHighlightEnabled(enabled) {
-    if (!highlightButton || readerKind === "pdf") return;
-    highlightButton.disabled = !enabled;
-    highlightButton.title = enabled ? "Save the current selection" : "Select text in the reader to enable.";
-  }
-
   const saveHighlight = async (locator, text) => {
     if (!text) {
       toast("Select some text in the reader first.", "error");
@@ -1652,13 +1651,6 @@ if (readerRoot) {
         mdPendingSelection = null;
       }
     });
-
-    // The bottom Save Highlight button is replaced by the popover.
-    if (highlightButton) {
-      highlightButton.style.display = "none";
-      const noticeEl = document.querySelector("[data-highlight-message]");
-      if (noticeEl) noticeEl.textContent = "Select text in the book to highlight it.";
-    }
 
     // Floating "jump to last position" button
     const jumpBtn = document.createElement("button");
@@ -2154,12 +2146,6 @@ if (readerRoot) {
         });
       } catch (_) {}
 
-      // Disable the manual "Save highlight" button — the popover handles it now.
-      if (highlightButton) {
-        highlightButton.style.display = "none";
-        const noticeEl = document.querySelector("[data-highlight-message]");
-        if (noticeEl) noticeEl.textContent = "Select text in the book to highlight it.";
-      }
     };
 
     initEpub();
@@ -2455,17 +2441,54 @@ if (readerRoot) {
         tocList.appendChild(li);
       }
 
-      if (highlightButton) {
-        highlightButton.addEventListener("click", async () => {
-          const note = await openTextPrompt({
-            title: `Add a note for page ${pageNum}`,
-            body: "Text selection inside PDFs isn't supported in this build. Type a short note instead — it will be saved against this page.",
-            placeholder: "What stood out on this page?",
-            confirmLabel: "Save note",
-          });
-          if (!note) return;
-          await saveHighlight(`page:${pageNum}`, note);
+      const triggerPdfPageNote = async () => {
+        const note = await openTextPrompt({
+          title: `Add a note for page ${pageNum}`,
+          body: "Text selection inside PDFs isn't supported in this build. Type a short note instead — it will be saved against this page.",
+          placeholder: "What stood out on this page?",
+          confirmLabel: "Save note",
         });
+        if (!note) return;
+        await saveHighlight(`page:${pageNum}`, note);
+      };
+
+      // Floating action button — primary entry point for "add a note for
+      // this page." Always-visible, fixed bottom-right of the reader so
+      // users don't have to dig through the Highlights sidebar to find it.
+      // Skipped for guests (they can't save anything).
+      // Created with [hidden] so it doesn't render until the first PDF
+      // page has actually painted — otherwise the user sees a stray
+      // "Add note" pill floating over the loading state for a beat.
+      if (!isGuest) {
+        const stageContainer = document.querySelector(".ebook-stage-full");
+        if (stageContainer && !stageContainer.querySelector(".reader-fab")) {
+          const fab = document.createElement("button");
+          fab.type = "button";
+          fab.className = "reader-fab";
+          fab.hidden = true;
+          fab.setAttribute("aria-label", "Add a note for this page");
+          fab.setAttribute("title", "Add a note for this page");
+          fab.innerHTML = '<svg class="reader-fab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span class="reader-fab-label">Add note</span>';
+          fab.addEventListener("click", triggerPdfPageNote);
+          stageContainer.appendChild(fab);
+          // Reveal on the next frame after a successful initial render —
+          // we're already past `await renderPage(pageNum)` here.
+          requestAnimationFrame(() => { fab.hidden = false; });
+        }
+      }
+
+      // Keep the in-panel button too for users who go via the Highlights
+      // sidebar — but move it to the TOP of the panel so it's the first
+      // thing visible, not buried under the description text.
+      const notesCopy = document.querySelector('[data-reader-panel="notes"] .notes-copy');
+      if (notesCopy && !notesCopy.querySelector("[data-add-pdf-note]")) {
+        const addPdfNoteBtn = document.createElement("button");
+        addPdfNoteBtn.type = "button";
+        addPdfNoteBtn.className = "button primary";
+        addPdfNoteBtn.setAttribute("data-add-pdf-note", "");
+        addPdfNoteBtn.textContent = "Add page note";
+        addPdfNoteBtn.addEventListener("click", triggerPdfPageNote);
+        notesCopy.insertBefore(addPdfNoteBtn, notesCopy.firstChild);
       }
     };
     initPdf();

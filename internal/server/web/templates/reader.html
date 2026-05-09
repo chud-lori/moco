@@ -24,7 +24,7 @@
   </head>
   <body class="reader-body{{ if ne .ReaderKind "md" }} reader-body-paginated{{ end }}">
     <a class="skip-link" href="#reader-content">Skip to reading area</a>
-    <a class="reader-floating-close" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" aria-label="Close book and return to library" title="Close">
+    <a class="reader-floating-close" href="{{ if .CurrentUser }}/app{{ else }}/discover{{ end }}" data-spa="off" aria-label="Close book and return to library" title="Close">
       <svg class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </a>
     <div class="reader-app" data-reader data-book-id="{{ .Book.ID }}" data-reader-kind="{{ .ReaderKind }}" data-file-url="{{ .FileURL }}" {{ if not .CurrentUser }}data-guest="1"{{ end }}>
@@ -114,12 +114,7 @@
             </div>
           {{ end }}
 
-          {{ if .CurrentUser }}
-            <div class="highlight-actions">
-              <button class="button primary" type="button" data-save-highlight disabled>Save highlight</button>
-              <p class="form-message" data-highlight-message aria-live="polite"></p>
-            </div>
-          {{ else }}
+          {{ if not .CurrentUser }}
             <div class="highlight-actions"><p class="form-message">Sign in to save highlights and reading progress.</p></div>
           {{ end }}
         </section>

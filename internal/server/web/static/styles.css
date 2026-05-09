@@ -1805,13 +1805,13 @@ main { display: grid; gap: 22px; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  background: rgba(247, 240, 230, 0.92);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(85, 66, 43, 0.16);
-  border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 /* Desktop redesign: split the floating pill into edge-positioned arrows
    so the buttons don't visually overlap the page area. The container
@@ -1896,6 +1896,12 @@ main { display: grid; gap: 22px; }
   font-size: 1.2rem;
   font-weight: 600;
   flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(247, 240, 230, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(85, 66, 43, 0.16);
+  box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
 }
 .ebook-stage-full .ebook-controls .page-jumper input { width: 48px; }
 @media (min-width: 768px) {
@@ -1915,12 +1921,18 @@ main { display: grid; gap: 22px; }
   align-items: center;
   flex-wrap: nowrap;
   gap: 4px;
-  padding: 0 6px;
+  padding: 6px 14px;
   color: var(--muted);
   font-size: 0.92rem;
   font-weight: 500;
   white-space: nowrap;
   transition: opacity 0.25s ease;
+  border-radius: 999px;
+  background: rgba(247, 240, 230, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(85, 66, 43, 0.16);
+  box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
 }
 .reader-app.is-immersive .page-jumper {
   opacity: 0;
@@ -2454,10 +2466,76 @@ main { display: grid; gap: 22px; }
    without this they overlap panel content — see the side-arrow circle
    bleeding over the Dark theme swatch in the settings panel. */
 .reader-panel-open .ebook-stage-full .ebook-controls,
-.reader-panel-open .reader-floating-close.is-visible {
+.reader-panel-open .reader-floating-close.is-visible,
+.reader-panel-open .reader-fab {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease;
+}
+
+/* Floating "Add a note" action button for the PDF reader. The .pdf-stage
+   has no text-selection layer, so the only way to attach a note is from
+   here. Always visible (when not in immersive mode / no panel open) so
+   the entry point isn't buried in the Highlights sidebar.
+   Mobile: compact 56px round button bottom-right, sits above the
+   page-jumper pill (which is centered, ~bottom 14px).
+   Desktop: pill with icon + "Add note" label at the bottom-right corner,
+   clear of the centered page-jumper and the right-edge side arrow. */
+.reader-fab {
+  position: fixed;
+  /* Pager pill is ~62px tall at bottom: 14px + safe-area, so its top
+     sits at ~76px above the viewport bottom. FAB needs to clear that
+     by a comfortable margin — 96px gives ~20px breathing room. */
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--text);
+  color: #fff8f0;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  box-shadow: 0 10px 24px rgba(34, 28, 22, 0.28);
+  /* Above the pager (z:30) and the floating close (z:50). The FAB is
+     the primary action — it should always win the stacking contest. */
+  z-index: 55;
+  opacity: 1;
+  transition: transform 0.08s ease, opacity 0.22s ease, background 0.18s ease;
+}
+.reader-fab[hidden] {
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+.reader-fab:hover { background: #1f1813; transform: scale(1.04); }
+.reader-fab:active { transform: scale(0.96); }
+.reader-fab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.reader-fab-label { display: none; }
+.reader-app.is-immersive .reader-fab {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  .reader-fab {
+    bottom: 24px;
+    right: 24px;
+    width: auto;
+    height: auto;
+    min-height: 48px;
+    padding: 12px 22px;
+    border-radius: 999px;
+  }
+  .reader-fab-label { display: inline; }
 }
 
 /* Floating selection popover for "Highlight this passage" */
