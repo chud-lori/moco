@@ -514,7 +514,7 @@ func hasAlpha(s string) bool {
 }
 
 func paragraphsToHTML(lines []string) string {
-	var paragraphs []string
+	var blocks []string
 	var buf []string
 	flush := func() {
 		if len(buf) == 0 {
@@ -522,7 +522,7 @@ func paragraphsToHTML(lines []string) string {
 		}
 		joined := strings.TrimSpace(strings.Join(buf, " "))
 		if joined != "" {
-			paragraphs = append(paragraphs, "<p>"+html.EscapeString(joined)+"</p>")
+			blocks = append(blocks, "<p>"+html.EscapeString(joined)+"</p>")
 		}
 		buf = nil
 	}
@@ -532,10 +532,65 @@ func paragraphsToHTML(lines []string) string {
 			flush()
 			continue
 		}
+		// Detect inline subheadings inside a chapter and emit <h2> instead
+		// of <p>. Without this every heading the PDF had ("Section 3.2",
+		// "Introduction", "RESULTS", etc.) renders as plain body text
+		// indistinguishable from a paragraph. Chapter-level headings are
+		// already handled in splitTextIntoChapters; this only kicks in for
+		// the lines that didn't qualify as a chapter break.
+		if level := detectSubheadingLevel(line); level > 0 {
+			flush()
+			tag := fmt.Sprintf("h%d", level)
+			blocks = append(blocks, "<"+tag+">"+html.EscapeString(line)+"</"+tag+">")
+			continue
+		}
 		buf = append(buf, line)
 	}
 	flush()
-	return strings.Join(paragraphs, "\n      ")
+	return strings.Join(blocks, "\n      ")
+}
+
+// detectSubheadingLevel returns 2 or 3 for lines that look like subheadings
+// (and 0 otherwise). Heuristic — PDF text extraction loses font metadata so
+// we go by structural cues:
+//   - Numbered: "3.", "3.1", "3.1.2 ..." → level reflects depth (1=h2, 2=h3)
+//   - "Section N", "Part N" prefixes → h2
+//   - Short ALL-CAPS line (already partially covered by detectHeading at
+//     chapter-level, but anything that survived to here is a sub-section)
+//   - Title-case short line ending without sentence punctuation
+//
+// A line that's already a chapter heading was filtered out upstream, so
+// false positives at the chapter level can't sneak in here.
+var (
+	numberedHeadingRE = regexp.MustCompile(`^(\d+(?:\.\d+){0,3})\.?\s+\S`)
+	sectionPrefixRE   = regexp.MustCompile(`(?i)^(section|part|appendix)\s+[a-z0-9]`)
+)
+
+func detectSubheadingLevel(line string) int {
+	if line == "" || len(line) > 90 {
+		return 0
+	}
+	// Lines that end with a sentence-ending punctuation are paragraphs, not
+	// headings — most real headings don't end in `.`, `!`, `?`, `:`, or a
+	// quote/paren close.
+	last := line[len(line)-1]
+	if last == '.' || last == '!' || last == '?' || last == ',' {
+		return 0
+	}
+	if m := numberedHeadingRE.FindStringSubmatch(line); m != nil {
+		dots := strings.Count(m[1], ".")
+		if dots >= 2 {
+			return 3
+		}
+		return 2
+	}
+	if sectionPrefixRE.MatchString(line) {
+		return 2
+	}
+	if len(line) <= 60 && line == strings.ToUpper(line) && hasAlpha(line) {
+		return 2
+	}
+	return 0
 }
 
 func chapterXHTML(title, body string) string {

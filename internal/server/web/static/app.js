@@ -1359,6 +1359,16 @@ if (readerRoot) {
     let activeHeadingId = null;
 
     const tocLinks = Array.from(document.querySelectorAll(".toc-list a[href^='#']"));
+    // Close the Contents panel after the user picks a chapter — without this
+    // the panel stays open and covers the page they just navigated to,
+    // especially noticeable on phones where the panel is full-width.
+    tocLinks.forEach((link) => {
+      link.addEventListener("click", () => {
+        // Defer so the browser handles the hash navigation first; closing
+        // immediately can race with the scroll start in some browsers.
+        setTimeout(closeAllPanels, 0);
+      });
+    });
 
     function setActiveTOC(id) {
       if (!id || id === activeHeadingId) return;
@@ -1701,7 +1711,10 @@ if (readerRoot) {
             button.type = "button";
             button.textContent = item.label.trim();
             if (depth > 0) button.style.paddingLeft = `${14 + depth * 14}px`;
-            button.addEventListener("click", () => rendition.display(item.href));
+            button.addEventListener("click", () => {
+              rendition.display(item.href);
+              closeAllPanels();
+            });
             li.appendChild(button);
             tocList.appendChild(li);
             if (item.subitems?.length) renderItems(item.subitems, depth + 1);
@@ -2108,15 +2121,40 @@ if (readerRoot) {
           li.appendChild(span);
           tocList.appendChild(li);
         } else {
-          outline.forEach((item) => {
-            const li = document.createElement("li");
-            const span = document.createElement("span");
-            span.style.padding = "12px 14px";
-            span.style.display = "block";
-            span.textContent = item.title || "Untitled";
-            li.appendChild(span);
-            tocList.appendChild(li);
-          });
+          // Resolve a PDF outline destination into a 1-based page number.
+          // dest can be a string (named destination — needs lookup) or an
+          // array whose first element is a page reference. Returns 0 on
+          // failure so the click is silently ignored.
+          const destToPage = async (dest) => {
+            try {
+              let arr = dest;
+              if (typeof arr === "string") arr = await pdf.getDestination(arr);
+              if (!arr || !arr.length) return 0;
+              const pageIndex = await pdf.getPageIndex(arr[0]);
+              return (pageIndex || 0) + 1;
+            } catch (_) { return 0; }
+          };
+          const renderItems = (items, depth = 0) => {
+            items.forEach((item) => {
+              const li = document.createElement("li");
+              const button = document.createElement("button");
+              button.type = "button";
+              button.textContent = item.title || "Untitled";
+              if (depth > 0) button.style.paddingLeft = `${14 + depth * 14}px`;
+              button.addEventListener("click", async () => {
+                const target = await destToPage(item.dest);
+                if (target > 0) {
+                  pageNum = Math.min(target, pdf.numPages);
+                  renderPage(pageNum);
+                }
+                closeAllPanels();
+              });
+              li.appendChild(button);
+              tocList.appendChild(li);
+              if (item.items?.length) renderItems(item.items, depth + 1);
+            });
+          };
+          renderItems(outline);
         }
       } catch (_) {
         tocList.innerHTML = "";
