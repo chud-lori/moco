@@ -281,6 +281,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/visibility", s.handleUpdateVisibility)
 	s.mux.HandleFunc("PATCH /api/v1/books/{id}", s.handleUpdateBookMetadata)
 	s.mux.HandleFunc("PUT /api/v1/books/{id}/cover", s.handleUploadBookCover)
+	s.mux.HandleFunc("PUT /api/v1/books/{id}/total-pages", s.handleUpdateTotalPages)
 	s.mux.HandleFunc("POST /api/v1/books/{id}/cover/regenerate", s.handleRegenerateBookCover)
 	s.mux.HandleFunc("GET /api/v1/cover/preview", s.handleCoverPreview)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/content", s.handleServeBookContent)
@@ -1035,6 +1036,45 @@ func (s *Server) handleUpdateBookMetadata(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "title": title, "author": author})
+}
+
+// handleUpdateTotalPages records the PDF's true page count, reported by
+// PDF.js once the user opens the book. We use it to (a) display "X pages"
+// on the book detail page and (b) replace the byte-size-based reading
+// time estimate with one based on actual page count (~1.2 min/page is
+// the typical text-PDF reading pace). Owner-only.
+func (s *Server) handleUpdateTotalPages(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	var req struct {
+		TotalPages int `json:"totalPages"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.TotalPages < 1 || req.TotalPages > 100000 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "totalPages out of range"})
+		return
+	}
+	// 1.2 min/page is calibrated against text-heavy PDFs (250 wpm, ~300
+	// words per page). It's a coarse approximation — image-heavy PDFs
+	// will overestimate, dense academic PDFs may slightly under.
+	readingMinutes := req.TotalPages * 12 / 10
+	if readingMinutes < 1 {
+		readingMinutes = 1
+	}
+	if err := s.store.UpdateBookTotalPages(r.Context(), user.ID, r.PathValue("id"), req.TotalPages, readingMinutes); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]any{"error": "could not update page count"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "totalPages": req.TotalPages, "readingMinutes": readingMinutes})
 }
 
 // handleUploadBookCover replaces the stored cover image with a fresh upload.

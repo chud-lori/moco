@@ -947,6 +947,199 @@ function attachHighlightDelete(button) {
 }
 document.querySelectorAll("[data-delete-highlight]").forEach(attachHighlightDelete);
 
+// ---------- PDF continuous-scroll viewer ----------
+// Spawned from the PDF reader's settings panel. Renders all pages
+// stacked vertically with lazy rendering (IntersectionObserver), pinch
+// + button zoom, and a minimal toolbar. Page-note button still works —
+// uses whichever page is most-visible in the viewport.
+//
+// Memory: only pages within ~1 viewport of the visible area are rendered;
+// far-away pages have their canvas cleared. A 700-page PDF stays under
+// ~50MB of canvas memory regardless of length.
+async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerPageNote, onClose) {
+  if (document.querySelector(".pdf-fullscreen")) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "pdf-fullscreen";
+  overlay.innerHTML = `
+    <header class="pdf-fs-toolbar">
+      <button class="pdf-fs-btn" data-pdf-fs-close type="button" aria-label="Exit fullscreen" title="Exit fullscreen (Esc)">×</button>
+      <span class="pdf-fs-pageind"><input type="number" data-pdf-fs-page-input min="1" value="${startPage}" /> <span data-pdf-fs-page-total>/ ${pdf.numPages}</span></span>
+      <span class="pdf-fs-spacer"></span>
+      <button class="pdf-fs-btn" data-pdf-fs-zoom-out type="button" aria-label="Zoom out" title="Zoom out">−</button>
+      <span class="pdf-fs-zoom" data-pdf-fs-zoom>100%</span>
+      <button class="pdf-fs-btn" data-pdf-fs-zoom-in type="button" aria-label="Zoom in" title="Zoom in">+</button>
+    </header>
+    <div class="pdf-fs-scroll" data-pdf-fs-scroll>
+      <div class="pdf-fs-pages" data-pdf-fs-pages></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.classList.add("pdf-fs-active");
+
+  const dpr = window.devicePixelRatio || 1;
+  const pagesEl = overlay.querySelector("[data-pdf-fs-pages]");
+  const scrollEl = overlay.querySelector("[data-pdf-fs-scroll]");
+  const pageInput = overlay.querySelector("[data-pdf-fs-page-input]");
+  const zoomDisp = overlay.querySelector("[data-pdf-fs-zoom]");
+
+  // Compute fit-width base scale from page 1's natural width. Most PDFs
+  // have uniform page sizes; mixed-size PDFs still look fine because
+  // each placeholder gets its own per-page aspect (set on first render).
+  const firstPage = await pdf.getPage(1);
+  const firstVp = firstPage.getViewport({ scale: 1 });
+  let baseScale = (pagesEl.clientWidth - 32) / firstVp.width;
+  if (baseScale <= 0) baseScale = 1;
+  let zoom = 1.0;
+  let mostVisiblePage = startPage;
+
+  // Build placeholders sized to the first page's aspect ratio. Each will
+  // be swapped for a real <canvas> when it scrolls into view.
+  const placeholders = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const ph = document.createElement("div");
+    ph.className = "pdf-fs-page";
+    ph.dataset.pageNum = String(i);
+    placeholders.push(ph);
+    pagesEl.appendChild(ph);
+  }
+  function applyPlaceholderSizes() {
+    const s = baseScale * zoom;
+    placeholders.forEach((ph) => {
+      ph.style.width = `${Math.round(firstVp.width * s)}px`;
+      ph.style.height = `${Math.round(firstVp.height * s)}px`;
+    });
+  }
+  applyPlaceholderSizes();
+
+  // Track which pages are currently rendered so we can clear far-away
+  // canvases on scroll/zoom.
+  const renderedNums = new Set();
+  async function renderPage(num) {
+    if (renderedNums.has(num)) return;
+    const ph = placeholders[num - 1];
+    if (!ph) return;
+    renderedNums.add(num);
+    try {
+      const page = await pdf.getPage(num);
+      const s = baseScale * zoom;
+      const vp = page.getViewport({ scale: s * dpr });
+      const canvas = document.createElement("canvas");
+      canvas.width = vp.width;
+      canvas.height = vp.height;
+      canvas.style.width = `${vp.width / dpr}px`;
+      canvas.style.height = `${vp.height / dpr}px`;
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      if (ph.isConnected) {
+        ph.innerHTML = "";
+        ph.appendChild(canvas);
+      }
+    } catch (_) {
+      renderedNums.delete(num);
+    }
+  }
+  function clearPage(num) {
+    const ph = placeholders[num - 1];
+    if (ph) ph.innerHTML = "";
+    renderedNums.delete(num);
+  }
+  function evictFarPages() {
+    // Keep current page ± 3 rendered, dispose the rest. Plenty for
+    // smooth scrolling without eating gigabytes on long PDFs.
+    const keep = new Set();
+    for (let d = -3; d <= 3; d++) keep.add(mostVisiblePage + d);
+    [...renderedNums].forEach((n) => { if (!keep.has(n)) clearPage(n); });
+  }
+
+  // IntersectionObserver: render visible, mark most-visible for the
+  // page indicator + note button.
+  const observer = new IntersectionObserver((entries) => {
+    let best = mostVisiblePage;
+    let bestArea = 0;
+    entries.forEach((entry) => {
+      const num = parseInt(entry.target.dataset.pageNum, 10);
+      if (entry.isIntersecting) {
+        renderPage(num);
+        if (entry.intersectionRect.height > bestArea) {
+          bestArea = entry.intersectionRect.height;
+          best = num;
+        }
+      }
+    });
+    if (bestArea > 0 && best !== mostVisiblePage) {
+      mostVisiblePage = best;
+      if (document.activeElement !== pageInput) {
+        pageInput.value = String(best);
+      }
+      evictFarPages();
+    }
+  }, { root: scrollEl, rootMargin: "100% 0px" });
+  placeholders.forEach((ph) => observer.observe(ph));
+
+  // Re-render on zoom: clear all canvases, resize placeholders, let the
+  // observer re-fire to render whatever is now visible.
+  function setZoom(z) {
+    z = Math.min(Math.max(z, 0.25), 5);
+    if (Math.abs(z - zoom) < 0.001) return;
+    zoom = z;
+    zoomDisp.textContent = `${Math.round(zoom * 100)}%`;
+    [...renderedNums].forEach(clearPage);
+    applyPlaceholderSizes();
+    // Nudge the observer — disconnect/reconnect re-fires entries for
+    // currently visible placeholders so they get rendered at new scale.
+    observer.disconnect();
+    placeholders.forEach((ph) => observer.observe(ph));
+  }
+  overlay.querySelector("[data-pdf-fs-zoom-in]").addEventListener("click", () => setZoom(zoom * 1.2));
+  overlay.querySelector("[data-pdf-fs-zoom-out]").addEventListener("click", () => setZoom(zoom * 0.85));
+  // Ctrl/Cmd + scroll = zoom (matches PDF viewer convention).
+  scrollEl.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    setZoom(zoom * (e.deltaY < 0 ? 1.1 : 0.9));
+  }, { passive: false });
+
+  // Page input — jump to page on Enter / change.
+  function jumpTo(n) {
+    n = Math.max(1, Math.min(pdf.numPages, n | 0));
+    placeholders[n - 1]?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  pageInput.addEventListener("change", () => jumpTo(Number(pageInput.value)));
+  pageInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); jumpTo(Number(pageInput.value)); pageInput.blur(); }
+  });
+
+  // Floating note button — same prompt as the paginated FAB, but uses
+  // whichever page the user is currently scrolled to.
+  if (!isGuest && typeof triggerPageNote === "function") {
+    const noteBtn = document.createElement("button");
+    noteBtn.type = "button";
+    noteBtn.className = "pdf-fs-note-fab";
+    noteBtn.setAttribute("aria-label", "Add a note for this page");
+    noteBtn.title = "Add a note for this page";
+    noteBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+    noteBtn.addEventListener("click", () => triggerPageNote(mostVisiblePage));
+    overlay.appendChild(noteBtn);
+  }
+
+  function close() {
+    observer.disconnect();
+    overlay.remove();
+    document.body.classList.remove("pdf-fs-active");
+    document.removeEventListener("keydown", onKey);
+    if (typeof onClose === "function") onClose(mostVisiblePage);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") close();
+  }
+  document.addEventListener("keydown", onKey);
+  overlay.querySelector("[data-pdf-fs-close]").addEventListener("click", close);
+
+  // Scroll to the user's current paginated-reader page.
+  requestAnimationFrame(() => placeholders[startPage - 1]?.scrollIntoView({ block: "start" }));
+}
+
 // ---------- Reader ----------
 function saveReaderProgressFactory(bookID, progressStatus) {
   return async (locator, progressPercent) => {
@@ -2500,15 +2693,64 @@ if (readerRoot) {
         tocList.appendChild(li);
       }
 
-      const triggerPdfPageNote = async () => {
+      // Settings panel "Enter immersive view" — for PDF only. Closes the
+      // panel, then triggers immersive (chrome hides). Tap the page to
+      // bring controls back; the FAB stays visible regardless.
+      const immersiveBtn = document.querySelector("[data-pdf-immersive-toggle]");
+      if (immersiveBtn) {
+        immersiveBtn.addEventListener("click", () => {
+          closeAllPanels();
+          // Defer one frame so the panel close animation runs first.
+          requestAnimationFrame(() => {
+            readerApp.classList.add("is-immersive");
+            syncFloatingClose();
+          });
+        });
+      }
+
+      // Settings panel "Open continuous scroll" — opens a separate
+      // fullscreen overlay with all pages stacked + zoom + lazy render.
+      // Doesn't replace the paginated reader; closing the overlay
+      // returns to it. Doesn't run for non-PDF readers.
+      const fullscreenBtn = document.querySelector("[data-pdf-fullscreen-toggle]");
+      if (fullscreenBtn) {
+        fullscreenBtn.addEventListener("click", async () => {
+          closeAllPanels();
+          await openPdfContinuousScroll(pdf, pageNum, bookID, isGuest, triggerPdfPageNote, (n) => {
+            // Sync paginated reader's pageNum to wherever they were
+            // last viewing in continuous mode.
+            pageNum = Math.max(1, Math.min(pdf.numPages, n));
+            renderPage(pageNum);
+          });
+        });
+      }
+
+      // Report the PDF's total page count back to the server. The server
+      // uses it to compute a real reading-time estimate (pages × ~1.2 min)
+      // and to display "X pages" on the book detail page. Best-effort —
+      // failures are silent (the dashboard estimate from file size is the
+      // fallback). isGuest skips since guests can't write.
+      if (!isGuest && pdf?.numPages) {
+        requestJSON(`/api/v1/books/${bookID}/total-pages`, {
+          method: "PUT",
+          body: JSON.stringify({ totalPages: pdf.numPages }),
+        }).catch(() => { /* ignore — purely optimistic */ });
+      }
+
+      // Accepts an optional page number override so the fullscreen
+      // continuous-scroll viewer can attach the note to whichever page
+      // the user is currently scrolled to (the FAB in paginated mode
+      // omits the arg and uses the closure's pageNum).
+      const triggerPdfPageNote = async (forPage) => {
+        const target = (forPage && forPage > 0) ? forPage : pageNum;
         const note = await openTextPrompt({
-          title: `Add a note for page ${pageNum}`,
+          title: `Add a note for page ${target}`,
           body: "Text selection inside PDFs isn't supported in this build. Type a short note instead — it will be saved against this page.",
           placeholder: "What stood out on this page?",
           confirmLabel: "Save note",
         });
         if (!note) return;
-        await saveHighlight(`page:${pageNum}`, note);
+        await saveHighlight(`page:${target}`, note);
       };
 
       // Floating action button — primary entry point for "add a note for

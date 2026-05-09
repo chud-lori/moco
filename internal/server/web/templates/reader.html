@@ -127,6 +127,7 @@
 
         <aside class="reader-sidebar" data-reader-panel="settings" aria-label="Reading settings">
           <p class="section-label">Reading settings</p>
+          {{ if ne .ReaderKind "pdf" }}
           <h2 style="margin:0 0 12px">Typography</h2>
 
           <div class="settings-row">
@@ -161,7 +162,9 @@
               <button class="line-swatch" data-line-height="spacious" type="button" role="radio" aria-checked="false" aria-pressed="false">Spacious</button>
             </div>
           </div>
+          {{ end }}
 
+          {{ if ne .ReaderKind "md" }}
           <div class="settings-row">
             <label>Page layout</label>
             <div class="theme-picker" role="radiogroup" aria-label="Page layout">
@@ -169,6 +172,17 @@
               <button class="spread-swatch" data-spread="single" type="button" role="radio" aria-checked="false" aria-pressed="false" title="Always one page at a time">Single</button>
             </div>
           </div>
+          {{ end }}
+
+          {{ if eq .ReaderKind "pdf" }}
+          <div class="settings-row">
+            <label>Display</label>
+            <button class="button subtle" type="button" data-pdf-immersive-toggle title="Hide all chrome — tap the page to bring it back">Enter immersive view</button>
+            <p style="margin:6px 0 12px; font-size: 0.85rem; color: var(--muted); line-height: 1.4;">Keep the paginated reader, but hide topbar/controls. Tap the page to reveal them.</p>
+            <button class="button subtle" type="button" data-pdf-fullscreen-toggle title="Open as continuous-scroll PDF with zoom">Open continuous scroll</button>
+            <p style="margin:6px 0 0; font-size: 0.85rem; color: var(--muted); line-height: 1.4;">Browser-native PDF feel — all pages stacked, scroll vertically, zoom in/out. Esc or × to exit.</p>
+          </div>
+          {{ end }}
 
           <p class="form-message" style="margin-top:14px">Settings save automatically and apply to every book.</p>
         </aside>
