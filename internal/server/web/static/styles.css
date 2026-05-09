@@ -1552,7 +1552,12 @@ main { display: grid; gap: 22px; }
   flex-wrap: nowrap;
   gap: 4px;
 }
-.book-panel-actions .button.primary {
+/* Every non-icon button in the row shares the available width equally —
+   Read + "Want to read" each take half on the public-shelf cards; Read
+   takes 100% on owner cards (where the siblings are icon-only). Without
+   the explicit flex on every text button, the natural content width of
+   "+ Want to read" elbowed Read down to a tiny circle on phones. */
+.book-panel-actions .button:not(.icon-only) {
   flex: 1 1 0;
   min-width: 0;
   padding: 8px 10px;
@@ -1569,7 +1574,7 @@ main { display: grid; gap: 22px; }
 }
 @media (min-width: 768px) {
   .book-panel-actions { padding-top: 14px; gap: 8px; }
-  .book-panel-actions .button.primary { padding: 10px 16px; font-size: 0.95rem; min-height: 40px; }
+  .book-panel-actions .button:not(.icon-only) { padding: 10px 16px; font-size: 0.95rem; min-height: 40px; }
   .book-panel-actions .button.icon-only { width: 40px; min-width: 40px; min-height: 40px; }
 }
 
