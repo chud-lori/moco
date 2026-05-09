@@ -84,7 +84,7 @@ const labelFont = "Manrope, Helvetica, sans-serif"
 // renderBandedCover — top accent band + title block + bottom accent band with
 // author. Closely mirrors the user-supplied SVG sample.
 func renderBandedCover(p coverPalette, title, author, format string) string {
-	lines, fontSize := wrapTitle(title, 4)
+	lines, fontSize := wrapTitle(title, 5)
 	titleSVG := renderTitleLines(lines, 100, 760, fontSize, 1.18, p.ink)
 
 	return fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">
@@ -120,7 +120,7 @@ func renderBandedCover(p coverPalette, title, author, format string) string {
 // renderStripeCover — vertical accent stripe down the left, title and author
 // in the open space.
 func renderStripeCover(p coverPalette, title, author, format string) string {
-	lines, fontSize := wrapTitle(title, 4)
+	lines, fontSize := wrapTitle(title, 5)
 	titleSVG := renderTitleLines(lines, 220, 900, fontSize, 1.18, p.ink)
 
 	return fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">
@@ -145,7 +145,7 @@ func renderStripeCover(p coverPalette, title, author, format string) string {
 
 // renderFrameCover — inset frame border, title centered, author at bottom.
 func renderFrameCover(p coverPalette, title, author, format string) string {
-	lines, fontSize := wrapTitle(title, 4)
+	lines, fontSize := wrapTitle(title, 5)
 	startY := coverHeight/2 - (len(lines)*int(float64(fontSize)*1.15))/2 + int(float64(fontSize)*0.3)
 	titleSVG := renderTitleLinesCentered(lines, coverWidth/2, startY, fontSize, 1.15, p.ink)
 
@@ -194,13 +194,21 @@ func wrapTitle(title string, maxLines int) ([]string, int) {
 	}
 
 	// Calibrated against Cormorant Garamond / Palatino bold rendered against
-	// the 1400px inner width (1600 viewBox - 100px each side margin). Char
-	// width ≈ 0.48 × font-size for serif bold.
+	// the smallest of the three variants' safe areas:
+	//   - banded: x=100 left margin → ~1500px wide
+	//   - stripe: x=220 (after the 120px stripe + 6px accent) → ~1380px
+	//   - frame:  x=120 inner border, centered → ~1360px
+	// Using ~1360px as the floor and ~0.58 × font-size as a conservative
+	// avg char width for bold serif (caps + comma + space all factored in)
+	// gives the budgets below. Earlier values (0.48 × font-size) overflowed
+	// the frame border for medium-length titles like "Kameila, Antologi
+	// Sajak dan Kisah".
 	candidates := []struct{ font, maxChars int }{
-		{200, 14},
-		{170, 17},
-		{140, 21},
-		{110, 27},
+		{200, 11},
+		{170, 13},
+		{140, 16},
+		{110, 21},
+		{90, 26},
 	}
 	if maxLines < 1 {
 		maxLines = 4
