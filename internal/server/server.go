@@ -1853,26 +1853,38 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
 		return
 	}
+	// Pointer fields so we can tell "not provided" from "set to empty/false"
+	// — lets the client patch just the bits it cares about.
 	var req struct {
-		DisplayName string `json:"displayName"`
+		DisplayName    *string `json:"displayName"`
+		AnonymousOwner *bool   `json:"anonymousOwner"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	name := strings.TrimSpace(req.DisplayName)
-	if name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "display name is required"})
-		return
+	if req.DisplayName != nil {
+		name := strings.TrimSpace(*req.DisplayName)
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "display name is required"})
+			return
+		}
+		if len(name) > 60 {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "display name is too long"})
+			return
+		}
+		if err := s.store.UpdateDisplayName(r.Context(), user.ID, name); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to update profile"})
+			return
+		}
+		user.DisplayName = name
 	}
-	if len(name) > 60 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "display name is too long"})
-		return
+	if req.AnonymousOwner != nil {
+		if err := s.store.UpdateUserAnonymousOwner(r.Context(), user.ID, *req.AnonymousOwner); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to update profile"})
+			return
+		}
+		user.AnonymousOwner = *req.AnonymousOwner
 	}
-	if err := s.store.UpdateDisplayName(r.Context(), user.ID, name); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to update profile"})
-		return
-	}
-	user.DisplayName = name
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 

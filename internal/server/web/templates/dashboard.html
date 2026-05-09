@@ -153,7 +153,7 @@
               <span class="visibility-chip" data-visibility="shared">shared</span>
             </div>
             <h2>{{ .Title }}</h2>
-            <p>{{ if .Author }}{{ .Author }} · {{ end }}from {{ ownerName .OwnerDisplayName .OwnerEmail }}</p>
+            <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}from {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
             <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
           </article>
         {{ end }}
@@ -208,7 +208,7 @@
               <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
             </div>
             <h2>{{ .Title }}</h2>
-            <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}</p>
+            <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
             <div class="book-panel-actions">
               <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
@@ -239,7 +239,7 @@
               <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
             </div>
             <h2>{{ .Title }}</h2>
-            <p>{{ if .Author }}{{ .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}</p>
+            <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
             <div class="book-panel-actions">
               <a class="button primary" href="/books/{{ .ID }}/read">Read</a>

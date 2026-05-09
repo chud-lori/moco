@@ -2659,9 +2659,13 @@ if (accountForm) {
     const data = new FormData(accountForm);
     const name = String(data.get("displayName") || "").trim();
     if (!name) { setMessage(message, "Display name is required.", "error"); return; }
+    const anonymousOwner = data.get("anonymousOwner") === "1";
     setButtonLoading(submit, true, "Saving…");
     try {
-      await requestJSON("/api/v1/auth/me", { method: "PUT", body: JSON.stringify({ displayName: name }) });
+      await requestJSON("/api/v1/auth/me", {
+        method: "PUT",
+        body: JSON.stringify({ displayName: name, anonymousOwner }),
+      });
       setMessage(message, "Saved.", "success");
       toast("Profile updated.", "success");
       // Reflect new display name in the topbar without a reload

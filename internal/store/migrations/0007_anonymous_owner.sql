@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN anonymous_owner INTEGER NOT NULL DEFAULT 0;

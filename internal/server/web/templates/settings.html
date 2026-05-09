@@ -29,6 +29,13 @@
           <h2 style="margin-top:0">Profile</h2>
           <form class="stack-form" data-account-form novalidate>
             <label><span>Display name</span><input type="text" name="displayName" value="{{ userDisplayName .CurrentUser }}" maxlength="60" required /></label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="anonymousOwner" value="1" {{ if .CurrentUser.AnonymousOwner }}checked{{ end }} />
+              <span>
+                <strong>Hide my name on book bylines</strong>
+                <small>When on, the "by {{ userDisplayName .CurrentUser }}" attribution is omitted everywhere your books appear — public shelf, book detail page, and inside the reader. Applies to all books you've uploaded.</small>
+              </span>
+            </label>
             <p class="form-message" data-account-message aria-live="polite"></p>
             <button class="button primary" type="submit">Save</button>
           </form>

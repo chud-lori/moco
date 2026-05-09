@@ -56,7 +56,7 @@
                   <span class="book-row-cover"><img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" /></span>
                   <span class="book-row-meta">
                     <h3>{{ .Title }}</h3>
-                    <p>{{ .Format }} · by {{ ownerName .OwnerDisplayName .OwnerEmail }}</p>
+                    <p>{{ .Format }}{{ if not .AnonymousOwner }} · by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
                   </span>
                 </a>
               {{ else }}
