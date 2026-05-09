@@ -1483,27 +1483,9 @@ main { display: grid; gap: 22px; }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  align-items: flex-start;
+  align-items: stretch;
 }
-.cover-preview-buttons .text-link {
-  font-size: 0.85rem;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  padding: 4px 0;
-  color: var(--muted);
-}
-.cover-preview-buttons .text-link:hover { color: var(--text); }
-.cover-preview-force {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 0.85rem;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-.cover-preview-force input[type="checkbox"] { margin-top: 3px; }
+.cover-preview-buttons > [hidden] { display: none !important; }
 @media (min-width: 768px) {
   .cover-preview { flex-direction: row; align-items: center; gap: 16px; }
   .cover-preview-img { align-self: flex-start; }
@@ -1524,23 +1506,48 @@ main { display: grid; gap: 22px; }
   margin-top: auto;
   padding-top: 10px;
   border-top: 1px solid rgba(85, 66, 43, 0.08);
-  /* Inline row: Read flexes wide, icon-only buttons stay compact at the
-     end. Wraps only if the card is unusually narrow. */
+  /* Single inline row at all widths — Read flexes, icon buttons shrink to
+     a 32px floor on phones so the trash never wraps to its own line.
+     `min-width: 0` on the primary lets the Read text ellipsize on the
+     narrowest cards rather than forcing the row to overflow. */
   display: flex;
   flex-direction: row;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 .book-panel-actions .button.primary {
-  flex: 1 1 auto;
-  padding: 8px 12px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 10px;
   font-size: 0.9rem;
-  min-height: 38px;
+  min-height: 36px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.book-panel-actions .button.icon-only {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
 }
 @media (min-width: 768px) {
   .book-panel-actions { padding-top: 14px; gap: 8px; }
   .book-panel-actions .button.primary { padding: 10px 16px; font-size: 0.95rem; min-height: 40px; }
+  .book-panel-actions .button.icon-only { width: 40px; min-width: 40px; min-height: 40px; }
+}
+
+/* Inside a card, the icon button's hover tooltip should drop BELOW the
+   button — placing it above (the global default) covers the Read button
+   on narrow phone cards where it sits very close. */
+.book-panel-actions .button.icon-only[aria-label]::after {
+  bottom: auto;
+  top: calc(100% + 6px);
+  transform: translateX(-50%) translateY(-4px);
+}
+.book-panel-actions .button.icon-only[aria-label]:hover::after,
+.book-panel-actions .button.icon-only[aria-label]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
 }
 /* Compact icon-only action buttons used on book cards. Keeps the action
    row to a single line ("Read [🔓] [↗] [🗑]") instead of three full-width
@@ -1763,22 +1770,22 @@ main { display: grid; gap: 22px; }
    Mobile-first: tighter padding, dvh-based heights, safe-area-aware bottom
    reserve so the floating bottom-bar pill never overlaps the last text line.
    Desktop: more breathing room above. */
-.ebook-stage { display: grid; gap: 12px; padding-top: 4px; }
+.ebook-stage { display: grid; gap: 0; padding-top: 0; }
 
+/* The wrapper used to reserve a chunk of bottom padding for the floating
+   button pill. Since v40 the page-nav uses side-arrows on desktop and a
+   thin chip on mobile (both `position: fixed`), so the wrapper no longer
+   needs to carry that reservation in flow — the explicit stage height
+   already accounts for it. Leaving the padding in place pushed the layout
+   ~90px past 100dvh, and reader-body's overflow:hidden clipped the result
+   at the bottom (= no visible bottom margin around the canvas). */
 .ebook-stage-full {
   min-height: 0;
   align-content: start;
-  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  padding: 0;
 }
 @media (min-width: 768px) {
-  .ebook-stage { gap: 16px; padding-top: 18px; }
-  .ebook-stage-full {
-    min-height: calc(100dvh - 220px);
-    padding-bottom: 88px;
-  }
-  @supports not (height: 100dvh) {
-    .ebook-stage-full { min-height: calc(100vh - 220px); }
-  }
+  .ebook-stage-full { min-height: 0; padding: 0; }
 }
 
 /* Reader pagination bar — purely an overlay so content never shifts when
@@ -1806,11 +1813,71 @@ main { display: grid; gap: 22px; }
   border-radius: 999px;
   box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
 }
+/* Desktop redesign: split the floating pill into edge-positioned arrows
+   so the buttons don't visually overlap the page area. The container
+   becomes transparent and pointer-events:none; each button positions
+   itself independently. The page-jumper stays as a compact pill at the
+   bottom center. */
 @media (min-width: 768px) {
   .ebook-stage-full .ebook-controls {
+    position: fixed;
+    inset: 0;
+    transform: none;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    height: auto;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0;
+    box-shadow: none;
+    pointer-events: none;
+    display: block;
+  }
+  .ebook-stage-full .ebook-controls > * { pointer-events: auto; }
+
+  .ebook-stage-full .ebook-controls .reader-page-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+    border-radius: 999px;
+    background: rgba(247, 240, 230, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(85, 66, 43, 0.16);
+    box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
+    padding: 0;
+    font-size: 1.4rem;
+    font-weight: 600;
+    transition: opacity 0.18s ease, background 0.18s ease;
+    opacity: 0.85;
+  }
+  .ebook-stage-full .ebook-controls .reader-page-btn:hover { opacity: 1; }
+  .ebook-stage-full .ebook-controls .reader-page-btn:disabled { opacity: 0.3; cursor: default; }
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-epub-prev],
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-pdf-prev] { left: 24px; }
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-epub-next],
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-pdf-next] { right: 24px; }
+  /* Side arrows are icon-only — drop the text labels at this size. */
+  .ebook-stage-full .ebook-controls .reader-page-btn .reader-page-btn-label { display: none; }
+
+  .ebook-stage-full .ebook-controls .page-jumper {
+    position: fixed;
     bottom: 18px;
-    gap: 10px;
-    padding: 8px 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: rgba(247, 240, 230, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(85, 66, 43, 0.16);
+    border-radius: 999px;
+    box-shadow: 0 6px 18px rgba(34, 28, 22, 0.12);
   }
 }
 .ebook-controls { display: flex; align-items: center; gap: 10px; }
@@ -1917,9 +1984,11 @@ main { display: grid; gap: 22px; }
   }
 }
 @media (min-width: 768px) {
-  .epub-stage, .pdf-stage { height: calc(100dvh - 180px); }
+  /* Desktop: side-arrow nav frees vertical space, so we only reserve the
+     topbar + small bottom for the page-jumper chip (~120px total). */
+  .epub-stage, .pdf-stage { height: calc(100dvh - 120px); }
   @supports not (height: 100dvh) {
-    .epub-stage, .pdf-stage { height: calc(100vh - 180px); }
+    .epub-stage, .pdf-stage { height: calc(100vh - 120px); }
   }
 }
 
@@ -1953,16 +2022,20 @@ main { display: grid; gap: 22px; }
   text-align: center;
 }
 
+/* PDF stage scrolls vertically when the canvas is taller than the
+   viewport (typical when fit-to-width on mobile or spread-mode on
+   desktop). `safe center` keeps the page centered when it fits but
+   falls back to top-aligned when overflowing, so the top of the page
+   is always visible instead of being clipped by alignment. */
 .pdf-stage {
   display: grid;
-  place-items: center;
-  padding: 12px;
-  overflow: hidden;
+  place-items: safe center;
+  padding: 12px 12px 28px 12px;
+  overflow: auto;
 }
 
 #pdf-canvas {
   max-width: 100%;
-  max-height: 100%;
   box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
   background: #fff;
 }
@@ -2374,6 +2447,18 @@ main { display: grid; gap: 22px; }
 }
 .reader-floating-close.is-visible { display: inline-flex; }
 .reader-floating-close .icon { width: 22px; height: 22px; }
+
+/* While any reader sidebar (TOC / highlights / settings) or modal is
+   open, hide the floating page controls and the floating close button.
+   They live at higher z-index than the sidebar (z:30 / z:50 vs z:18) and
+   without this they overlap panel content — see the side-arrow circle
+   bleeding over the Dark theme swatch in the settings panel. */
+.reader-panel-open .ebook-stage-full .ebook-controls,
+.reader-panel-open .reader-floating-close.is-visible {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
 
 /* Floating selection popover for "Highlight this passage" */
 .selection-popover {

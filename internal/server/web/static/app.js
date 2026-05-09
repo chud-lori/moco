@@ -377,11 +377,18 @@ if (uploadForm) {
   const coverPreviewImg = uploadForm.querySelector("[data-cover-preview-img]");
   const coverSaltInput  = uploadForm.querySelector("[data-cover-salt-input]");
   const coverRerollBtn  = uploadForm.querySelector("[data-cover-preview-reroll]");
-  const coverSkipBtn    = uploadForm.querySelector("[data-cover-preview-skip]");
   const coverForceInput = uploadForm.querySelector("[data-cover-force-input]");
-  // Once the user opts out of auto-generated covers, stay opted out for this
-  // upload — typing in the title shouldn't bring the preview back uninvited.
-  let coverGenerationOptedOut = false;
+  const renderPdfBtn    = uploadForm.querySelector("[data-cover-render-pdf]");
+  const useGeneratedBtn = uploadForm.querySelector("[data-cover-use-generated]");
+  // True when the cover preview was rendered locally via PDF.js (vs.
+  // server-side extraction). When true we ship the data URL as a Blob in
+  // the upload's `cover` field, since the server can't re-render it
+  // without mutool.
+  let coverRenderedClientSide = false;
+  // Tracks whether the user explicitly switched back to generated when an
+  // extracted cover was available. Toggled by the two opposite buttons
+  // below. Drives the hidden coverForce input which the server reads.
+  let useGeneratedOverride = false;
 
   // Auto-generated cover preview state. The salt is what makes a re-roll
   // produce a different palette/variant; a random alphanumeric is enough
@@ -396,38 +403,63 @@ if (uploadForm) {
   // Pull static refs to the label/buttons so we can swap text + visibility
   // depending on whether we're previewing extracted vs generated.
   const coverPreviewLabel = uploadForm.querySelector(".cover-preview-label");
-  const coverPreviewButtons = uploadForm.querySelector(".cover-preview-buttons");
-  const coverForceLabel = uploadForm.querySelector(".cover-preview-force");
+
+  // Belt-and-suspenders visibility: the [hidden] attribute alone is
+  // overridden by `display: flex` on the parent, so we set inline display
+  // too. Use this for any button inside .cover-preview-buttons.
+  function setBtnVisible(el, visible) {
+    if (!el) return;
+    el.hidden = !visible;
+    el.style.display = visible ? "" : "none";
+  }
 
   function refreshCoverPreview() {
     if (!coverPreview || !coverPreviewImg || !coverSaltInput) return;
-    if (coverGenerationOptedOut || coverFileInput?.files?.[0]) {
+    // The user picking their own cover image overrides everything.
+    if (coverFileInput?.files?.[0]) {
       coverPreview.hidden = true;
       coverSaltInput.value = "";
-      if (coverForceInput) coverForceInput.checked = false;
+      if (coverForceInput) coverForceInput.value = "";
+      useGeneratedOverride = false;
       return;
     }
-    // If extraction produced a real cover and the user hasn't ticked
-    // "use generated instead", show the extracted cover as the preview.
-    // The salt is cleared so the upload handler doesn't persist a generated
-    // SVG (extraction will win on the server too).
-    const useGenerated = !!coverForceInput?.checked || !extractedCoverDataURL;
-    if (!useGenerated) {
+    // Two mutually-exclusive states drive what the preview shows:
+    //   - "extracted": there's a real first-page cover (server extracted
+    //     or client-rendered) and the user hasn't asked to override.
+    //   - "generated": no extracted cover available, OR the user
+    //     explicitly switched to a stylized generated cover.
+    const showingExtracted = !!extractedCoverDataURL && !useGeneratedOverride;
+    const f = fileInput?.files?.[0];
+    const isPdf = !!(f && f.name.toLowerCase().endsWith(".pdf"));
+    // First-page is reachable if we already extracted one OR we can render
+    // a PDF page client-side. For MD/EPUB without a server-extracted cover
+    // there is no first page to swap to.
+    const canUseFirstPage = !!extractedCoverDataURL || isPdf;
+
+    if (showingExtracted) {
       coverPreviewImg.src = extractedCoverDataURL;
       coverSaltInput.value = "";
-      if (coverPreviewLabel) coverPreviewLabel.textContent = "Extracted from your file — this is the cover that will be used.";
-      if (coverPreviewButtons) coverPreviewButtons.hidden = true;
-      if (coverForceLabel) coverForceLabel.hidden = false;
+      if (coverForceInput) coverForceInput.value = "";
+      if (coverPreviewLabel) {
+        coverPreviewLabel.textContent = coverRenderedClientSide
+          ? "Using your book's first page (rendered from the PDF)."
+          : "Using your book's first page.";
+      }
+      // Mutually exclusive: only the toggle to generated is offered here.
+      setBtnVisible(coverRerollBtn, false);
+      setBtnVisible(renderPdfBtn, false);
+      setBtnVisible(useGeneratedBtn, true);
       coverPreview.hidden = false;
       return;
     }
+
+    // Generated state.
     const title = (titleInput?.value || "").trim();
     if (!title) {
       coverPreview.hidden = true;
       coverSaltInput.value = "";
       return;
     }
-    const f = fileInput?.files?.[0];
     const ext = f ? f.name.split(".").pop().toLowerCase() : "";
     const params = new URLSearchParams({
       title,
@@ -437,31 +469,78 @@ if (uploadForm) {
     });
     coverPreviewImg.src = `/api/v1/cover/preview?${params.toString()}`;
     coverSaltInput.value = coverSalt;
+    // Tell the server to skip extraction and persist the generated SVG
+    // when the user explicitly chose generated even though an extracted
+    // cover is available. Otherwise (no extracted cover at all) the
+    // override is unnecessary — server extraction would fail anyway.
+    if (coverForceInput) coverForceInput.value = useGeneratedOverride ? "1" : "";
     if (coverPreviewLabel) {
-      coverPreviewLabel.textContent = extractedCoverDataURL
-        ? "Auto-generated from the title — using this instead of your file's cover."
-        : "Auto-generated from the title — your file doesn't have its own cover.";
+      coverPreviewLabel.textContent = canUseFirstPage
+        ? "Auto-generated from the title."
+        : "Auto-generated from the title — your book doesn't have its own cover.";
     }
-    if (coverPreviewButtons) coverPreviewButtons.hidden = false;
-    // The "Use generated instead" toggle is only meaningful when there IS
-    // an extracted cover to override.
-    if (coverForceLabel) coverForceLabel.hidden = !extractedCoverDataURL;
+    // Re-roll always works in generated mode. "Use first page" appears only
+    // when reachable. The "switch to generated" button is irrelevant here.
+    setBtnVisible(coverRerollBtn, true);
+    setBtnVisible(renderPdfBtn, canUseFirstPage);
+    setBtnVisible(useGeneratedBtn, false);
     coverPreview.hidden = false;
   }
-  coverForceInput?.addEventListener("change", refreshCoverPreview);
-  coverRerollBtn?.addEventListener("click", () => {
-    coverSalt = randomShortSalt();
-    coverGenerationOptedOut = false;
+
+  // Switch back to generated when an extracted cover is currently shown.
+  useGeneratedBtn?.addEventListener("click", () => {
+    useGeneratedOverride = true;
     refreshCoverPreview();
   });
-  // Opting out hides the preview and stops the salt being submitted with the
-  // upload. The server will still try real extraction (EPUB manifest / PDF
-  // first page); only if that fails too will the cover stay empty and the
-  // serve endpoint fall back to an unstored on-the-fly SVG that the user can
-  // replace later via the book detail page.
-  coverSkipBtn?.addEventListener("click", () => {
-    coverGenerationOptedOut = true;
+  coverRerollBtn?.addEventListener("click", () => {
+    coverSalt = randomShortSalt();
     refreshCoverPreview();
+  });
+
+  // Client-side PDF first-page render. Used when server-side extraction
+  // isn't available (mutool not installed) so the user still has a way to
+  // pick the actual first page as the cover. Lazy-loads PDF.js so it
+  // doesn't bloat the upload form for users who don't click the button.
+  async function renderPdfFirstPageDataURL(file) {
+    if (!window.__mocoPdfjs) {
+      const mod = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.min.mjs");
+      mod.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.worker.min.mjs";
+      window.__mocoPdfjs = mod;
+    }
+    const buf = await file.arrayBuffer();
+    const pdf = await window.__mocoPdfjs.getDocument({ data: buf }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    return canvas.toDataURL("image/jpeg", 0.85);
+  }
+
+  renderPdfBtn?.addEventListener("click", async () => {
+    // Two cases: (a) we already have an extracted cover and the user is
+    // toggling back from generated — no render needed, just flip state.
+    // (b) we don't yet have one and the file is a PDF — render via PDF.js.
+    if (extractedCoverDataURL) {
+      useGeneratedOverride = false;
+      refreshCoverPreview();
+      return;
+    }
+    const file = fileInput?.files?.[0];
+    if (!file || !file.name.toLowerCase().endsWith(".pdf")) return;
+    setButtonLoading(renderPdfBtn, true, "Rendering…");
+    try {
+      const dataURL = await renderPdfFirstPageDataURL(file);
+      extractedCoverDataURL = dataURL;
+      coverRenderedClientSide = true;
+      useGeneratedOverride = false;
+      refreshCoverPreview();
+    } catch (err) {
+      setMessage(message, "Could not render the first page client-side: " + (err.message || err), "error");
+    } finally {
+      setButtonLoading(renderPdfBtn, false);
+    }
   });
   // When the user picks their own cover file, hide the preview and drop
   // the salt so the server doesn't persist a generated SVG instead.
@@ -520,9 +599,10 @@ if (uploadForm) {
     if (coverPreview) coverPreview.hidden = true;
     if (coverSaltInput) coverSaltInput.value = "";
     if (coverFileInput) coverFileInput.value = "";
-    if (coverForceInput) coverForceInput.checked = false;
+    if (coverForceInput) coverForceInput.value = "";
     extractedCoverDataURL = "";
-    coverGenerationOptedOut = false;
+    coverRenderedClientSide = false;
+    useGeneratedOverride = false;
     updateConvertOption(null);
   }
 
@@ -594,6 +674,10 @@ if (uploadForm) {
       // preview can show what'll actually be used — we previously always
       // showed the generated SVG even when extraction would win.
       extractedCoverDataURL = data.extractedCover || "";
+      // Reset all per-file state — a new file shouldn't inherit choices
+      // made for the previous one.
+      coverRenderedClientSide = false;
+      useGeneratedOverride = false;
       refreshCoverPreview();
     } catch (err) {
       if (err && err.name === "AbortError") return;
@@ -651,7 +735,7 @@ if (uploadForm) {
     });
   }
 
-  uploadForm.addEventListener("submit", (event) => {
+  uploadForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const file = fileInput?.files?.[0];
     if (!file) {
@@ -663,6 +747,27 @@ if (uploadForm) {
     setButtonLoading(submitBtn, true, "Uploading…");
     progressEl.classList.add("is-active");
     progressBar.style.width = "0%";
+
+    // If the user picked "Use book's first page" via PDF.js client-side
+    // render AND hasn't switched back to generated, turn the data URL into
+    // a Blob and slot it into the form's `cover` field. Server treats it
+    // the same as a manually uploaded image. Skipped if the user uploaded
+    // their own cover (that wins outright) or if they explicitly chose to
+    // use a generated cover (coverForce=1 will tell the server to skip).
+    const formData = new FormData(uploadForm);
+    const wantClientRendered =
+      coverRenderedClientSide &&
+      extractedCoverDataURL &&
+      !useGeneratedOverride &&
+      !coverFileInput?.files?.[0];
+    if (wantClientRendered) {
+      try {
+        const blob = await fetch(extractedCoverDataURL).then((r) => r.blob());
+        formData.set("cover", blob, "cover.jpg");
+      } catch (err) {
+        console.warn("Failed to attach client-rendered cover:", err);
+      }
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/v1/books/upload");
@@ -714,7 +819,7 @@ if (uploadForm) {
       setMessage(message, "Upload cancelled.", "error");
     });
 
-    xhr.send(new FormData(uploadForm));
+    xhr.send(formData);
   });
 }
 
@@ -1094,6 +1199,13 @@ if (readerRoot) {
     return !!document.querySelector("[data-reader-panel].is-open")
       || !!document.querySelector("[data-modal-root].is-open");
   }
+  // Body-level class so CSS can hide floating page controls (the bottom
+  // page-jumper pill, side-arrow buttons) while a side panel or modal is
+  // open — they sit at higher z-index than the panel and would otherwise
+  // overlap its content.
+  function syncPanelOpenClass() {
+    document.body.classList.toggle("reader-panel-open", panelOrModalOpen());
+  }
   function hasSelection() {
     const sel = window.getSelection();
     return !!(sel && sel.toString().trim());
@@ -1103,6 +1215,15 @@ if (readerRoot) {
     if (!floatingClose) return;
     floatingClose.classList.toggle("is-visible", readerApp.classList.contains("is-immersive"));
   }
+  // Defensive click handler: on some mobile browsers the bare <a href>
+  // navigation didn't fire reliably (likely a touch-event / immersive-tap
+  // interaction). Forcing window.location guarantees the close works.
+  floatingClose?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const href = floatingClose.getAttribute("href");
+    if (href) window.location.href = href;
+  });
   function clearImmersiveTimer() {
     if (immersiveTimer) { clearTimeout(immersiveTimer); immersiveTimer = null; }
   }
@@ -1150,12 +1271,14 @@ if (readerRoot) {
 
   // Opening a panel keeps chrome visible; closing it re-arms the timer
   const panelObserver = new MutationObserver(() => {
+    syncPanelOpenClass();
     if (panelOrModalOpen()) showChrome({ keepShown: true });
     else scheduleHide();
   });
   document.querySelectorAll("[data-reader-panel]").forEach((panel) => {
     panelObserver.observe(panel, { attributes: true, attributeFilter: ["class"] });
   });
+  syncPanelOpenClass();
 
   // Show chrome briefly on load so users see the controls, then auto-hide.
   // First-time logged-in users get a one-shot toast hint. Guests are skipped
@@ -1219,6 +1342,7 @@ if (readerRoot) {
 
   // Re-applied to the EPUB iframe theme below; defined so applySettings can call it.
   let applyEpubTheme = () => {};
+  let applyPdfSpread = () => {};
   // Re-applied to the EPUB rendition spread mode below.
   let applyEpubSpread = () => {};
 
@@ -1267,9 +1391,11 @@ if (readerRoot) {
     const range = document.querySelector("[data-font-scale]");
     if (range) range.value = String(settings.fontScale);
 
-    // Push changes into the EPUB iframe (no-op for non-EPUB readers)
+    // Push changes into the EPUB iframe / PDF canvas (each is a no-op for
+    // the readers that aren't currently active).
     applyEpubTheme();
     applyEpubSpread();
+    applyPdfSpread();
   }
   function persistSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -1320,6 +1446,7 @@ if (readerRoot) {
     settings, FONT_FAMILIES, LINE_HEIGHTS,
     registerEpubThemeHook:  (fn) => { applyEpubTheme  = fn; },
     registerEpubSpreadHook: (fn) => { applyEpubSpread = fn; },
+    registerPdfSpreadHook:  (fn) => { applyPdfSpread  = fn; },
   };
 
   // ----- Fullscreen API -----
@@ -2064,25 +2191,117 @@ if (readerRoot) {
 
       const stage = document.querySelector(".pdf-stage");
 
+      // Spread mode: viewport is wide enough AND the user hasn't forced
+      // single-page in settings. Mirrors the EPUB spread rules so settings
+      // are consistent across formats. minSpreadWidth=900 matches EPUB.
+      const SPREAD_MIN_WIDTH = 900;
+      const isSpreadMode = () => {
+        const setting = window.__mocoReaderSettings?.settings?.spread || "auto";
+        if (setting === "single") return false;
+        return stage.clientWidth >= SPREAD_MIN_WIDTH && pdf.numPages >= 2;
+      };
+
       const renderPage = async (num) => {
         if (rendering) return;
         rendering = true;
         try {
-          const page = await pdf.getPage(num);
           const dpr = window.devicePixelRatio || 1;
-
-          // Fit the page to the available stage area — no horizontal/vertical
-          // scrolling; one page at a time via the Next button.
-          const base = page.getViewport({ scale: 1 });
           const stageW = Math.max(stage.clientWidth - 24, 200);
-          const stageH = Math.max(stage.clientHeight - 24, 200);
-          const fitScale = Math.min(stageW / base.width, stageH / base.height);
+          const stageH = Math.max(stage.clientHeight - 40, 200);
+          // Portrait stages (mobile, narrow windows) read as too "tall"
+          // for a portrait PDF page — fit-page leaves the canvas tiny
+          // with vast empty space. We fit by width instead so the page
+          // is actually readable; the stage scrolls if the page ends up
+          // taller. Landscape stages (typical desktop) keep fit-page so
+          // the whole page is visible without scrolling.
+          const stageIsPortrait = stageH > stageW;
+
+          if (isSpreadMode()) {
+            // Match the physical-book convention: cover alone on page 1,
+            // then facing pairs from page 2 onward — (1), (2,3), (4,5), …
+            // This gives left/right pages the same parity as the printed
+            // book so spreads "feel right". For PDFs without a cover page
+            // it still works — page 1 just sits on its own briefly before
+            // the user clicks Next.
+            let leftNum, rightNum;
+            if (num <= 1) {
+              leftNum = 1;
+              rightNum = 0;
+            } else {
+              leftNum = num % 2 === 0 ? num : num - 1;
+              rightNum = leftNum + 1 <= pdf.numPages ? leftNum + 1 : 0;
+            }
+            const leftPage = await pdf.getPage(leftNum);
+            const rightPage = rightNum > 0 ? await pdf.getPage(rightNum) : null;
+
+            const lBase = leftPage.getViewport({ scale: 1 });
+            const rBase = rightPage ? rightPage.getViewport({ scale: 1 }) : null;
+            const totalW = lBase.width + (rBase ? rBase.width : 0);
+            const maxH = Math.max(lBase.height, rBase ? rBase.height : 0);
+            // Spread mode: fit the whole spread to the stage so it
+            // never causes scrolling. Brown side-margins are an
+            // unavoidable consequence of the stage aspect ratio not
+            // matching the spread aspect ratio — we accept that over
+            // making the user scroll on desktop.
+            const fitScale = Math.min(stageW / totalW, stageH / maxH);
+
+            const lvp = leftPage.getViewport({ scale: fitScale * dpr });
+            const rvp = rightPage ? rightPage.getViewport({ scale: fitScale * dpr }) : null;
+
+            canvas.width = lvp.width + (rvp ? rvp.width : 0);
+            canvas.height = Math.max(lvp.height, rvp ? rvp.height : 0);
+            canvas.style.width = `${canvas.width / dpr}px`;
+            canvas.style.height = `${canvas.height / dpr}px`;
+
+            // Clear so a wider previous render doesn't leak through into
+            // the now-narrower (or solo last-page) view.
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            await leftPage.render({ canvasContext: ctx, viewport: lvp }).promise;
+            if (rightPage && rvp) {
+              ctx.save();
+              ctx.translate(lvp.width, 0);
+              await rightPage.render({ canvasContext: ctx, viewport: rvp }).promise;
+              ctx.restore();
+            }
+
+            pageNum = leftNum;
+            if (pageInput) {
+              pageInput.value = String(leftNum);
+              pageInput.max = String(pdf.numPages);
+            }
+            if (pageTotal) {
+              pageTotal.textContent = rightNum > 0
+                ? `–${rightNum} / ${pdf.numPages}`
+                : `/ ${pdf.numPages}`;
+            }
+            if (prev) prev.disabled = leftNum <= 1;
+            // "Next" is disabled when we're already showing the last
+            // possible page — either the right slot is the last page, or
+            // (when total is even and on the last spread) the left slot is.
+            if (next) next.disabled = (rightNum === pdf.numPages) || (rightNum === 0 && leftNum === pdf.numPages);
+            setReaderPosition(`page:${leftNum}`, `Page ${leftNum}`);
+            await saveProgress(`page:${leftNum}`, (leftNum / pdf.numPages) * 100);
+            return;
+          }
+
+          // Single-page mode — fit one page to the stage.
+          const page = await pdf.getPage(num);
+          const base = page.getViewport({ scale: 1 });
+          // Mobile (portrait stage): fit to width so the page is large
+          // enough to actually read, allow vertical scroll. Desktop
+          // (landscape stage): fit page so the whole thing is visible
+          // without scrolling, since portrait PDFs already fit landscape
+          // monitors comfortably.
+          const fitScale = stageIsPortrait
+            ? stageW / base.width
+            : Math.min(stageW / base.width, stageH / base.height);
 
           const viewport = page.getViewport({ scale: fitScale * dpr });
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = `${viewport.width / dpr}px`;
           canvas.style.height = `${viewport.height / dpr}px`;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
           await page.render({ canvasContext: ctx, viewport }).promise;
           if (pageInput) {
             pageInput.value = String(num);
@@ -2097,6 +2316,11 @@ if (readerRoot) {
           rendering = false;
         }
       };
+
+      // Re-render when the user toggles Auto/Single in reader settings.
+      window.__mocoReaderSettings?.registerPdfSpreadHook(() => {
+        renderPage(pageNum);
+      });
       jumpToLocator = (locator) => {
         if (!locator) return;
         const m = /^page:(\d+)$/.exec(locator);
@@ -2126,12 +2350,31 @@ if (readerRoot) {
 
       const goPrev = () => {
         if (pageNum <= 1) return;
-        pageNum -= 1;
+        if (isSpreadMode()) {
+          // Spread navigation respects the cover-alone convention:
+          //   from (4,5) prev = (2,3); from (2,3) prev = (1); from (1) stop.
+          if (pageNum <= 3) {
+            pageNum = 1;
+          } else {
+            pageNum = pageNum - 2;
+          }
+        } else {
+          pageNum = Math.max(1, pageNum - 1);
+        }
         renderPage(pageNum);
       };
       const goNext = () => {
         if (pageNum >= pdf.numPages) return;
-        pageNum += 1;
+        if (isSpreadMode()) {
+          // From page 1 (alone), Next goes to (2,3). From (2,3) → (4,5), …
+          if (pageNum === 1) {
+            pageNum = Math.min(2, pdf.numPages);
+          } else {
+            pageNum = Math.min(pdf.numPages, pageNum + 2);
+          }
+        } else {
+          pageNum = Math.min(pdf.numPages, pageNum + 1);
+        }
         renderPage(pageNum);
       };
       prev?.addEventListener("click", goPrev);

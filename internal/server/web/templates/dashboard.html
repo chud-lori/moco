@@ -57,19 +57,17 @@
                 <input type="file" name="cover" accept="image/png,image/jpeg,image/webp,image/gif" data-upload-cover />
               </label>
               <div class="cover-preview" data-cover-preview hidden>
-                <img class="cover-preview-img" data-cover-preview-img alt="Generated cover preview" />
+                <img class="cover-preview-img" data-cover-preview-img alt="Cover preview" />
                 <div class="cover-preview-actions">
-                  <p class="cover-preview-label">Auto-generated from the title — used only if your file doesn't have one.</p>
+                  <p class="cover-preview-label">Auto-generated from the title — used only if your book doesn't have one.</p>
                   <div class="cover-preview-buttons">
                     <button type="button" class="button subtle" data-cover-preview-reroll>↻ Try another style</button>
-                    <button type="button" class="text-link" data-cover-preview-skip>Don't use a generated one</button>
+                    <button type="button" class="button subtle" data-cover-render-pdf hidden>Use book's first page</button>
+                    <button type="button" class="button subtle" data-cover-use-generated hidden>Use a generated style instead</button>
                   </div>
-                  <label class="cover-preview-force">
-                    <input type="checkbox" name="coverForce" value="1" data-cover-force-input />
-                    <span>Use this generated cover instead of the file's first page</span>
-                  </label>
                 </div>
                 <input type="hidden" name="coverSalt" data-cover-salt-input value="" />
+                <input type="hidden" name="coverForce" value="" data-cover-force-input />
               </div>
               <label><span>Visibility</span>
                 <select name="visibility">
