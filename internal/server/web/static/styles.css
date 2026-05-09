@@ -1494,6 +1494,16 @@ main { display: grid; gap: 22px; }
   color: var(--muted);
 }
 .cover-preview-buttons .text-link:hover { color: var(--text); }
+.cover-preview-force {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.cover-preview-force input[type="checkbox"] { margin-top: 3px; }
 @media (min-width: 768px) {
   .cover-preview { flex-direction: row; align-items: center; gap: 16px; }
   .cover-preview-img { align-self: flex-start; }
@@ -1886,11 +1896,14 @@ main { display: grid; gap: 22px; }
 
 /* Paginated reader stage (EPUB iframe / PDF canvas).
    Mobile-first: viewport minus reader-app top/bottom paddings (~22px) and
-   the floating bottom-bar reserve (~78px + safe area) ≈ 100dvh - 100px.
+   the floating bottom-bar reserve. Earlier versions used 100px which left
+   only ~36px between content and the floating prev/next pill — buttons
+   visually clipped the bottom of the rendered page. 130px gives a clear
+   gap regardless of safe-area inset.
    Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px. */
 .epub-stage, .pdf-stage {
   width: 100%;
-  height: calc(100dvh - 100px - env(safe-area-inset-bottom));
+  height: calc(100dvh - 130px - env(safe-area-inset-bottom));
   min-height: 360px;
   border-radius: 20px;
   background: transparent;
@@ -1900,7 +1913,7 @@ main { display: grid; gap: 22px; }
 }
 @supports not (height: 100dvh) {
   .epub-stage, .pdf-stage {
-    height: calc(100vh - 100px - env(safe-area-inset-bottom));
+    height: calc(100vh - 130px - env(safe-area-inset-bottom));
   }
 }
 @media (min-width: 768px) {
@@ -1913,7 +1926,18 @@ main { display: grid; gap: 22px; }
 .epub-stage iframe {
   width: 100% !important;
   height: 100% !important;
+  min-height: 100% !important;
   border: 0;
+  background: transparent;
+}
+/* epub.js wraps the iframe in `.epub-container > .epub-view`. Force both to
+   fill so the rendered EPUB page doesn't appear smaller than the stage,
+   especially on short pages or pages with explicit body backgrounds. */
+.epub-stage > div,
+.epub-stage .epub-container,
+.epub-stage .epub-view {
+  width: 100% !important;
+  height: 100% !important;
 }
 .epub-stage iframe::-webkit-scrollbar { display: none; }
 .epub-stage iframe { scrollbar-width: none; }

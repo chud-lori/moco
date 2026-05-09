@@ -378,6 +378,7 @@ if (uploadForm) {
   const coverSaltInput  = uploadForm.querySelector("[data-cover-salt-input]");
   const coverRerollBtn  = uploadForm.querySelector("[data-cover-preview-reroll]");
   const coverSkipBtn    = uploadForm.querySelector("[data-cover-preview-skip]");
+  const coverForceInput = uploadForm.querySelector("[data-cover-force-input]");
   // Once the user opts out of auto-generated covers, stay opted out for this
   // upload — typing in the title shouldn't bring the preview back uninvited.
   let coverGenerationOptedOut = false;
@@ -392,11 +393,32 @@ if (uploadForm) {
   function randomShortSalt() {
     return Math.random().toString(36).slice(2, 10);
   }
+  // Pull static refs to the label/buttons so we can swap text + visibility
+  // depending on whether we're previewing extracted vs generated.
+  const coverPreviewLabel = uploadForm.querySelector(".cover-preview-label");
+  const coverPreviewButtons = uploadForm.querySelector(".cover-preview-buttons");
+  const coverForceLabel = uploadForm.querySelector(".cover-preview-force");
+
   function refreshCoverPreview() {
     if (!coverPreview || !coverPreviewImg || !coverSaltInput) return;
     if (coverGenerationOptedOut || coverFileInput?.files?.[0]) {
       coverPreview.hidden = true;
       coverSaltInput.value = "";
+      if (coverForceInput) coverForceInput.checked = false;
+      return;
+    }
+    // If extraction produced a real cover and the user hasn't ticked
+    // "use generated instead", show the extracted cover as the preview.
+    // The salt is cleared so the upload handler doesn't persist a generated
+    // SVG (extraction will win on the server too).
+    const useGenerated = !!coverForceInput?.checked || !extractedCoverDataURL;
+    if (!useGenerated) {
+      coverPreviewImg.src = extractedCoverDataURL;
+      coverSaltInput.value = "";
+      if (coverPreviewLabel) coverPreviewLabel.textContent = "Extracted from your file — this is the cover that will be used.";
+      if (coverPreviewButtons) coverPreviewButtons.hidden = true;
+      if (coverForceLabel) coverForceLabel.hidden = false;
+      coverPreview.hidden = false;
       return;
     }
     const title = (titleInput?.value || "").trim();
@@ -415,8 +437,18 @@ if (uploadForm) {
     });
     coverPreviewImg.src = `/api/v1/cover/preview?${params.toString()}`;
     coverSaltInput.value = coverSalt;
+    if (coverPreviewLabel) {
+      coverPreviewLabel.textContent = extractedCoverDataURL
+        ? "Auto-generated from the title — using this instead of your file's cover."
+        : "Auto-generated from the title — your file doesn't have its own cover.";
+    }
+    if (coverPreviewButtons) coverPreviewButtons.hidden = false;
+    // The "Use generated instead" toggle is only meaningful when there IS
+    // an extracted cover to override.
+    if (coverForceLabel) coverForceLabel.hidden = !extractedCoverDataURL;
     coverPreview.hidden = false;
   }
+  coverForceInput?.addEventListener("change", refreshCoverPreview);
   coverRerollBtn?.addEventListener("click", () => {
     coverSalt = randomShortSalt();
     coverGenerationOptedOut = false;
@@ -466,6 +498,12 @@ if (uploadForm) {
   // newer file is selected and clobber its title/author fields.
   let inspectAbort = null;
 
+  // Cover preview state. When inspect returns an extracted cover, we show
+  // that as the preview (it's what'll actually be used). When not, we fall
+  // back to the salt-generated SVG. The "Use generated instead" toggle lets
+  // the user override extraction in favour of the SVG.
+  let extractedCoverDataURL = "";
+
   function clearFileSelection() {
     fileInput.value = "";
     if (dropEmpty) dropEmpty.hidden = false;
@@ -482,6 +520,8 @@ if (uploadForm) {
     if (coverPreview) coverPreview.hidden = true;
     if (coverSaltInput) coverSaltInput.value = "";
     if (coverFileInput) coverFileInput.value = "";
+    if (coverForceInput) coverForceInput.checked = false;
+    extractedCoverDataURL = "";
     coverGenerationOptedOut = false;
     updateConvertOption(null);
   }
@@ -550,6 +590,10 @@ if (uploadForm) {
           ? `Detected ${detected.join(" and ")} from the file — edit if needed.`
           : "We couldn't detect a title — please add one.";
       }
+      // Stash the extracted cover (if any) on the form module's state so the
+      // preview can show what'll actually be used — we previously always
+      // showed the generated SVG even when extraction would win.
+      extractedCoverDataURL = data.extractedCover || "";
       refreshCoverPreview();
     } catch (err) {
       if (err && err.name === "AbortError") return;
@@ -1628,9 +1672,14 @@ if (readerRoot) {
             margin: "0",
             padding: "0",
             color: bodyColor,
+            "min-height": "100%",
             "-webkit-font-smoothing": "antialiased",
           },
-          "body": { padding: "8px 18px" },
+          // Reserve ~110px at the bottom so content can't run under the
+          // floating reader-page-btn pill (~50px tall + 14px margin + safe
+          // area). Without this, the last paragraph of a page sits behind
+          // the prev/next buttons on phones.
+          "body": { padding: "8px 18px 110px" },
           "p, li, td, blockquote": {
             "line-height": String(1.55 * lineScale),
           },

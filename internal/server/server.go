@@ -746,10 +746,26 @@ func (s *Server) handleInspectBook(w http.ResponseWriter, r *http.Request) {
 		meta.Title = epub.TitleFromFilename(header.Filename)
 	}
 
+	// Try cover extraction here so the upload form can show the user the
+	// cover that's actually going to be used (priority: extracted > generated).
+	// Without this the form's preview always showed the salt-generated SVG,
+	// which was misleading when extraction would have produced a real cover.
+	// Returned as a data URL to avoid a second round trip + a temp object.
+	coverDataURL := ""
+	if extracted, coverExt, ok := tryExtractCover(tmpPath, format); ok {
+		mt := mime.TypeByExtension(coverExt)
+		if mt == "" {
+			mt = "image/png"
+		}
+		coverDataURL = "data:" + mt + ";base64," + base64.StdEncoding.EncodeToString(extracted)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"title":  meta.Title,
-		"author": meta.Author,
-		"format": format,
+		"title":           meta.Title,
+		"author":          meta.Author,
+		"format":          format,
+		"extractedCover":  coverDataURL,
+		"hasCover":        coverDataURL != "",
 	})
 }
 
@@ -885,7 +901,10 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if coverKey == "" {
+	// Skip extraction when the user ticked "Use this generated cover instead
+	// of the file's first page" — they explicitly want the SVG below.
+	coverForce := r.FormValue("coverForce") == "1"
+	if coverKey == "" && !coverForce {
 		if extracted, coverExt, ok := tryExtractCover(tmpPath, format); ok {
 			coverKey = keyForBook(user.ID, bookID, "cover"+coverExt)
 			if err := s.storage.Put(r.Context(), coverKey, bytes.NewReader(extracted), mime.TypeByExtension(coverExt), int64(len(extracted))); err != nil {
