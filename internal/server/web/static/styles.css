@@ -67,10 +67,14 @@
   --m-fs-meta: 0.85rem;          /* secondary/muted copy */
   --m-fs-input: 16px;            /* >=16px so iOS doesn't zoom on input focus */
 
+  /* Soft top-left highlight only — the previous bottom-right brown wash
+     read as a darker stripe alongside the centered .page-shell, making
+     the viewport edges look shadowed. A single subtle highlight + a
+     cleaner linear keeps depth without pulling visual weight to the
+     edges. */
   --bg-grad:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.75), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(186, 125, 74, 0.12), transparent 28%),
-    linear-gradient(180deg, #f7f1e8 0%, #f1e7d8 100%);
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.55), transparent 38%),
+    linear-gradient(180deg, #f6efe5 0%, #f3eadb 100%);
   --reader-bg-grad:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.68), transparent 28%),
     linear-gradient(180deg, #f4ede3 0%, #efe4d1 100%);

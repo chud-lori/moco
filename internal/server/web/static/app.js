@@ -3318,6 +3318,17 @@ async function spaNavigate(target, push) {
     const doc = new DOMParser().parseFromString(html, "text/html");
     const newMain = doc.querySelector("main#main");
     if (!newMain) throw new Error("destination has no <main>");
+
+    // Sync the .page-shell class — settings/auth use `page-shell-narrow`
+    // (760px max), the rest use `page-shell` (1240px). Without this, going
+    // from /settings → /app via SPA leaves the narrow class on, squishing
+    // the dashboard until a hard refresh.
+    const newShell = doc.querySelector(".page-shell");
+    const currentShell = document.querySelector(".page-shell");
+    if (newShell && currentShell) {
+      currentShell.className = newShell.className;
+    }
+
     main.innerHTML = newMain.innerHTML;
     document.title = doc.title;
 
