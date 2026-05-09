@@ -1270,6 +1270,38 @@ main { display: grid; gap: 22px; }
 }
 .stack-form .checkbox-row[hidden] { display: none; }
 
+/* "When should I convert?" disclosure inside the convert checkbox row.
+   Compact by default — just a muted summary line — expands inline when
+   the user wants the full guidance. <summary> uses the system disclosure
+   triangle (cross-platform, no JS, accessible). */
+.convert-details {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.convert-details[hidden] { display: none; }
+.convert-details > summary {
+  cursor: pointer;
+  display: inline-block;
+  padding: 2px 0;
+  color: var(--accent-dark, #6f4a2a);
+  font-weight: 600;
+  list-style-position: outside;
+}
+.convert-details > summary:hover { text-decoration: underline; }
+.convert-details > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.convert-details[open] > summary { margin-bottom: 6px; }
+.convert-details > div > p {
+  margin: 0 0 6px;
+  line-height: 1.45;
+}
+.convert-details > div > p:last-child { margin-bottom: 0; }
+.convert-details strong { color: var(--text); font-weight: 600; }
+
 /* Show/hide-password toggle inside a password input */
 .input-with-action {
   position: relative;

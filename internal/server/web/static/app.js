@@ -359,6 +359,8 @@ if (uploadForm) {
   const convertRow = uploadForm.querySelector("[data-convert-row]");
   const convertCheckbox = uploadForm.querySelector("[data-convert-checkbox]");
   const convertHint = uploadForm.querySelector("[data-convert-hint]");
+  const convertDetails = uploadForm.querySelector("[data-convert-details]");
+  const convertDetailsBody = uploadForm.querySelector("[data-convert-details-body]");
 
   // Drop zone + reveal-on-pick metadata fields
   const dropzone        = uploadForm.querySelector("[data-dropzone]");
@@ -567,8 +569,22 @@ if (uploadForm) {
     convertRow.hidden = false;
     if (convertHint) {
       convertHint.textContent = isPDF
-        ? "Reflows the PDF text into an EPUB you can resize, theme, and dark-mode. Image fidelity depends on the original PDF — diagrams drawn as vector graphics may not transfer."
+        ? "Reflows the PDF text into an EPUB you can resize, theme, and dark-mode."
         : "Wraps the markdown into an EPUB with proper chapters and the full reading-style settings.";
+    }
+    // Expanded guidance only for PDF — markdown has no real trade-offs.
+    // Hidden behind a <details> disclosure so the form stays compact and
+    // users only see the longer text when they actively look for it.
+    if (convertDetails && convertDetailsBody) {
+      if (isPDF) {
+        convertDetailsBody.innerHTML =
+          '<p><strong>Convert when:</strong> the PDF is mostly plain text (novels, articles, simple reports). You get reflowable text, dark theme, and adjustable font size.</p>'
+        + '<p><strong>Keep as PDF when:</strong> the file has columns, diagrams, code blocks, math, or rich layout (textbooks, magazines, design docs). Conversion can reflow these badly — the original layout is preserved if you skip conversion.</p>';
+        convertDetails.hidden = false;
+      } else {
+        convertDetails.hidden = true;
+        convertDetails.open = false;
+      }
     }
   }
 
