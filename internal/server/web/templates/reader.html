@@ -110,7 +110,13 @@
                 </span>
                 <button class="button subtle reader-page-btn" type="button" data-pdf-next aria-label="Next page"><span class="reader-page-btn-label">Next </span><span aria-hidden="true">→</span></button>
               </div>
-              <div class="pdf-stage"><canvas id="pdf-canvas" aria-label="PDF page"></canvas></div>
+              <div class="pdf-stage">
+                <canvas id="pdf-canvas" aria-label="PDF page"></canvas>
+                <div class="reader-loading" data-reader-loading>
+                  <div class="reader-spinner" aria-hidden="true"></div>
+                  <p>Loading book…</p>
+                </div>
+              </div>
             </div>
           {{ end }}
 

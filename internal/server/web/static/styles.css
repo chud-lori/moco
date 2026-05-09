@@ -1583,6 +1583,21 @@ main { display: grid; gap: 22px; }
   text-overflow: clip;
 }
 
+/* Owner-card rows (Read + 3 icon-only buttons) on phone-grid widths
+   don't have enough room to fit Read alongside three 34px icons
+   without Read shrinking to a circle (visible at ~155–200px card
+   widths). Wrap so Read takes the full width on row 1 and the icons
+   share row 2. Above 768px, cards are wide enough to keep everything
+   on one line. */
+@media (max-width: 768px) {
+  .book-panel-actions:has(.button.icon-only) {
+    flex-wrap: wrap;
+  }
+  .book-panel-actions:has(.button.icon-only) .button:not(.icon-only) {
+    flex: 1 1 100%;
+  }
+}
+
 @media (min-width: 768px) {
   .book-panel-actions { padding-top: 14px; gap: 8px; }
   .book-panel-actions .button:not(.icon-only) { padding: 10px 16px; font-size: 0.95rem; min-height: 40px; }
@@ -1942,11 +1957,16 @@ main { display: grid; gap: 22px; }
   .page-jumper-label { display: inline; }
 }
 .ebook-stage-full .ebook-controls .reader-page-btn {
-  min-width: 48px;
+  /* Bigger glyph + bolder weight so the unicode arrow doesn't render as
+     a thin hairline in mobile in-app browsers (Instagram / FB / iOS Mail
+     webviews) where the default font draws arrow chars at light weight.
+     A 52px tap target also clears Apple's 44px minimum comfortably. */
+  min-width: 52px;
   min-height: var(--m-tap);
-  padding: 6px 12px;
-  font-size: 1.2rem;
-  font-weight: 600;
+  padding: 6px 14px;
+  font-size: 1.45rem;
+  line-height: 1;
+  font-weight: 800;
   flex: 0 0 auto;
   border-radius: 999px;
   background: rgba(247, 240, 230, 0.92);
@@ -2096,12 +2116,45 @@ main { display: grid; gap: 22px; }
   place-items: safe center;
   padding: 12px 12px 28px 12px;
   overflow: auto;
+  /* anchor for the loading overlay child */
+  position: relative;
 }
 
 #pdf-canvas {
   max-width: 100%;
   box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
   background: #fff;
+}
+
+/* Loading spinner overlays the reader stage so the user sees feedback
+   while PDF.js fetches + rasterizes the first page (or epub.js hydrates
+   the iframe). Removed by JS the moment the first render fires —
+   without this the user just stares at blank white (PDF) or empty cream
+   (EPUB) for the seconds-long loading window. */
+.epub-stage, .pdf-stage { position: relative; }
+.epub-stage > [data-reader-loading],
+.pdf-stage > [data-reader-loading] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  margin: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(247, 240, 230, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  color: var(--muted);
+  font-size: 0.95rem;
+  transition: opacity 0.25s ease;
+}
+.epub-stage > [data-reader-loading].is-fading,
+.pdf-stage > [data-reader-loading].is-fading {
+  opacity: 0;
 }
 
 .markdown-reader h1,

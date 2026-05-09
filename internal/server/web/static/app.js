@@ -317,19 +317,22 @@ if (authForm) {
 }
 
 // ---------- Logout ----------
-const logoutButton = document.querySelector("[data-logout-button]");
-if (logoutButton) {
-  logoutButton.addEventListener("click", async () => {
-    setButtonLoading(logoutButton, true, "Signing out…");
-    try {
-      await requestJSON("/api/v1/auth/logout", { method: "POST", body: "{}" });
-      window.location.href = "/";
-    } catch (error) {
-      setButtonLoading(logoutButton, false);
-      toast(error.message || "Logout failed.", "error");
-    }
-  });
-}
+// Delegated on document so the listener survives SPA topbar swaps. The
+// landing page's custom topbar gets replaced with the primary_topbar
+// after login → /app, and a directly-bound listener on the original
+// element wouldn't carry over to the new button.
+document.addEventListener("click", async (event) => {
+  const btn = event.target.closest("[data-logout-button]");
+  if (!btn) return;
+  setButtonLoading(btn, true, "Signing out…");
+  try {
+    await requestJSON("/api/v1/auth/logout", { method: "POST", body: "{}" });
+    window.location.href = "/";
+  } catch (error) {
+    setButtonLoading(btn, false);
+    toast(error.message || "Logout failed.", "error");
+  }
+});
 
 // ---------- Upload (XHR with progress, validation) ----------
 const uploadForm = document.querySelector("[data-upload-form]");
@@ -377,6 +380,23 @@ if (uploadForm) {
   const coverFileInput  = uploadForm.querySelector("[data-upload-cover]");
   const coverPreview    = uploadForm.querySelector("[data-cover-preview]");
   const coverPreviewImg = uploadForm.querySelector("[data-cover-preview-img]");
+  // If the preview SVG fails (transient network blip, auth-cookie race
+  // immediately after login, etc.) the browser would show its default
+  // broken-image glyph + alt text. Swap in an inline cream placeholder
+  // SVG so the preview area at least reads as "cover area" rather than
+  // "something's broken." Re-enabled on every src change.
+  if (coverPreviewImg) {
+    const fallback = "data:image/svg+xml;utf8,"
+      + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 180">'
+        + '<rect width="120" height="180" fill="#ebe2cd"/>'
+        + '<text x="60" y="95" font-family="serif" font-size="11" fill="#8a7a5e" text-anchor="middle">Cover preview</text>'
+        + '</svg>'
+      );
+    coverPreviewImg.addEventListener("error", () => {
+      if (coverPreviewImg.src !== fallback) coverPreviewImg.src = fallback;
+    });
+  }
   const coverSaltInput  = uploadForm.querySelector("[data-cover-salt-input]");
   const coverRerollBtn  = uploadForm.querySelector("[data-cover-preview-reroll]");
   const coverForceInput = uploadForm.querySelector("[data-cover-force-input]");
@@ -1722,7 +1742,14 @@ if (readerRoot) {
       const showLoadingError = (msg) => {
         if (stage) stage.innerHTML = `<p class="reader-loading">${msg}</p>`;
       };
-      const removeLoading = () => loadingEl?.remove();
+      // Fade out, then remove. Fading first hides the cream-tinted backdrop
+      // before the iframe paints, so there's no visual jank as it
+      // transitions from "loading…" to first page rendered.
+      const removeLoading = () => {
+        if (!loadingEl) return;
+        loadingEl.classList.add("is-fading");
+        setTimeout(() => loadingEl.remove(), 280);
+      };
 
       // Fetch the EPUB ourselves so we can surface network errors and pin a
       // 30s timeout. Letting epub.js do its own fetch can silently hang.
@@ -1762,9 +1789,11 @@ if (readerRoot) {
         console.error("EPUB open error:", err);
       });
 
-      // Wipe placeholder before handing the container to epub.js — it APPENDS
-      // iframes, doesn't replace, so the placeholder would otherwise stay.
-      removeLoading();
+      // The loading overlay is `position: absolute` over the stage so
+      // epub.js can still append its iframe without colliding with it.
+      // We leave it up until the first `rendered` event fires — that's
+      // when the iframe has actually painted a page; before then the
+      // user would see only the cream stage background.
 
       // "single" forces one page even on wide screens; "auto" keeps the
       // two-up spread above minSpreadWidth.
@@ -1869,7 +1898,10 @@ if (readerRoot) {
       // Belt-and-braces: even if the renderer never fires "rendered",
       // make sure the placeholder is gone and we don't show a frozen UI.
       const safety = setTimeout(removeLoading, 6000);
-      rendition.on("rendered", () => clearTimeout(safety));
+      rendition.on("rendered", () => {
+        clearTimeout(safety);
+        removeLoading();
+      });
 
       try {
         await rendition.display();
@@ -1925,17 +1957,22 @@ if (readerRoot) {
       // standard heuristic.
       const epubPageInput = document.querySelector("[data-epub-page-input]");
       const epubPageTotal = document.querySelector("[data-epub-page-total]");
+      // Locations are still generated so the chapter-jump dropdown and
+      // jump-to-page-number can resolve to a CFI. But the on-screen
+      // counter shows a percentage — for PDF-converted EPUBs the location
+      // index jumps by 100s when crossing chapter boundaries (the CFI
+      // reported by `relocated` rounds to a chapter-start checkpoint),
+      // which made next/prev look broken. Percentage advances smoothly.
       let epubLocationsReady = false;
       book.locations.generate(1024).then(() => {
         epubLocationsReady = true;
-        if (epubPageTotal) epubPageTotal.textContent = `/ ${book.locations.length()}`;
-        if (epubPageInput) {
-          epubPageInput.disabled = false;
-          epubPageInput.max = book.locations.length();
-        }
-      }).catch(() => {
-        if (epubPageTotal) epubPageTotal.textContent = "/ —";
-      });
+        if (epubPageInput) epubPageInput.disabled = false;
+      }).catch(() => {});
+      if (epubPageTotal) epubPageTotal.textContent = "%";
+      if (epubPageInput) {
+        epubPageInput.min = 0;
+        epubPageInput.max = 100;
+      }
 
       rendition.on("relocated", (location) => {
         const locator = location?.start?.cfi || "";
@@ -1943,15 +1980,11 @@ if (readerRoot) {
         saveProgress(locator, progressPercent);
         if (prev) prev.disabled = !!location?.atStart;
         if (next) next.disabled = !!location?.atEnd;
-        let pageIdx = 0;
-        if (epubLocationsReady) {
-          pageIdx = book.locations.locationFromCfi(locator);
-          if (pageIdx > 0 && epubPageInput && document.activeElement !== epubPageInput) {
-            epubPageInput.value = pageIdx;
-          }
+        const pct = Math.round(progressPercent);
+        if (epubPageInput && document.activeElement !== epubPageInput) {
+          epubPageInput.value = String(pct);
         }
-        const label = pageIdx > 0 ? `Page ${pageIdx}` : "";
-        setReaderPosition(locator, label);
+        setReaderPosition(locator, `${pct}%`);
       });
       jumpToLocator = (locator) => {
         if (!locator) return;
@@ -1961,11 +1994,12 @@ if (readerRoot) {
       function jumpToEpubPage() {
         if (!epubLocationsReady) return;
         const total = book.locations.length();
-        let n = parseInt(epubPageInput.value, 10);
-        if (isNaN(n) || n < 1) n = 1;
-        if (n > total) n = total;
-        epubPageInput.value = n;
-        const cfi = book.locations.cfiFromLocation(n);
+        let pct = parseInt(epubPageInput.value, 10);
+        if (isNaN(pct) || pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+        epubPageInput.value = String(pct);
+        const targetLoc = Math.max(0, Math.min(total - 1, Math.floor((pct / 100) * total)));
+        const cfi = book.locations.cfiFromLocation(targetLoc);
         if (cfi) rendition.display(cfi);
       }
       epubPageInput?.addEventListener("change", jumpToEpubPage);
@@ -2349,6 +2383,15 @@ if (readerRoot) {
         }
       } catch (_) { /* fresh book */ }
       await renderPage(pageNum);
+
+      // First page has rasterized — fade out the loading overlay so the
+      // user sees their actual content instead of a blank stage. Mirrors
+      // the EPUB flow above.
+      const pdfLoadingEl = stage.querySelector("[data-reader-loading]");
+      if (pdfLoadingEl) {
+        pdfLoadingEl.classList.add("is-fading");
+        setTimeout(() => pdfLoadingEl.remove(), 280);
+      }
 
       const goPrev = () => {
         if (pageNum <= 1) return;
@@ -3327,6 +3370,18 @@ async function spaNavigate(target, push) {
     const currentShell = document.querySelector(".page-shell");
     if (newShell && currentShell) {
       currentShell.className = newShell.className;
+    }
+
+    // Swap the topbar — the landing page renders its own custom topbar
+    // (Sign in / Dashboard buttons), while every other page uses the
+    // shared primary_topbar (display name + Log out). After login on the
+    // landing page, navigating to /app via SPA needs to replace the
+    // header too; otherwise the user sees the logged-out chrome over a
+    // logged-in dashboard until the next full refresh.
+    const newTopbar = doc.querySelector(".topbar");
+    const currentTopbar = document.querySelector(".topbar");
+    if (newTopbar && currentTopbar) {
+      currentTopbar.replaceWith(newTopbar);
     }
 
     main.innerHTML = newMain.innerHTML;
