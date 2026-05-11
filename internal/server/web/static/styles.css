@@ -2704,6 +2704,15 @@ body.pdf-fs-active { overflow: hidden; }
   background: var(--accent-soft);
 }
 
+/* Hide the page-layout picker on screens too narrow to fit two pages —
+   both options collapse to one page below this width (epub.js's responsive
+   spread), so showing the toggle would just mislead users: they'd pick
+   "Two pages" and still see one, because there's no room for more.
+   The saved preference is preserved; it reactivates when viewed wide. */
+@media (max-width: 899px) {
+  .settings-row--spread { display: none; }
+}
+
 /* Page-layout picker — same shape as font/line swatches so the selected
    layout is visibly outlined (was previously unstyled, so both buttons
    looked identical regardless of which was active). */

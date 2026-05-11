@@ -52,6 +52,10 @@
               <p class="form-message" data-upload-detected aria-live="polite"></p>
               <label><span>Book title</span><input type="text" name="title" autocomplete="off" data-upload-title /></label>
               <label><span>Author</span><input type="text" name="author" autocomplete="off" placeholder="Add the author if you'd like" data-upload-author /></label>
+              <label>
+                <span>Description <small>(optional — auto-filled from EPUB metadata when available)</small></span>
+                <textarea name="description" rows="3" maxlength="4000" placeholder="A short summary readers will see on the book card and detail page." data-upload-description></textarea>
+              </label>
               <label class="cover-upload">
                 <span>Cover image <small>(optional — we'll auto-extract from the file, or generate a stylized cover from the title)</small></span>
                 <input type="file" name="cover" accept="image/png,image/jpeg,image/webp,image/gif" data-upload-cover />

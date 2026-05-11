@@ -384,6 +384,7 @@ if (uploadForm) {
   const detectedMessage = uploadForm.querySelector("[data-upload-detected]");
   const titleInput      = uploadForm.querySelector("[data-upload-title]");
   const authorInput     = uploadForm.querySelector("[data-upload-author]");
+  const descInput       = uploadForm.querySelector("[data-upload-description]");
   const coverFileInput  = uploadForm.querySelector("[data-upload-cover]");
   const coverPreview    = uploadForm.querySelector("[data-cover-preview]");
   const coverPreviewImg = uploadForm.querySelector("[data-cover-preview-img]");
@@ -633,6 +634,7 @@ if (uploadForm) {
     if (metaFields) metaFields.hidden = true;
     if (titleInput) titleInput.value = "";
     if (authorInput) authorInput.value = "";
+    if (descInput) descInput.value = "";
     if (detectedMessage) detectedMessage.textContent = "";
     if (submitBtn) submitBtn.disabled = true;
     if (inspectAbort) {
@@ -705,6 +707,7 @@ if (uploadForm) {
       if (ctrl.signal.aborted) return;
       if (titleInput && !titleInput.value) titleInput.value = data.title || "";
       if (authorInput && !authorInput.value) authorInput.value = data.author || "";
+      if (descInput && !descInput.value) descInput.value = data.description || "";
       if (detectedMessage) {
         const detected = [];
         if (data.title) detected.push("title");

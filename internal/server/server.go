@@ -841,16 +841,18 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = strings.TrimSuffix(header.Filename, ext)
 	}
-	// Auto-extract description from the file's own metadata (EPUB
-	// <dc:description>, etc.). The upload form doesn't ask for it — owners
-	// can edit it later via the book detail's edit modal. Best-effort: an
-	// error or missing field just leaves it empty.
-	extractedDescription := ""
-	if metaForDesc, metaErr := epub.ExtractMetadata(tmpPath, ext); metaErr == nil {
-		extractedDescription = metaForDesc.Description
-		if len(extractedDescription) > 4000 {
-			extractedDescription = extractedDescription[:4000]
+	// Description: user input (form field) takes precedence; fall back to
+	// EPUB <dc:description> metadata. The form auto-fills the textarea with
+	// the inspect endpoint's detected value, so by the time we read it back
+	// here the user has either kept the auto-detected text or replaced it.
+	description := strings.TrimSpace(r.FormValue("description"))
+	if description == "" {
+		if metaForDesc, metaErr := epub.ExtractMetadata(tmpPath, ext); metaErr == nil {
+			description = metaForDesc.Description
 		}
+	}
+	if len(description) > 4000 {
+		description = description[:4000]
 	}
 	convertToEPUB := r.FormValue("convertToEpub") == "1" || r.FormValue("convertToEpub") == "true"
 	readingMinutes := reader.EstimateMinutesFromBytes(format, size)
@@ -954,7 +956,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		UserID:           user.ID,
 		Title:            strings.ReplaceAll(title, "%20", " "),
 		Author:           author,
-		Description:      extractedDescription,
+		Description:      description,
 		Format:           storedFormat,
 		Visibility:       visibility,
 		OwnerEmail:       user.Email,
