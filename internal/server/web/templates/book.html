@@ -50,8 +50,12 @@
     </div>
     <h1>{{ .Book.Title }}</h1>
     {{ if .Book.Author }}<p class="book-detail-author">{{ .Book.Author }}</p>{{ end }}
-    {{ if not .Book.AnonymousOwner }}<p class="book-detail-owner">Shared by {{ ownerName .Book.OwnerDisplayName .Book.OwnerEmail }}</p>{{ end }}
-    {{ if .Book.ReadingMinutes }}<p class="book-detail-time">{{ formatMinutes .Book.ReadingMinutes }}{{ if .Book.TotalPages }} · {{ .Book.TotalPages }} pages{{ end }}</p>{{ end }}
+    <ul class="book-detail-meta-line">
+      {{ if not .Book.AnonymousOwner }}<li>Shared by {{ ownerName .Book.OwnerDisplayName .Book.OwnerEmail }}</li>{{ end }}
+      <li>Added {{ .Book.CreatedAt.Format "Jan 2, 2006" }}</li>
+      {{ if .Book.TotalPages }}<li>{{ .Book.TotalPages }} pages</li>{{ end }}
+      {{ if .Book.ReadingMinutes }}<li>{{ formatMinutes .Book.ReadingMinutes }}</li>{{ end }}
+    </ul>
     {{ if .Tags }}
       <ul class="book-detail-tags">
         {{ range .Tags }}<li><a href="/app?tag={{ . }}">#{{ . }}</a></li>{{ end }}

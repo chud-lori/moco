@@ -382,7 +382,7 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 	return books, rows.Err()
 }
 
-func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort string) ([]Book, error) {
+func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort, format string) ([]Book, error) {
 	query := `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
 		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
@@ -401,6 +401,11 @@ func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort
 		query += ` AND (lower(b.title) LIKE ? OR lower(b.author) LIKE ? OR (u.anonymous_owner = 0 AND lower(COALESCE(u.display_name, '')) LIKE ?))`
 		needle := "%" + strings.ToLower(search) + "%"
 		args = append(args, needle, needle, needle)
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "pdf", "epub", "md":
+		query += ` AND b.format = ?`
+		args = append(args, strings.ToLower(strings.TrimSpace(format)))
 	}
 	switch sort {
 	case "title":

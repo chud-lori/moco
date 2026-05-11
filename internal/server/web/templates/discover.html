@@ -47,6 +47,15 @@
             <input type="search" name="q" value="{{ .Query }}" placeholder="Search by title, author, or reader…" autocomplete="off" />
           </label>
           <label class="discover-sort">
+            <span class="sr-only">Format</span>
+            <select name="format">
+              <option value="" {{ if eq .Format "" }}selected{{ end }}>All formats</option>
+              <option value="pdf" {{ if eq .Format "pdf" }}selected{{ end }}>PDF</option>
+              <option value="epub" {{ if eq .Format "epub" }}selected{{ end }}>EPUB</option>
+              <option value="md" {{ if eq .Format "md" }}selected{{ end }}>Markdown</option>
+            </select>
+          </label>
+          <label class="discover-sort">
             <span class="sr-only">Sort</span>
             <select name="sort">
               <option value="" {{ if eq .Sort "" }}selected{{ end }}>Recent</option>
@@ -84,13 +93,12 @@
             </div>
             <h2>{{ .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
-            {{ if .Description }}<p class="book-panel-desc">{{ .Description }}</p>{{ end }}
             <div class="book-panel-actions">
               <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
               {{ if $signedIn }}
-                <button class="button subtle" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="{{ if $isOnList }}1{{ else }}0{{ end }}" aria-pressed="{{ if $isOnList }}true{{ else }}false{{ end }}">{{ if $isOnList }}✓ On list{{ else }}+ Want to read{{ end }}</button>
-              {{ else }}
-                <a class="button subtle" href="/login" title="Sign in to save to your reading list">+ Want to read</a>
+                <button class="book-panel-wishlist" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="{{ if $isOnList }}1{{ else }}0{{ end }}" aria-pressed="{{ if $isOnList }}true{{ else }}false{{ end }}" aria-label="{{ if $isOnList }}Remove from wishlist{{ else }}Add to wishlist{{ end }}" title="{{ if $isOnList }}On your wishlist{{ else }}Save to wishlist{{ end }}">
+                  <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="{{ if $isOnList }}currentColor{{ else }}none{{ end }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                </button>
               {{ end }}
             </div>
           </article>

@@ -1547,6 +1547,30 @@ main { display: grid; gap: 22px; }
 .book-panel:focus-within .book-cover-thumb img { transform: scale(1.04); }
 .book-panel.has-cover h2 { margin-top: 0; }
 
+/* Quiet bookmark button on browse cards — keeps "Read" as the dominant
+   CTA. Filled icon = wishlisted, outlined = available to save. Shown
+   only for signed-in users (template gates it). */
+.book-panel-wishlist {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.08s ease;
+}
+.book-panel-wishlist:hover {
+  color: var(--accent-dark);
+  background: rgba(186, 125, 74, 0.1);
+}
+.book-panel-wishlist[aria-pressed="true"] { color: var(--accent-dark); }
+.book-panel-wishlist:active { transform: scale(0.94); }
+
 .cover-upload input[type="file"] {
   padding: 10px 12px;
 }
@@ -1811,6 +1835,25 @@ main { display: grid; gap: 22px; }
 .book-detail-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .book-detail-author { font-size: 0.95rem; margin: 0; color: var(--text); }
 .book-detail-owner, .book-detail-time { margin: 0; font-size: 0.85rem; color: var(--muted); }
+/* Inline metadata row on the book detail page: uploader · added · pages
+   · reading time. Separator dots are inserted via ::before so we don't
+   need brittle markup or conditional separators in the template. */
+.book-detail-meta-line {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.book-detail-meta-line li { display: inline-flex; align-items: center; }
+.book-detail-meta-line li + li::before {
+  content: "·";
+  margin: 0 8px;
+  color: rgba(85, 66, 43, 0.35);
+}
 .book-detail-tags { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
 /* Full description on the book detail page — preserve paragraph breaks
    from the source (EPUB <dc:description>) without rendering as HTML. */
@@ -1820,21 +1863,6 @@ main { display: grid; gap: 22px; }
   line-height: 1.5;
   color: var(--text);
   white-space: pre-wrap;
-}
-/* Snippet on dashboard / discover / wishlist cards. -webkit-line-clamp keeps
-   card heights consistent regardless of description length; the title and
-   metadata above stay aligned across the grid. */
-.book-panel-desc {
-  margin: 4px 0 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: var(--muted);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .book-detail-tags a {
   font-size: 0.78rem;
@@ -2097,10 +2125,18 @@ main { display: grid; gap: 22px; }
   border: 1px solid rgba(85, 66, 43, 0.16);
   box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
 }
+/* Immersive mode still shows the page-jumper, just dimmed. Reviewer
+   feedback: without it, the reader felt "underpowered or ambiguous" —
+   no visible progress, no obvious where-am-I cue. Leaving it at low
+   opacity (a) keeps the reading surface uncluttered and (b) gives users
+   constant context without forcing them to tap to check progress. */
 .reader-app.is-immersive .page-jumper {
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.4;
+  pointer-events: auto;
+  transition: opacity 0.25s ease;
 }
+.reader-app.is-immersive .page-jumper:hover,
+.reader-app.is-immersive .page-jumper:focus-within { opacity: 1; }
 .page-jumper input {
   width: 56px;
   padding: 4px 6px;

@@ -1570,14 +1570,15 @@ if (readerRoot) {
   });
   syncPanelOpenClass();
 
-  // Show chrome briefly on load so users see the controls, then auto-hide.
-  // First-time logged-in users get a one-shot toast hint. Guests are skipped
-  // to avoid double-stacking with the guest welcome toast above — both are
-  // shown on first visit and would crowd the toast stack on phones.
-  scheduleHide(3000);
+  // Show chrome long enough on load that the topbar (Contents, Highlights,
+  // Bookmarks, Aa settings) actually registers — 3s was too short and
+  // testers reported the reader feels bare because they missed the menu
+  // sliding away before they noticed it. 6s + a clearer toast hint gives
+  // first-time readers a real chance to learn where the controls live.
+  scheduleHide(6000);
   if (!isGuest && !localStorage.getItem("moco-reader-hint-seen")) {
     setTimeout(() => {
-      toast("Tap anywhere to show controls.", "info");
+      toast("Menu hides automatically — tap the page to bring it back.", "info");
       localStorage.setItem("moco-reader-hint-seen", "1");
     }, 800);
   }
