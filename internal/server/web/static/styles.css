@@ -67,17 +67,16 @@
   --m-fs-meta: 0.85rem;          /* secondary/muted copy */
   --m-fs-input: 16px;            /* >=16px so iOS doesn't zoom on input focus */
 
-  /* Soft top-left highlight only — the previous bottom-right brown wash
-     read as a darker stripe alongside the centered .page-shell, making
-     the viewport edges look shadowed. A single subtle highlight + a
-     cleaner linear keeps depth without pulling visual weight to the
-     edges. */
-  --bg-grad:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.55), transparent 38%),
-    linear-gradient(180deg, #f6efe5 0%, #f3eadb 100%);
-  --reader-bg-grad:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.68), transparent 28%),
-    linear-gradient(180deg, #f4ede3 0%, #efe4d1 100%);
+  /* Body background is tuned to the cream tone that component backgrounds
+     (.book-panel ≈ rgba(255,249,241,0.86), .feature-band ≈ rgba(255,250,243,0.76))
+     composite to over it — ~#fcf7ef. Keeping body close to that color
+     means the viewport area OUTSIDE .page-shell on wide screens (and the
+     gaps between cards) doesn't read as a darker frame around the content.
+     A very subtle top-to-bottom warm shift preserves a paper feel without
+     introducing the asymmetric left-bright/right-dark look the old
+     top-left radial caused. */
+  --bg-grad: linear-gradient(180deg, #fbf6ec 0%, #f8f1e3 100%);
+  --reader-bg-grad: linear-gradient(180deg, #f7f0e5 0%, #f1e7d4 100%);
 }
 
 * { box-sizing: border-box; }
@@ -792,9 +791,9 @@ main { display: grid; gap: 22px; }
 .feature-band p { font-size: var(--m-fs-body); line-height: 1.45; }
 @media (min-width: 768px) {
   .feature-band {
-    gap: 18px;
-    padding: 26px 30px;
-    margin: 8px 0 20px;
+    gap: 14px;
+    padding: 18px 26px;
+    margin: 4px 0 14px;
     border-radius: var(--radius-lg);
   }
 }
@@ -1035,27 +1034,29 @@ main { display: grid; gap: 22px; }
 .book-format {
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
+  font-weight: 700;
   color: var(--accent-dark);
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 6px;
   background: var(--accent-soft);
 }
 
 .visibility-chip {
-  padding: 5px 10px;
+  padding: 3px 9px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 248, 240, 0.84);
-  color: var(--muted);
-  font-size: 0.74rem;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
   text-transform: capitalize;
   letter-spacing: 0.04em;
 }
 .visibility-chip[data-visibility="public"] {
   background: var(--success-soft);
   color: var(--success);
-  border-color: rgba(74, 125, 86, 0.3);
+  border-color: rgba(74, 125, 86, 0.35);
 }
 
 /* ---------- Forms ---------- */
@@ -1400,14 +1401,14 @@ main { display: grid; gap: 22px; }
      overflow on viewports narrower than ~178px (150px + page-shell padding).
      At normal phone widths it behaves identically to a fixed 150px floor. */
   grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
-  gap: 12px;
+  gap: 10px;
   align-items: stretch; /* equal-height cards across siblings */
   max-width: 100%;
   min-width: 0;
 }
 .dashboard-grid > * { min-width: 0; }
 @media (min-width: 768px) {
-  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 14px; }
+  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 12px; }
 }
 
 .library-section { display: grid; gap: 16px; }
@@ -1447,6 +1448,15 @@ main { display: grid; gap: 22px; }
   flex-direction: column;
   gap: 6px;
   height: 100%;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+/* Interactive feedback: lift the card on hover so the grid reads as
+   clickable rather than just decorative. :focus-within picks up keyboard
+   navigation on the inner cover/title links too. */
+.book-panel:hover, .book-panel:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -16px rgba(34, 28, 22, 0.32), 0 4px 10px -6px rgba(34, 28, 22, 0.18);
+  border-color: rgba(85, 66, 43, 0.18);
 }
 .book-panel h2 {
   font-size: 1rem;
@@ -1476,6 +1486,12 @@ main { display: grid; gap: 22px; }
   border-radius: 12px;
   overflow: hidden;
   background: rgba(85, 66, 43, 0.06);
+  /* Inset shadow + hair-line outline gives plain-white extracted covers
+     (e.g. a PDF first page that's just text on white) a defined edge so they
+     don't disappear into the card background. Real covers are unaffected
+     visually — the inset shadow is too subtle to read over a printed image. */
+  box-shadow: inset 0 0 0 1px rgba(85, 66, 43, 0.08), inset 0 -32px 36px -28px rgba(85, 66, 43, 0.18);
+  position: relative;
 }
 .book-cover-thumb img {
   width: 100%;
@@ -3284,17 +3300,21 @@ main#main.is-spa-loading::before {
 .quotes-toolbar > *, .library-toolbar > * { min-width: 0; }
 
 @media (min-width: 768px) {
+  /* Desktop: lay the search + select pills side by side, but stay flat
+     (no outer pill background/border/shadow). The inputs are already
+     pill-shaped — wrapping them in another rounded container produced the
+     "pill inside a pill" visual that read as broken UI. */
   .quotes-toolbar, .library-toolbar {
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
-    padding: 12px 16px;
-    background: rgba(255, 251, 246, 0.78);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    box-shadow: var(--shadow-soft);
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
     margin-bottom: 8px;
-    width: fit-content;
+    width: 100%;
     max-width: 100%;
   }
 }
@@ -3343,8 +3363,8 @@ main#main.is-spa-loading::before {
 .discover-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 0 0 14px;
+  gap: 8px;
+  margin: 0 0 10px;
   width: 100%;
   min-width: 0;
 }
@@ -3354,7 +3374,7 @@ main#main.is-spa-loading::before {
   gap: 10px;
   width: 100%;
   min-width: 0;
-  padding: 10px 16px;
+  padding: 8px 16px;
   background: rgba(255, 251, 245, 0.92);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -3376,7 +3396,7 @@ main#main.is-spa-loading::before {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 6px 14px;
   background: rgba(255, 251, 245, 0.92);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -3395,8 +3415,11 @@ main#main.is-spa-loading::before {
 }
 @media (min-width: 768px) {
   .discover-toolbar { flex-direction: row; align-items: center; }
-  .discover-search { flex: 1 1 auto; min-height: var(--tap); padding: 8px 16px; }
-  .discover-sort { flex: 0 0 auto; min-height: var(--tap); padding: 6px 14px; }
+  /* Slimmer than --tap (44/48) so the search row doesn't dominate the
+     viewport above the grid. Still well above hit-target minimums on a
+     mouse-driven device. */
+  .discover-search { flex: 1 1 auto; min-height: 40px; padding: 6px 16px; }
+  .discover-sort { flex: 0 0 auto; min-height: 40px; padding: 4px 14px; }
 }
 .search-input input {
   width: 100%;
