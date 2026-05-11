@@ -3301,46 +3301,40 @@ document.addEventListener("click", async (event) => {
 //   3. POST regenerate cover   → /api/v1/books/{id}/cover/regenerate
 // Cover preview is busted with a timestamp query so the new image shows
 // immediately without waiting for a hard reload.
+// Document-delegated so it works whether the modal is server-rendered into
+// the page (visiting /books/{id} directly) or SPA-injected later when the
+// user opens a book modal from /app or /discover. Looking up elements at
+// event time means there's no stale closure reference and no need to re-run
+// init after fragment injection.
 (function () {
-  const modal = document.querySelector("[data-edit-book-modal]");
-  if (!modal) return;
-  const card = modal.querySelector(".modal-card");
-  const detail = document.querySelector("[data-book-detail]");
-  const bookID = detail?.closest("[data-book-id]")?.dataset?.bookId
-    || (window.location.pathname.match(/\/books\/([A-Za-z0-9_-]+)/) || [])[1];
-  if (!bookID) return;
-
-  const form = modal.querySelector("[data-edit-book-form]");
-  const titleInput = form.querySelector('input[name="title"]');
-  const authorInput = form.querySelector('input[name="author"]');
-  const descriptionInput = form.querySelector('textarea[name="description"]');
-  const messageEl = modal.querySelector("[data-edit-book-message]");
-  const coverPreview = modal.querySelector("[data-edit-book-cover-preview]");
-  const coverInput = modal.querySelector("[data-edit-book-cover-input]");
-  const pickBtn = modal.querySelector("[data-edit-book-cover-pick]");
-  const regenBtn = modal.querySelector("[data-edit-book-cover-regenerate]");
-  const submitBtn = form.querySelector('button[type="submit"]');
-
-  function open() {
+  function setMessage(modal, text, kind) {
+    const el = modal?.querySelector("[data-edit-book-message]");
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("is-error", kind === "error");
+    el.classList.toggle("is-success", kind === "success");
+  }
+  function openModal(modal) {
     modal.classList.add("is-open");
-    setMessage("");
+    setMessage(modal, "");
+    const titleInput = modal.querySelector('input[name="title"]');
     requestAnimationFrame(() => titleInput?.focus());
   }
-  function close() {
+  function closeEditModal(modal) {
     modal.classList.remove("is-open");
-    setMessage("");
+    setMessage(modal, "");
   }
-  function setMessage(text, kind) {
-    if (!messageEl) return;
-    messageEl.textContent = text || "";
-    messageEl.classList.toggle("is-error", kind === "error");
-    messageEl.classList.toggle("is-success", kind === "success");
+  function currentBookID() {
+    // Prefer the URL — works for /books/{id} direct loads AND SPA-pushed
+    // book modal URLs. Fall back to data-book-id on the visible card.
+    const m = window.location.pathname.match(/\/books\/([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+    return document.querySelector("[data-book-detail]")?.closest("[data-book-id]")?.dataset?.bookId || null;
   }
-  function bustCoverCache() {
+  function bustCoverCache(bookID, modal) {
     const url = `/api/v1/books/${bookID}/cover?t=${Date.now()}`;
-    if (coverPreview) coverPreview.src = url;
-    // Also refresh the on-page cover (book detail card) so the user sees the
-    // change without reloading.
+    const preview = modal.querySelector("[data-edit-book-cover-preview]");
+    if (preview) preview.src = url;
     document.querySelectorAll(`.book-detail-cover img, [data-book-card-cover][data-book-id="${bookID}"] img`).forEach((img) => {
       img.src = url;
     });
@@ -3349,63 +3343,91 @@ document.addEventListener("click", async (event) => {
   document.addEventListener("click", (event) => {
     if (event.target.closest("[data-edit-book-open]")) {
       event.preventDefault();
-      open();
+      const modal = document.querySelector("[data-edit-book-modal]");
+      if (modal) openModal(modal);
       return;
     }
-    if (event.target.closest("[data-edit-book-close]")) {
+    const closeBtn = event.target.closest("[data-edit-book-close]");
+    if (closeBtn) {
       event.preventDefault();
-      close();
+      const modal = closeBtn.closest("[data-edit-book-modal]");
+      if (modal) closeEditModal(modal);
       return;
     }
-    // Click on the dimmed backdrop (not the card) closes the modal.
-    if (event.target === modal) close();
+    // Backdrop click (the click landed on the .modal itself, not a child).
+    if (event.target.matches?.("[data-edit-book-modal].is-open")) {
+      closeEditModal(event.target);
+      return;
+    }
+    const pickBtn = event.target.closest("[data-edit-book-cover-pick]");
+    if (pickBtn) {
+      event.preventDefault();
+      pickBtn.closest("[data-edit-book-modal]")?.querySelector("[data-edit-book-cover-input]")?.click();
+      return;
+    }
+    const regenBtn = event.target.closest("[data-edit-book-cover-regenerate]");
+    if (regenBtn) {
+      event.preventDefault();
+      const modal = regenBtn.closest("[data-edit-book-modal]");
+      const bookID = currentBookID();
+      if (!modal || !bookID) return;
+      setButtonLoading(regenBtn, true, "Re-rolling…");
+      requestJSON(`/api/v1/books/${bookID}/cover/regenerate`, { method: "POST", body: "{}" })
+        .then(() => { bustCoverCache(bookID, modal); setMessage(modal, "Generated a fresh cover.", "success"); })
+        .catch((err) => setMessage(modal, err.message || "Failed to regenerate cover.", "error"))
+        .finally(() => setButtonLoading(regenBtn, false));
+      return;
+    }
   });
+
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && modal.classList.contains("is-open")) close();
+    if (event.key !== "Escape") return;
+    const modal = document.querySelector("[data-edit-book-modal].is-open");
+    if (modal) closeEditModal(modal);
   });
 
-  pickBtn?.addEventListener("click", () => coverInput?.click());
-
-  coverInput?.addEventListener("change", async () => {
-    const file = coverInput.files?.[0];
+  document.addEventListener("change", async (event) => {
+    const input = event.target.closest("[data-edit-book-cover-input]");
+    if (!input) return;
+    const modal = input.closest("[data-edit-book-modal]");
+    const bookID = currentBookID();
+    if (!modal || !bookID) return;
+    const file = input.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      setMessage("Image is too large (max 10MB).", "error");
-      coverInput.value = "";
+      setMessage(modal, "Image is too large (max 10MB).", "error");
+      input.value = "";
       return;
     }
+    const pickBtn = modal.querySelector("[data-edit-book-cover-pick]");
     setButtonLoading(pickBtn, true, "Uploading…");
     try {
       const fd = new FormData();
       fd.append("cover", file);
       await requestJSON(`/api/v1/books/${bookID}/cover`, { method: "PUT", body: fd });
-      bustCoverCache();
-      setMessage("Cover updated.", "success");
+      bustCoverCache(bookID, modal);
+      setMessage(modal, "Cover updated.", "success");
     } catch (err) {
-      setMessage(err.message || "Failed to upload cover.", "error");
+      setMessage(modal, err.message || "Failed to upload cover.", "error");
     } finally {
       setButtonLoading(pickBtn, false);
-      coverInput.value = "";
+      input.value = "";
     }
   });
 
-  regenBtn?.addEventListener("click", async () => {
-    setButtonLoading(regenBtn, true, "Re-rolling…");
-    try {
-      await requestJSON(`/api/v1/books/${bookID}/cover/regenerate`, { method: "POST", body: "{}" });
-      bustCoverCache();
-      setMessage("Generated a fresh cover.", "success");
-    } catch (err) {
-      setMessage(err.message || "Failed to regenerate cover.", "error");
-    } finally {
-      setButtonLoading(regenBtn, false);
-    }
-  });
-
-  form.addEventListener("submit", async (event) => {
+  document.addEventListener("submit", async (event) => {
+    const form = event.target.closest("[data-edit-book-form]");
+    if (!form) return;
     event.preventDefault();
+    const modal = form.closest("[data-edit-book-modal]");
+    const bookID = currentBookID();
+    if (!modal || !bookID) return;
+    const titleInput = form.querySelector('input[name="title"]');
+    const authorInput = form.querySelector('input[name="author"]');
+    const descriptionInput = form.querySelector('textarea[name="description"]');
+    const submitBtn = form.querySelector('button[type="submit"]');
     const title = titleInput.value.trim();
-    if (!title) { setMessage("Title is required.", "error"); return; }
+    if (!title) { setMessage(modal, "Title is required.", "error"); return; }
     const description = descriptionInput?.value.trim() || "";
     setButtonLoading(submitBtn, true, "Saving…");
     try {
@@ -3413,7 +3435,7 @@ document.addEventListener("click", async (event) => {
         method: "PATCH",
         body: JSON.stringify({ title, author: authorInput.value.trim(), description }),
       });
-      // Reflect the change on the page without a full reload.
+      // Reflect the change on the visible card without a full reload.
       const h1 = document.querySelector(".book-detail h1");
       if (h1) h1.textContent = data.title || title;
       const authorEl = document.querySelector(".book-detail-author");
@@ -3422,7 +3444,6 @@ document.addEventListener("click", async (event) => {
         authorEl.textContent = author;
         authorEl.hidden = !author;
       }
-      // Update / insert the description paragraph in place.
       const meta = document.querySelector(".book-detail-meta");
       let descEl = document.querySelector(".book-detail-description");
       const newDesc = data.description || "";
@@ -3430,7 +3451,6 @@ document.addEventListener("click", async (event) => {
         if (!descEl && meta) {
           descEl = document.createElement("p");
           descEl.className = "book-detail-description";
-          // Insert right before the actions row so layout matches server-side render.
           const actions = meta.querySelector(".book-detail-actions");
           meta.insertBefore(descEl, actions || null);
         }
@@ -3438,10 +3458,10 @@ document.addEventListener("click", async (event) => {
       } else if (descEl) {
         descEl.remove();
       }
-      setMessage("Saved.", "success");
-      setTimeout(close, 600);
+      setMessage(modal, "Saved.", "success");
+      setTimeout(() => closeEditModal(modal), 600);
     } catch (err) {
-      setMessage(err.message || "Failed to save.", "error");
+      setMessage(modal, err.message || "Failed to save.", "error");
     } finally {
       setButtonLoading(submitBtn, false);
     }
