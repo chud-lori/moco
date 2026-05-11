@@ -70,7 +70,12 @@ function closeModal() {
   const wasBookModal = modal.dataset.bookModal === "1";
   modal.classList.remove("is-open");
   modal.dataset.bookModal = "";
-  modal.querySelector("[data-modal-card]").innerHTML = "";
+  const card = modal.querySelector("[data-modal-card]");
+  card.innerHTML = "";
+  // Reset card class — otherwise variants like `is-wide` (set by
+  // openBookModal) leak into the next consumer (e.g. openConfirm), which
+  // would otherwise render with 640px width + zero padding.
+  card.className = "modal-card";
   if (modalLastFocus && typeof modalLastFocus.focus === "function") {
     modalLastFocus.focus();
   }
@@ -84,6 +89,7 @@ function openConfirm({ title, body, confirmLabel = "Confirm", cancelLabel = "Can
   return new Promise((resolve) => {
     const modal = ensureModal();
     const card = modal.querySelector("[data-modal-card]");
+    card.className = "modal-card";
     modalLastFocus = document.activeElement;
 
     const titleEl = document.createElement("h2");
@@ -123,6 +129,7 @@ function openTextPrompt({ title, body, placeholder = "", confirmLabel = "Save", 
   return new Promise((resolve) => {
     const modal = ensureModal();
     const card = modal.querySelector("[data-modal-card]");
+    card.className = "modal-card";
     modalLastFocus = document.activeElement;
 
     const titleEl = document.createElement("h2");
