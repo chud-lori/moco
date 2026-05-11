@@ -1,7 +1,6 @@
 package server
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -21,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -1684,7 +1682,7 @@ func isFragmentRequest(r *http.Request) bool {
 func tryExtractCover(path, format string) ([]byte, string, bool) {
 	switch format {
 	case "epub":
-		if data, ext, ok := extractEPUBCover(path); ok {
+		if data, ext, ok := epub.ExtractEPUBCover(path); ok {
 			return data, ext, true
 		}
 	case "pdf":
@@ -1693,101 +1691,6 @@ func tryExtractCover(path, format string) ([]byte, string, bool) {
 		}
 	}
 	return nil, "", false
-}
-
-// extractEPUBCover reads the OPF, finds the item flagged with
-// `properties="cover-image"` (or referenced from `<meta name="cover">`), and
-// returns its bytes + extension.
-func extractEPUBCover(path string) ([]byte, string, bool) {
-	zr, err := zip.OpenReader(path)
-	if err != nil {
-		return nil, "", false
-	}
-	defer zr.Close()
-
-	// Find OPF.
-	var opfPath string
-	for _, f := range zr.File {
-		if f.Name == "META-INF/container.xml" {
-			rc, err := f.Open()
-			if err != nil {
-				continue
-			}
-			body, _ := io.ReadAll(rc)
-			rc.Close()
-			if m := regexp.MustCompile(`full-path="([^"]+)"`).FindStringSubmatch(string(body)); len(m) >= 2 {
-				opfPath = m[1]
-			}
-			break
-		}
-	}
-	if opfPath == "" {
-		return nil, "", false
-	}
-	var opfBody []byte
-	for _, f := range zr.File {
-		if f.Name == opfPath {
-			rc, _ := f.Open()
-			opfBody, _ = io.ReadAll(rc)
-			rc.Close()
-			break
-		}
-	}
-	if len(opfBody) == 0 {
-		return nil, "", false
-	}
-
-	// Method 1: EPUB 3 properties="cover-image"
-	hrefRE := regexp.MustCompile(`<item[^>]*properties="[^"]*\bcover-image\b[^"]*"[^>]*href="([^"]+)"|<item[^>]*href="([^"]+)"[^>]*properties="[^"]*\bcover-image\b[^"]*"`)
-	href := ""
-	if m := hrefRE.FindStringSubmatch(string(opfBody)); len(m) > 0 {
-		for i := 1; i < len(m); i++ {
-			if m[i] != "" {
-				href = m[i]
-				break
-			}
-		}
-	}
-	// Method 2: EPUB 2 <meta name="cover" content="ID"/> + matching item id.
-	if href == "" {
-		if m := regexp.MustCompile(`<meta[^>]*name="cover"[^>]*content="([^"]+)"`).FindStringSubmatch(string(opfBody)); len(m) >= 2 {
-			coverID := m[1]
-			itemRE := regexp.MustCompile(`<item[^>]*id="` + regexp.QuoteMeta(coverID) + `"[^>]*href="([^"]+)"`)
-			if mm := itemRE.FindStringSubmatch(string(opfBody)); len(mm) >= 2 {
-				href = mm[1]
-			}
-		}
-	}
-	if href == "" {
-		return nil, "", false
-	}
-
-	// Resolve href relative to the OPF directory.
-	opfDir := path_dir(opfPath)
-	full := opfDir + href
-	full = strings.ReplaceAll(full, "//", "/")
-	for _, f := range zr.File {
-		if f.Name == full || strings.HasSuffix(f.Name, "/"+href) {
-			rc, err := f.Open()
-			if err != nil {
-				return nil, "", false
-			}
-			defer rc.Close()
-			body, err := io.ReadAll(rc)
-			if err != nil {
-				return nil, "", false
-			}
-			return body, strings.ToLower(filepath.Ext(f.Name)), true
-		}
-	}
-	return nil, "", false
-}
-
-func path_dir(p string) string {
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[:i+1]
-	}
-	return ""
 }
 
 // extractPDFCoverPNG renders page 1 of a PDF as PNG. Prefers mutool (fast),
