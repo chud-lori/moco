@@ -51,11 +51,6 @@
             <p class="stat-label">Tags in use</p>
             <p class="stat-value">{{ .Stats.TagCount }}</p>
           </article>
-          <article class="stat-card stat-card-wide">
-            <p class="stat-label">Estimated reading time started</p>
-            <p class="stat-value">{{ if .Stats.ReadingMinutes }}{{ formatMinutes .Stats.ReadingMinutes }}{{ else }}0 min{{ end }}</p>
-            <p class="stat-sub">summed across books you've opened</p>
-          </article>
         </section>
 
         {{ if .TagCounts }}
