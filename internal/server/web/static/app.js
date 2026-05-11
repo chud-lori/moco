@@ -741,8 +741,19 @@ if (uploadForm) {
   });
 
   if (dropzone) {
-    // Click anywhere on the empty zone opens the file picker
-    dropEmpty?.addEventListener("click", () => fileInput.click());
+    // Click anywhere on the dropzone opens the file picker. Bound on the
+    // parent (not dropzone-empty, which is pointer-events:none) and not the
+    // absolutely-positioned input overlay because some browsers — notably
+    // Safari/iOS — treat the native file input's clickable area as the
+    // small button widget rather than the full CSS box, so clicks near the
+    // edges of the overlay would silently miss.
+    dropzone.addEventListener("click", (e) => {
+      if (e.target.closest("[data-dropzone-remove]")) return; // Remove handles its own click
+      if (e.target === fileInput) return; // native input click already opens picker
+      if (dropFilled && !dropFilled.hidden) return; // already have a file, ignore stray clicks
+      e.preventDefault();
+      fileInput.click();
+    });
     dropzone.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         if (dropFilled?.hidden !== false) {
