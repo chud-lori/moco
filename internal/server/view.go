@@ -49,6 +49,7 @@ type discoverPageData struct {
 	pageData
 	PublicBooks   []store.Book
 	WishlistedIDs map[string]bool
+	Query         string
 }
 
 type authPageData struct {
@@ -97,7 +98,7 @@ type readerPageData struct {
 // any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
 // browsers, mobile WebViews that ignore Cache-Control) treat the assets as
 // new resources. Kept in sync with the service-worker cache key.
-const AssetVersion = "v65"
+const AssetVersion = "v66"
 
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{

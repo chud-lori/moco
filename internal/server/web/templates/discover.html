@@ -39,45 +39,63 @@
           </article>
           <article><p>Anything here is intentionally published by its owner and readable by everyone.</p></article>
         </section>
-        <section class="library-shelf">
-          {{ if .PublicBooks }}
-            <div class="dashboard-grid">
-              {{ $wishlisted := .WishlistedIDs }}
-              {{ $signedIn := .CurrentUser }}
-              {{ range .PublicBooks }}
-                {{ $isOnList := isWishlisted $wishlisted .ID }}
-                <article class="book-panel has-cover" data-book-id="{{ .ID }}">
-                  <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
-                    <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
-                  </a>
-                  <div class="book-panel-top">
-                    <span class="book-format">{{ .Format }}</span>
-                    <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
-                  </div>
-                  <h2>{{ .Title }}</h2>
-                  <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
-                  <div class="book-panel-actions">
-                    <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
-                    {{ if $signedIn }}
-                      <button class="button subtle" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="{{ if $isOnList }}1{{ else }}0{{ end }}" aria-pressed="{{ if $isOnList }}true{{ else }}false{{ end }}">{{ if $isOnList }}✓ On list{{ else }}+ Want to read{{ end }}</button>
-                    {{ else }}
-                      <a class="button subtle" href="/login" title="Sign in to save to your reading list">+ Want to read</a>
-                    {{ end }}
-                  </div>
-                </article>
-              {{ end }}
-            </div>
-          {{ else }}
-            <section class="empty-state">
-              <h2>No public books yet.</h2>
-              <p>Be the first to publish — sign in and toggle a book to public on your shelf.</p>
-              {{ if not .CurrentUser }}<a class="button primary" href="/signup">Create an account</a>{{ end }}
-            </section>
-          {{ end }}
-        </section>
+
+        <form class="quotes-toolbar" method="get" action="/discover" role="search" aria-label="Search public books" data-auto-submit data-results-target="[data-discover-results]">
+          <label class="search-input">
+            <span class="sr-only">Search public books</span>
+            <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="search" name="q" value="{{ .Query }}" placeholder="Search by title, author, or reader…" autocomplete="off" />
+          </label>
+          <noscript><button class="button subtle" type="submit">Search</button></noscript>
+        </form>
+
+        <div data-discover-results>
+          {{ template "discover_results" . }}
+        </div>
       </main>
     </div>
     <script src="/static/app.js?v={{ assetVersion }}" defer></script>
   </body>
 </html>
+{{ end }}
+
+{{ define "discover_results" }}
+  <section class="library-shelf">
+    {{ if .PublicBooks }}
+      <div class="dashboard-grid">
+        {{ $wishlisted := .WishlistedIDs }}
+        {{ $signedIn := .CurrentUser }}
+        {{ range .PublicBooks }}
+          {{ $isOnList := isWishlisted $wishlisted .ID }}
+          <article class="book-panel has-cover" data-book-id="{{ .ID }}">
+            <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
+              <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+            </a>
+            <div class="book-panel-top">
+              <span class="book-format">{{ .Format }}</span>
+              <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
+            </div>
+            <h2>{{ .Title }}</h2>
+            <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
+            <div class="book-panel-actions">
+              <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+              {{ if $signedIn }}
+                <button class="button subtle" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="{{ if $isOnList }}1{{ else }}0{{ end }}" aria-pressed="{{ if $isOnList }}true{{ else }}false{{ end }}">{{ if $isOnList }}✓ On list{{ else }}+ Want to read{{ end }}</button>
+              {{ else }}
+                <a class="button subtle" href="/login" title="Sign in to save to your reading list">+ Want to read</a>
+              {{ end }}
+            </div>
+          </article>
+        {{ end }}
+      </div>
+    {{ else if .Query }}
+      <section class="empty-state"><p>No public books match “{{ .Query }}”.</p></section>
+    {{ else }}
+      <section class="empty-state">
+        <h2>No public books yet.</h2>
+        <p>Be the first to publish — sign in and toggle a book to public on your shelf.</p>
+        {{ if not .CurrentUser }}<a class="button primary" href="/signup">Create an account</a>{{ end }}
+      </section>
+    {{ end }}
+  </section>
 {{ end }}

@@ -313,7 +313,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	publicBooks, _ := s.store.ListPublicBooks(r.Context(), "")
+	publicBooks, _ := s.store.ListPublicBooks(r.Context(), "", "")
 	user, _ := s.currentUser(r)
 	s.renderTemplate(w, "home.html", discoverPageData{
 		pageData: pageData{
@@ -332,9 +332,10 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.currentUser(r)
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	// Show every public book, including the viewer's own — owners want
 	// to see their published shelf the same way readers do.
-	publicBooks, err := s.store.ListPublicBooks(r.Context(), "")
+	publicBooks, err := s.store.ListPublicBooks(r.Context(), "", query)
 	if err != nil {
 		http.Error(w, "failed to load public books", http.StatusInternalServerError)
 		return
@@ -348,7 +349,7 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		wishlisted, _ = s.store.WishlistedBookIDs(r.Context(), user.ID, ids)
 	}
 
-	s.renderTemplate(w, "discover.html", discoverPageData{
+	data := discoverPageData{
 		pageData: pageData{
 			Title:       "Public Library - Moco",
 			CurrentUser: user,
@@ -362,7 +363,13 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		},
 		PublicBooks:   publicBooks,
 		WishlistedIDs: wishlisted,
-	})
+		Query:         query,
+	}
+	if isFragmentRequest(r) {
+		s.renderTemplate(w, "discover_results", data)
+		return
+	}
+	s.renderTemplate(w, "discover.html", data)
 }
 
 func (s *Server) handleSignupPage(w http.ResponseWriter, _ *http.Request) {
@@ -394,7 +401,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	bookTags, _ := s.store.AttachTagsToBooks(r.Context(), user.ID, books)
 	allTags, _ := s.store.ListTagCounts(r.Context(), user.ID)
-	publicBooks, _ := s.store.ListPublicBooks(r.Context(), user.ID)
+	publicBooks, _ := s.store.ListPublicBooks(r.Context(), user.ID, "")
 	wishlistBooks, _ := s.store.ListWishlist(r.Context(), user.ID)
 	sharedBooks, _ := s.store.ListBooksSharedWithUser(r.Context(), user.ID)
 	privateBooks, ownPublic := splitBooksByVisibility(books)
@@ -688,7 +695,7 @@ func (s *Server) handlePublicBooks(w http.ResponseWriter, r *http.Request) {
 	if user != nil {
 		exclude = user.ID
 	}
-	books, err := s.store.ListPublicBooks(r.Context(), exclude)
+	books, err := s.store.ListPublicBooks(r.Context(), exclude, strings.TrimSpace(r.URL.Query().Get("q")))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to load public books"})
 		return
