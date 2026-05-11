@@ -263,6 +263,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 @media (min-width: 768px) {
   .reader-app { padding: 80px 12px 12px; }
+  /* Immersive mode: the topbar is translated off-screen but its reserved
+     80px of padding-top stays, and the .reader-toolbar strip below it would
+     also keep ~55px of empty space via opacity:0. Together that pinned the
+     rendered EPUB page to the bottom of the viewport and left a huge gap up
+     top. Collapse both so the page actually sits centered. */
+  .reader-app.is-immersive { padding-top: 24px; }
+  .reader-body-paginated .reader-app.is-immersive .reader-toolbar { display: none; }
 }
 
 main { display: grid; gap: 22px; }
