@@ -154,6 +154,7 @@
             </div>
             <h2>{{ .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}from {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
+            {{ if .Description }}<p class="book-panel-desc">{{ .Description }}</p>{{ end }}
             <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
           </article>
         {{ end }}
@@ -209,6 +210,7 @@
             </div>
             <h2>{{ .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
+            {{ if .Description }}<p class="book-panel-desc">{{ .Description }}</p>{{ end }}
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
             <div class="book-panel-actions">
               <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
@@ -240,6 +242,7 @@
             </div>
             <h2>{{ .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
+            {{ if .Description }}<p class="book-panel-desc">{{ .Description }}</p>{{ end }}
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
             <div class="book-panel-actions">
               <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
@@ -269,6 +272,7 @@
         </div>
         <h2>{{ .Title }}</h2>
         {{ if .Author }}<p>{{ .Author }}</p>{{ end }}
+        {{ if .Description }}<p class="book-panel-desc">{{ .Description }}</p>{{ end }}
         {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
         <div class="book-tags" data-book-tags>
           {{ range tagsForBook $tagMap $book.ID }}

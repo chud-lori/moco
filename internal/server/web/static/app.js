@@ -3313,6 +3313,7 @@ document.addEventListener("click", async (event) => {
   const form = modal.querySelector("[data-edit-book-form]");
   const titleInput = form.querySelector('input[name="title"]');
   const authorInput = form.querySelector('input[name="author"]');
+  const descriptionInput = form.querySelector('textarea[name="description"]');
   const messageEl = modal.querySelector("[data-edit-book-message]");
   const coverPreview = modal.querySelector("[data-edit-book-cover-preview]");
   const coverInput = modal.querySelector("[data-edit-book-cover-input]");
@@ -3405,11 +3406,12 @@ document.addEventListener("click", async (event) => {
     event.preventDefault();
     const title = titleInput.value.trim();
     if (!title) { setMessage("Title is required.", "error"); return; }
+    const description = descriptionInput?.value.trim() || "";
     setButtonLoading(submitBtn, true, "Saving…");
     try {
       const data = await requestJSON(`/api/v1/books/${bookID}`, {
         method: "PATCH",
-        body: JSON.stringify({ title, author: authorInput.value.trim() }),
+        body: JSON.stringify({ title, author: authorInput.value.trim(), description }),
       });
       // Reflect the change on the page without a full reload.
       const h1 = document.querySelector(".book-detail h1");
@@ -3419,6 +3421,22 @@ document.addEventListener("click", async (event) => {
         const author = data.author || "";
         authorEl.textContent = author;
         authorEl.hidden = !author;
+      }
+      // Update / insert the description paragraph in place.
+      const meta = document.querySelector(".book-detail-meta");
+      let descEl = document.querySelector(".book-detail-description");
+      const newDesc = data.description || "";
+      if (newDesc) {
+        if (!descEl && meta) {
+          descEl = document.createElement("p");
+          descEl.className = "book-detail-description";
+          // Insert right before the actions row so layout matches server-side render.
+          const actions = meta.querySelector(".book-detail-actions");
+          meta.insertBefore(descEl, actions || null);
+        }
+        if (descEl) descEl.textContent = newDesc;
+      } else if (descEl) {
+        descEl.remove();
       }
       setMessage("Saved.", "success");
       setTimeout(close, 600);

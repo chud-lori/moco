@@ -18,8 +18,9 @@ import (
 // the user finalizes an upload. Fields are best-effort; empty strings mean
 // "couldn't detect, ask the user."
 type Metadata struct {
-	Title  string `json:"title"`
-	Author string `json:"author"`
+	Title       string `json:"title"`
+	Author      string `json:"author"`
+	Description string `json:"description"`
 }
 
 // ExtractMetadata picks the right extractor based on file extension. Returns
@@ -42,9 +43,10 @@ func ExtractMetadata(path, ext string) (Metadata, error) {
 type opfMetadata struct {
 	XMLName  xml.Name `xml:"package"`
 	Metadata struct {
-		Title   []string `xml:"title"`
-		Creator []string `xml:"creator"`
-		Meta    []struct {
+		Title       []string `xml:"title"`
+		Creator     []string `xml:"creator"`
+		Description []string `xml:"description"`
+		Meta        []struct {
 			Name    string `xml:"name,attr"`
 			Content string `xml:"content,attr"`
 		} `xml:"meta"`
@@ -119,7 +121,39 @@ func ExtractEPUBMetadata(path string) (Metadata, error) {
 	if len(meta.Metadata.Creator) > 0 {
 		out.Author = strings.TrimSpace(meta.Metadata.Creator[0])
 	}
+	if len(meta.Metadata.Description) > 0 {
+		// Project Gutenberg and Calibre both put HTML inside <dc:description>
+		// occasionally (e.g. <p>...</p>). Strip tags so the stored value is
+		// plain text — we render it with white-space: pre-wrap and no
+		// markdown, so leaving raw HTML in would either escape into the page
+		// (ugly) or open an XSS surface (worse).
+		out.Description = sanitizeDescription(meta.Metadata.Description[0])
+	}
 	return out, nil
+}
+
+var (
+	tagRE       = regexp.MustCompile(`<[^>]+>`)
+	whitespaceRE = regexp.MustCompile(`[ \t]+`)
+	blankLineRE  = regexp.MustCompile(`\n{3,}`)
+)
+
+// sanitizeDescription strips HTML tags from an EPUB <dc:description> value
+// and normalizes whitespace, while preserving paragraph breaks. Result is
+// safe to store and render as plain text.
+func sanitizeDescription(s string) string {
+	s = tagRE.ReplaceAllString(s, "")
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	// Collapse runs of spaces/tabs on each line but keep newlines.
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSpace(whitespaceRE.ReplaceAllString(line, " "))
+	}
+	s = strings.Join(lines, "\n")
+	// Cap stretches of 3+ blank lines to 2 (one empty line between paragraphs).
+	s = blankLineRE.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
 }
 
 type opfContainer struct {

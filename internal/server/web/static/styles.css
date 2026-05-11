@@ -1752,6 +1752,30 @@ main { display: grid; gap: 22px; }
 .book-detail-author { font-size: 0.95rem; margin: 0; color: var(--text); }
 .book-detail-owner, .book-detail-time { margin: 0; font-size: 0.85rem; color: var(--muted); }
 .book-detail-tags { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+/* Full description on the book detail page — preserve paragraph breaks
+   from the source (EPUB <dc:description>) without rendering as HTML. */
+.book-detail-description {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+/* Snippet on dashboard / discover / wishlist cards. -webkit-line-clamp keeps
+   card heights consistent regardless of description length; the title and
+   metadata above stay aligned across the grid. */
+.book-panel-desc {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .book-detail-tags a {
   font-size: 0.78rem;
   padding: 3px 9px;

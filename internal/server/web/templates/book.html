@@ -57,6 +57,7 @@
         {{ range .Tags }}<li><a href="/app?tag={{ . }}">#{{ . }}</a></li>{{ end }}
       </ul>
     {{ end }}
+    {{ if .Book.Description }}<p class="book-detail-description">{{ .Book.Description }}</p>{{ end }}
 
     <div class="book-detail-actions">
       <a class="button primary" href="/books/{{ .Book.ID }}/read">Read now</a>
@@ -91,6 +92,10 @@
         <label>
           <span>Author</span>
           <input type="text" name="author" value="{{ .Book.Author }}" maxlength="200" />
+        </label>
+        <label>
+          <span>Description <small>(optional)</small></span>
+          <textarea name="description" rows="4" maxlength="4000" placeholder="A short summary readers will see on the book card and detail page.">{{ .Book.Description }}</textarea>
         </label>
         <div class="edit-book-cover-row">
           <img class="edit-book-cover-preview" data-edit-book-cover-preview src="/api/v1/books/{{ .Book.ID }}/cover" alt="Current cover" />

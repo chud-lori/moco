@@ -47,6 +47,10 @@ type Book struct {
 	UserID           string     `json:"userId"`
 	Title            string     `json:"title"`
 	Author           string     `json:"author"`
+	// Description is plain text, auto-extracted from EPUB <dc:description>
+	// on upload when present, and editable by the owner via the edit modal.
+	// Older rows default to "" — display layer treats empty as "no description".
+	Description      string     `json:"description"`
 	Format           string     `json:"format"`
 	Visibility       string     `json:"visibility"`
 	OwnerEmail       string     `json:"ownerEmail,omitempty"`
@@ -298,12 +302,12 @@ func (s *Store) CreateBook(ctx context.Context, book Book) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO books (
 			id, user_id, title, author, format, storage_path, cover_path, file_size,
-			created_at, updated_at, last_opened_at, original_filename, mime_type, derived_epub_path, visibility, reading_minutes
+			created_at, updated_at, last_opened_at, original_filename, mime_type, derived_epub_path, visibility, reading_minutes, description
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		book.ID, book.UserID, book.Title, book.Author, book.Format, book.StoragePath, book.CoverPath, book.FileSize,
 		book.CreatedAt.UTC().Format(time.RFC3339Nano), book.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		nullableTime(book.LastOpenedAt), book.OriginalFilename, book.MIMEType, book.DerivedEPUBPath, book.Visibility, book.ReadingMinutes,
+		nullableTime(book.LastOpenedAt), book.OriginalFilename, book.MIMEType, book.DerivedEPUBPath, book.Visibility, book.ReadingMinutes, book.Description,
 	)
 	return err
 }
@@ -341,7 +345,7 @@ func (s *Store) UpdateBookTotalPages(ctx context.Context, userID, bookID string,
 func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.user_id = ?
@@ -362,7 +366,7 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath,
 			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 		); err != nil {
 			return nil, err
 		}
@@ -381,7 +385,7 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort string) ([]Book, error) {
 	query := `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.visibility = 'public'`
@@ -420,7 +424,7 @@ func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath,
 			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 		); err != nil {
 			return nil, err
 		}
@@ -443,7 +447,7 @@ func (s *Store) GetBook(ctx context.Context, userID, id string) (Book, error) {
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.id = ? AND b.user_id = ?`,
@@ -451,7 +455,7 @@ func (s *Store) GetBook(ctx context.Context, userID, id string) (Book, error) {
 	).Scan(
 		&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath,
 		&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-		&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+		&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -478,7 +482,7 @@ func (s *Store) GetBookAny(ctx context.Context, id string) (Book, error) {
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.id = ?`,
@@ -486,7 +490,7 @@ func (s *Store) GetBookAny(ctx context.Context, id string) (Book, error) {
 	).Scan(
 		&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath,
 		&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-		&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+		&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -535,12 +539,12 @@ func (s *Store) UpdateBookVisibility(ctx context.Context, userID, id, visibility
 // UpdateBookMetadata rewrites the editable user-facing fields (title, author).
 // Owner-scoped: returns ErrNotFound if the book doesn't exist or the caller
 // isn't the owner.
-func (s *Store) UpdateBookMetadata(ctx context.Context, userID, id, title, author string) error {
+func (s *Store) UpdateBookMetadata(ctx context.Context, userID, id, title, author, description string) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE books
-		SET title = ?, author = ?, updated_at = ?
+		SET title = ?, author = ?, description = ?, updated_at = ?
 		WHERE id = ? AND user_id = ?`,
-		title, author, time.Now().UTC().Format(time.RFC3339Nano), id, userID,
+		title, author, description, time.Now().UTC().Format(time.RFC3339Nano), id, userID,
 	)
 	if err != nil {
 		return err
@@ -967,7 +971,7 @@ func (s *Store) GetReadingStats(ctx context.Context, userID string) (ReadingStat
 func (s *Store) ListBooksFiltered(ctx context.Context, opts BookFilter) ([]Book, error) {
 	q := `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM books b
 		JOIN users u ON u.id = b.user_id
 		WHERE b.user_id = ?`
@@ -1005,7 +1009,7 @@ func (s *Store) ListBooksFiltered(ctx context.Context, opts BookFilter) ([]Book,
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath,
 			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
-			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 		); err != nil {
 			return nil, err
 		}
@@ -1068,7 +1072,7 @@ func (s *Store) AllBooksAdmin(ctx context.Context) ([]Book, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path,
 		       b.file_size, b.created_at, b.updated_at, b.last_opened_at, b.original_filename,
-		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM books b
 		JOIN users u ON u.id = b.user_id`)
 	if err != nil {
@@ -1083,7 +1087,7 @@ func (s *Store) AllBooksAdmin(ctx context.Context) ([]Book, error) {
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility,
 			&book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath, &book.FileSize, &createdAt, &updatedAt, &lastOpened,
-			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 		); err != nil {
 			return nil, err
 		}
@@ -1181,7 +1185,7 @@ func (s *Store) ListBooksSharedWithUser(ctx context.Context, userID string) ([]B
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path,
 		       b.file_size, b.created_at, b.updated_at, b.last_opened_at, b.original_filename,
-		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM book_shares s
 		JOIN books b ON b.id = s.book_id
 		JOIN users u ON u.id = b.user_id
@@ -1199,7 +1203,7 @@ func (s *Store) ListBooksSharedWithUser(ctx context.Context, userID string) ([]B
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility,
 			&book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath, &book.FileSize, &createdAt, &updatedAt, &lastOpened,
-			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 		); err != nil {
 			return nil, err
 		}
@@ -1253,7 +1257,7 @@ func (s *Store) ListWishlist(ctx context.Context, userID string) ([]Book, error)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path,
 		       b.file_size, b.created_at, b.updated_at, b.last_opened_at, b.original_filename,
-		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
+		       b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
 		FROM wishlist w
 		JOIN books b ON b.id = w.book_id
 		JOIN users u ON u.id = b.user_id
@@ -1272,7 +1276,7 @@ func (s *Store) ListWishlist(ctx context.Context, userID string) ([]Book, error)
 		if err := rows.Scan(
 			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility,
 			&book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath, &book.FileSize, &createdAt, &updatedAt, &lastOpened,
-			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages,
+			&book.OriginalFilename, &book.MIMEType, &book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
 		); err != nil {
 			return nil, err
 		}

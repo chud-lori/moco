@@ -771,6 +771,7 @@ func (s *Server) handleInspectBook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"title":           meta.Title,
 		"author":          meta.Author,
+		"description":     meta.Description,
 		"format":          format,
 		"extractedCover":  coverDataURL,
 		"hasCover":        coverDataURL != "",
@@ -839,6 +840,17 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 	author := strings.TrimSpace(r.FormValue("author"))
 	if title == "" {
 		title = strings.TrimSuffix(header.Filename, ext)
+	}
+	// Auto-extract description from the file's own metadata (EPUB
+	// <dc:description>, etc.). The upload form doesn't ask for it — owners
+	// can edit it later via the book detail's edit modal. Best-effort: an
+	// error or missing field just leaves it empty.
+	extractedDescription := ""
+	if metaForDesc, metaErr := epub.ExtractMetadata(tmpPath, ext); metaErr == nil {
+		extractedDescription = metaForDesc.Description
+		if len(extractedDescription) > 4000 {
+			extractedDescription = extractedDescription[:4000]
+		}
 	}
 	convertToEPUB := r.FormValue("convertToEpub") == "1" || r.FormValue("convertToEpub") == "true"
 	readingMinutes := reader.EstimateMinutesFromBytes(format, size)
@@ -942,6 +954,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request) {
 		UserID:           user.ID,
 		Title:            strings.ReplaceAll(title, "%20", " "),
 		Author:           author,
+		Description:      extractedDescription,
 		Format:           storedFormat,
 		Visibility:       visibility,
 		OwnerEmail:       user.Email,
@@ -1018,14 +1031,16 @@ func (s *Server) handleUpdateBookMetadata(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req struct {
-		Title  string `json:"title"`
-		Author string `json:"author"`
+		Title       string `json:"title"`
+		Author      string `json:"author"`
+		Description string `json:"description"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	title := strings.TrimSpace(req.Title)
 	author := strings.TrimSpace(req.Author)
+	description := strings.TrimSpace(req.Description)
 	if title == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "title is required"})
 		return
@@ -1034,7 +1049,11 @@ func (s *Server) handleUpdateBookMetadata(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "title or author is too long"})
 		return
 	}
-	if err := s.store.UpdateBookMetadata(r.Context(), user.ID, r.PathValue("id"), title, author); err != nil {
+	if len(description) > 4000 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "description is too long (max 4000 characters)"})
+		return
+	}
+	if err := s.store.UpdateBookMetadata(r.Context(), user.ID, r.PathValue("id"), title, author, description); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, store.ErrNotFound) {
 			status = http.StatusNotFound
@@ -1042,7 +1061,7 @@ func (s *Server) handleUpdateBookMetadata(w http.ResponseWriter, r *http.Request
 		writeJSON(w, status, map[string]any{"error": "book not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "title": title, "author": author})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "title": title, "author": author, "description": description})
 }
 
 // handleUpdateTotalPages records the PDF's true page count, reported by
