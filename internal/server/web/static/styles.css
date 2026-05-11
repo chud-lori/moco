@@ -239,9 +239,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .page-shell-narrow { width: 100%; max-width: 760px; }
 @media (min-width: 768px) {
+  /* Wider shell so content reaches closer to the viewport edges. Combined
+     with the flat body color, this reduces the perception of empty
+     "walls" outside the content area on wide monitors. */
   .page-shell {
-    width: min(1240px, calc(100% - 32px));
-    padding: 24px 0 56px;
+    width: min(1440px, calc(100% - 32px));
+    padding: 20px 0 48px;
   }
   .page-shell-narrow { width: min(760px, calc(100% - 24px)); }
 }
@@ -593,8 +596,12 @@ main { display: grid; gap: 22px; }
   padding: 16px 0 12px;
 }
 
+/* .feature-band intentionally excluded — the hero is now a plain layout
+   container that sits flush against the page background. A border + shadow
+   here rendered it as an outlined rectangle that read as "side walls" on
+   wide screens. */
 .hero-copy, .hero-panel, .library-card, .reader-card,
-.toc-panel, .note-card, .feature-band, .notes-preview {
+.toc-panel, .note-card, .notes-preview {
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
 }
@@ -775,32 +782,32 @@ main { display: grid; gap: 22px; }
 /* Feature band (Discover hero, etc.).
    Mobile-first: single column, tight padding. Desktop: two-column with the
    layout-pattern rules in the @media (min-width: 768px) block below. */
-/* Hero band as a plain layout container — no pill background. A separate
-   filled card here sat as a slightly-brighter rectangle inside the page,
-   which read as the content "boxed in" by darker side panels. Dropping
-   the background flushes the hero against the body so the page feels
-   open and the books stay the visual focus. */
+/* Discovery heading band — plain editorial text on the body, no card
+   chrome. Single-column on every viewport so the section-label, headline,
+   and description read as one continuous block instead of two fragments
+   separated by empty cream (which is what the old 2-column layout looked
+   like once the wrapping banner was removed). The search/sort toolbar
+   immediately below it completes the discovery block. */
 .feature-band {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px 4px;
-  margin: 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 2px 6px;
+  margin: 0 0 8px;
   background: transparent;
   max-width: 100%;
   min-width: 0;
 }
 .feature-band > * { min-width: 0; }
-.feature-band p { font-size: var(--m-fs-body); line-height: 1.5; }
+.feature-band > * > * { margin: 0; }
+.feature-band p { font-size: var(--m-fs-body); line-height: 1.45; color: var(--muted); max-width: 60ch; }
 @media (min-width: 768px) {
   .feature-band {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    gap: 32px;
-    padding: 16px 4px 8px;
-    margin: 4px 0 18px;
-    align-items: end;
+    gap: 6px;
+    padding: 10px 2px 4px;
+    margin: 0 0 10px;
   }
-  .feature-band p { font-size: 1rem; color: var(--muted); max-width: 36ch; }
+  .feature-band p { font-size: 0.95rem; line-height: 1.5; }
 }
 
 /* Audience bands (For readers / For writers) on the home page. Mobile:
@@ -835,14 +842,22 @@ main { display: grid; gap: 22px; }
 }
 
 /* Cross-band heading scale.
-   Mobile-first: 1.25rem (--m-fs-h2). Desktop scales up to 1.9–3.2rem. */
+   .feature-band is the discovery section heading on /discover — kept smaller
+   so it doesn't dominate the page; the book grid is the focal point.
+   .reader-preview / .notes-preview are landing-page bands where a bigger
+   editorial headline still works. */
 .feature-band h2, .reader-preview h2, .notes-preview h2 {
   margin: 0;
   font-size: var(--m-fs-h2);
   line-height: 1.2;
 }
 @media (min-width: 768px) {
-  .feature-band h2, .reader-preview h2, .notes-preview h2 {
+  .feature-band h2 {
+    font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+  .reader-preview h2, .notes-preview h2 {
     font-size: clamp(1.9rem, 4vw, 3.2rem);
     line-height: 1.05;
   }
@@ -1039,29 +1054,28 @@ main { display: grid; gap: 22px; }
 .book-format {
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   font-weight: 700;
   color: var(--accent-dark);
-  padding: 3px 7px;
-  border-radius: 6px;
-  background: var(--accent-soft);
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid rgba(186, 125, 74, 0.35);
 }
 
 .visibility-chip {
-  padding: 3px 9px;
+  padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 248, 240, 0.84);
-  color: var(--text);
-  font-size: 0.72rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.68rem;
   font-weight: 600;
   text-transform: capitalize;
   letter-spacing: 0.04em;
 }
 .visibility-chip[data-visibility="public"] {
-  background: var(--success-soft);
   color: var(--success);
-  border-color: rgba(74, 125, 86, 0.35);
 }
 
 /* ---------- Forms ---------- */
@@ -1444,32 +1458,30 @@ main { display: grid; gap: 22px; }
    on the action row pushes consistently across siblings of different title
    lengths). */
 .book-panel {
-  padding: 12px;
-  border: 1px solid rgba(85, 66, 43, 0.12);
+  padding: 10px 10px 14px;
+  /* Almost-invisible border + transparent background so cards don't read
+     as strong filled containers against the body. The cover and title do
+     the visual work; the card outline only emerges on hover. */
+  border: 1px solid transparent;
   border-radius: var(--m-radius-card);
-  /* Match the page background so cards don't render as brighter rectangles
-     against a darker body. Definition comes from the border + soft shadow
-     instead of contrast — keeps the page feeling open and flush. */
-  background: var(--page-bg);
-  box-shadow: 0 2px 8px -4px rgba(34, 28, 22, 0.08);
+  background: transparent;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   height: 100%;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
-/* Interactive feedback: lift the card on hover so the grid reads as
-   clickable rather than just decorative. :focus-within picks up keyboard
-   navigation on the inner cover/title links too. */
 .book-panel:hover, .book-panel:focus-within {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px -16px rgba(34, 28, 22, 0.32), 0 4px 10px -6px rgba(34, 28, 22, 0.18);
-  border-color: rgba(85, 66, 43, 0.18);
+  transform: translateY(-3px);
+  border-color: rgba(85, 66, 43, 0.14);
+  box-shadow: 0 18px 32px -22px rgba(34, 28, 22, 0.25);
 }
 .book-panel h2 {
-  font-size: 1rem;
-  margin: 4px 0 0;
-  line-height: 1.25;
+  font-size: 1.02rem;
+  margin: 6px 0 2px;
+  line-height: 1.22;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   /* Clamp to 2 lines so a long title can't push the card height past its
      siblings in the dashboard grid. -webkit-line-clamp is widely supported
      and handles ellipsis automatically. */
@@ -1479,10 +1491,20 @@ main { display: grid; gap: 22px; }
   overflow: hidden;
   word-break: break-word;
 }
-.book-panel p { font-size: var(--m-fs-meta); margin: 0; }
+/* Author line: smaller, muted, single-line truncation so card heights
+   stay aligned across the grid regardless of author name length. */
+.book-panel p {
+  font-size: 0.82rem;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @media (min-width: 768px) {
-  .book-panel { padding: 12px 14px 14px; border-radius: 18px; }
-  .book-panel h2 { font-size: 1.05rem; }
+  .book-panel { padding: 12px 12px 16px; border-radius: 18px; }
+  .book-panel h2 { font-size: 1.08rem; }
   .book-panel p { font-size: 0.85rem; }
 }
 
@@ -1490,25 +1512,39 @@ main { display: grid; gap: 22px; }
   display: block;
   width: 100%;
   aspect-ratio: 2 / 3;
-  margin: -4px 0 8px;
-  border-radius: 12px;
+  margin: -4px 0 10px;
+  border-radius: 10px;
   overflow: hidden;
-  background: rgba(85, 66, 43, 0.06);
-  /* Inset shadow + hair-line outline gives plain-white extracted covers
-     (e.g. a PDF first page that's just text on white) a defined edge so they
-     don't disappear into the card background. Real covers are unaffected
-     visually — the inset shadow is too subtle to read over a printed image. */
-  box-shadow: inset 0 0 0 1px rgba(85, 66, 43, 0.08), inset 0 -32px 36px -28px rgba(85, 66, 43, 0.18);
   position: relative;
+  /* Warm gradient backdrop. For plain extracted covers (a PDF first page
+     that's nearly white) this shows softly through transparent edges so
+     the cover doesn't read as an empty white rectangle. Real cover art
+     (printed jpg/png) opaquely covers it, so there's no visual effect on
+     books that already have proper art. */
+  background: linear-gradient(135deg, #ece1cb 0%, #d9c7a4 100%);
+  border: 1px solid rgba(85, 66, 43, 0.1);
+  box-shadow: 0 1px 2px rgba(34, 28, 22, 0.04);
 }
 .book-cover-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform 0.4s ease;
+  transition: transform 0.5s ease;
 }
-.book-cover-thumb:hover img { transform: scale(1.03); }
+/* Book-spine illusion — a hair-thin darker stripe on the left edge of
+   every cover. Subtle on real cover art (looks like the spine fold);
+   gives plain covers a small designed detail so they don't look empty. */
+.book-cover-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(34, 28, 22, 0.1) 0%, rgba(34, 28, 22, 0.02) 3%, transparent 7%);
+  border-radius: inherit;
+}
+.book-panel:hover .book-cover-thumb img,
+.book-panel:focus-within .book-cover-thumb img { transform: scale(1.04); }
 .book-panel.has-cover h2 { margin-top: 0; }
 
 .cover-upload input[type="file"] {
@@ -3141,8 +3177,12 @@ body.pdf-fs-active { overflow: hidden; }
 
   .reader-page-full { padding: 26px 6px 24px; }
 
-  .feature-band, .reader-preview, .dashboard-hero { gap: 28px; }
-  .feature-band, .reader-preview { grid-template-columns: 1fr 0.8fr; }
+  .reader-preview, .dashboard-hero { gap: 28px; }
+  .reader-preview { grid-template-columns: 1fr 0.8fr; }
+  /* .feature-band layout is set at its primary rule above — keeping the
+     `2fr 1fr` two-column desktop layout there. Overriding it here was a
+     leftover from when the hero was a card; left in place it forced the
+     paragraph column too wide and broke the proportions. */
 
   .hero-copy { order: 0; }
   .hero-panel { order: 0; }
