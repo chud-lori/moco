@@ -3645,6 +3645,13 @@ function isSpaPath(pathname) {
   return SPA_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"));
 }
 
+// Tracks the path+search currently rendered into <main>. Used by the
+// popstate handler to skip pointless re-renders when the URL changed for
+// reasons other than SPA navigation (e.g. book modal opens push /books/X,
+// closing pops back to the same /app URL that's already on screen).
+// Re-rendering would scroll back to top and lose the user's place.
+let lastSpaPath = window.location.pathname + window.location.search;
+
 async function spaNavigate(target, push) {
   const main = document.querySelector("main#main");
   if (!main) { window.location.assign(target); return; }
@@ -3703,6 +3710,7 @@ async function spaNavigate(target, push) {
     main.querySelectorAll("form[data-auto-submit]").forEach(wireAutoSubmitForm);
 
     if (push) history.pushState({ spa: true }, "", target);
+    lastSpaPath = target;
     window.scrollTo(0, 0);
   } catch (err) {
     // On failure, fall back to a full navigation so the user isn't stuck.
@@ -3736,9 +3744,13 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("popstate", () => {
-  if (isSpaPath(window.location.pathname)) {
-    spaNavigate(window.location.pathname + window.location.search, false);
-  }
+  if (!isSpaPath(window.location.pathname)) return;
+  const current = window.location.pathname + window.location.search;
+  // Skip if the visible <main> already matches the URL — happens when the
+  // book modal pops history.back() to dismiss /books/X over an /app screen
+  // we never actually left. Re-rendering would scroll the user to the top.
+  if (current === lastSpaPath) return;
+  spaNavigate(current, false);
 });
 
 // ---------- Selection popover (shared by EPUB + Markdown readers) ----------
