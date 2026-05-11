@@ -67,15 +67,14 @@
   --m-fs-meta: 0.85rem;          /* secondary/muted copy */
   --m-fs-input: 16px;            /* >=16px so iOS doesn't zoom on input focus */
 
-  /* Body background is tuned to the cream tone that component backgrounds
-     (.book-panel ≈ rgba(255,249,241,0.86), .feature-band ≈ rgba(255,250,243,0.76))
-     composite to over it — ~#fcf7ef. Keeping body close to that color
-     means the viewport area OUTSIDE .page-shell on wide screens (and the
-     gaps between cards) doesn't read as a darker frame around the content.
-     A very subtle top-to-bottom warm shift preserves a paper feel without
-     introducing the asymmetric left-bright/right-dark look the old
-     top-left radial caused. */
-  --bg-grad: linear-gradient(180deg, #fbf6ec 0%, #f8f1e3 100%);
+  /* Single flat warm cream across the entire viewport so there's nothing
+     for "darker side panel" perception to read against. Component cards
+     (.book-panel, etc.) share the same base color and lean on borders +
+     shadows for definition instead of contrast against the body. The
+     reader keeps a faint gradient because the reading surface benefits
+     from a subtle paper-like depth. */
+  --page-bg: #faf4e8;
+  --bg-grad: var(--page-bg);
   --reader-bg-grad: linear-gradient(180deg, #f7f0e5 0%, #f1e7d4 100%);
 }
 
@@ -776,26 +775,32 @@ main { display: grid; gap: 22px; }
 /* Feature band (Discover hero, etc.).
    Mobile-first: single column, tight padding. Desktop: two-column with the
    layout-pattern rules in the @media (min-width: 768px) block below. */
+/* Hero band as a plain layout container — no pill background. A separate
+   filled card here sat as a slightly-brighter rectangle inside the page,
+   which read as the content "boxed in" by darker side panels. Dropping
+   the background flushes the hero against the body so the page feels
+   open and the books stay the visual focus. */
 .feature-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
-  padding: 14px 16px;
-  margin: 0 0 12px;
-  border-radius: var(--m-radius-card);
-  background: rgba(255, 250, 243, 0.76);
+  gap: 8px;
+  padding: 8px 4px;
+  margin: 0 0 14px;
+  background: transparent;
   max-width: 100%;
   min-width: 0;
 }
 .feature-band > * { min-width: 0; }
-.feature-band p { font-size: var(--m-fs-body); line-height: 1.45; }
+.feature-band p { font-size: var(--m-fs-body); line-height: 1.5; }
 @media (min-width: 768px) {
   .feature-band {
-    gap: 14px;
-    padding: 18px 26px;
-    margin: 4px 0 14px;
-    border-radius: var(--radius-lg);
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 32px;
+    padding: 16px 4px 8px;
+    margin: 4px 0 18px;
+    align-items: end;
   }
+  .feature-band p { font-size: 1rem; color: var(--muted); max-width: 36ch; }
 }
 
 /* Audience bands (For readers / For writers) on the home page. Mobile:
@@ -1440,10 +1445,13 @@ main { display: grid; gap: 22px; }
    lengths). */
 .book-panel {
   padding: 12px;
-  border: 1px solid rgba(85, 66, 43, 0.1);
+  border: 1px solid rgba(85, 66, 43, 0.12);
   border-radius: var(--m-radius-card);
-  background: rgba(255, 249, 241, 0.86);
-  box-shadow: var(--shadow);
+  /* Match the page background so cards don't render as brighter rectangles
+     against a darker body. Definition comes from the border + soft shadow
+     instead of contrast — keeps the page feeling open and flush. */
+  background: var(--page-bg);
+  box-shadow: 0 2px 8px -4px rgba(34, 28, 22, 0.08);
   display: flex;
   flex-direction: column;
   gap: 6px;

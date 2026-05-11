@@ -99,7 +99,7 @@ type readerPageData struct {
 // any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
 // browsers, mobile WebViews that ignore Cache-Control) treat the assets as
 // new resources. Kept in sync with the service-worker cache key.
-const AssetVersion = "v81"
+const AssetVersion = "v82"
 
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
