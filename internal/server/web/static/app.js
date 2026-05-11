@@ -445,12 +445,31 @@ if (uploadForm) {
 
   function refreshCoverPreview() {
     if (!coverPreview || !coverPreviewImg || !coverSaltInput) return;
-    // The user picking their own cover image overrides everything.
-    if (coverFileInput?.files?.[0]) {
-      coverPreview.hidden = true;
+    // The user picking their own cover image overrides everything else —
+    // show *their* image as the preview so they get visual confirmation
+    // the file was accepted. The regenerate / first-page buttons don't
+    // apply to a manually picked cover, so they're hidden here.
+    const pickedCover = coverFileInput?.files?.[0];
+    if (pickedCover) {
+      // Revoke any prior object URL we created so we don't leak blobs as
+      // the user picks different files in a row.
+      if (coverPreviewImg.dataset.objectUrl) {
+        URL.revokeObjectURL(coverPreviewImg.dataset.objectUrl);
+        coverPreviewImg.dataset.objectUrl = "";
+      }
+      const url = URL.createObjectURL(pickedCover);
+      coverPreviewImg.src = url;
+      coverPreviewImg.dataset.objectUrl = url;
       coverSaltInput.value = "";
       if (coverForceInput) coverForceInput.value = "";
       useGeneratedOverride = false;
+      if (coverPreviewLabel) {
+        coverPreviewLabel.textContent = "Using the cover you uploaded.";
+      }
+      setBtnVisible(coverRerollBtn, false);
+      setBtnVisible(renderPdfBtn, false);
+      setBtnVisible(useGeneratedBtn, false);
+      coverPreview.hidden = false;
       return;
     }
     // Two mutually-exclusive states drive what the preview shows:
@@ -642,6 +661,10 @@ if (uploadForm) {
       inspectAbort = null;
     }
     if (coverPreview) coverPreview.hidden = true;
+    if (coverPreviewImg?.dataset.objectUrl) {
+      URL.revokeObjectURL(coverPreviewImg.dataset.objectUrl);
+      coverPreviewImg.dataset.objectUrl = "";
+    }
     if (coverSaltInput) coverSaltInput.value = "";
     if (coverFileInput) coverFileInput.value = "";
     if (coverForceInput) coverForceInput.value = "";
