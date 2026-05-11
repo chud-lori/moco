@@ -40,13 +40,20 @@
           <article><p>Anything here is intentionally published by its owner and readable by everyone.</p></article>
         </section>
 
-        <form class="quotes-toolbar" method="get" action="/discover" role="search" aria-label="Search public books" data-auto-submit data-results-target="[data-discover-results]">
-          <label class="search-input">
+        <form class="discover-toolbar" method="get" action="/discover" role="search" aria-label="Search public books" data-auto-submit data-results-target="[data-discover-results]">
+          <label class="discover-search">
             <span class="sr-only">Search public books</span>
             <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="search" name="q" value="{{ .Query }}" placeholder="Search by title, author, or reader…" autocomplete="off" />
           </label>
-          <noscript><button class="button subtle" type="submit">Search</button></noscript>
+          <label class="discover-sort">
+            <span class="sr-only">Sort</span>
+            <select name="sort">
+              <option value="" {{ if eq .Sort "" }}selected{{ end }}>Recent</option>
+              <option value="title" {{ if eq .Sort "title" }}selected{{ end }}>Title (A–Z)</option>
+            </select>
+          </label>
+          <noscript><button class="button subtle" type="submit">Apply</button></noscript>
         </form>
 
         <div data-discover-results>

@@ -3272,6 +3272,70 @@ main#main.is-spa-loading::before {
   .search-input { flex: 1 1 240px; }
 }
 .search-input .icon { color: var(--muted); flex-shrink: 0; }
+
+/* ----- Discover toolbar -----
+   Flat layout (no outer pill) so the input doesn't end up nested in a
+   second rounded container — that "pill-in-pill" look read as broken UI.
+   On desktop the search input takes the lion's share and the sort select
+   sits beside it. */
+.discover-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+  width: 100%;
+  min-width: 0;
+}
+.discover-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 16px;
+  background: rgba(255, 251, 245, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: var(--m-tap);
+  box-shadow: var(--shadow-soft);
+}
+.discover-search .icon { color: var(--muted); flex-shrink: 0; }
+.discover-search input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.discover-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(255, 251, 245, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: var(--m-tap);
+  box-shadow: var(--shadow-soft);
+}
+.discover-sort select {
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  width: 100%;
+  min-width: 0;
+}
+@media (min-width: 768px) {
+  .discover-toolbar { flex-direction: row; align-items: center; }
+  .discover-search { flex: 1 1 auto; min-height: var(--tap); padding: 8px 16px; }
+  .discover-sort { flex: 0 0 auto; min-height: var(--tap); padding: 6px 14px; }
+}
 .search-input input {
   width: 100%;
   min-width: 0;

@@ -378,7 +378,7 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 	return books, rows.Err()
 }
 
-func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search string) ([]Book, error) {
+func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort string) ([]Book, error) {
 	query := `
 		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
 		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages
@@ -398,7 +398,12 @@ func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search strin
 		needle := "%" + strings.ToLower(search) + "%"
 		args = append(args, needle, needle, needle)
 	}
-	query += ` ORDER BY COALESCE(b.last_opened_at, b.updated_at) DESC`
+	switch sort {
+	case "title":
+		query += ` ORDER BY b.title COLLATE NOCASE ASC`
+	default:
+		query += ` ORDER BY COALESCE(b.last_opened_at, b.updated_at) DESC`
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
