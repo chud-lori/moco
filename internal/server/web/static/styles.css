@@ -1392,6 +1392,46 @@ main { display: grid; gap: 22px; }
   word-break: break-word;
 }
 .form-message.is-error { color: var(--danger); }
+
+/* Google sign-in button. Rendered as a plain anchor (the start handler
+   uses a GET redirect, no JS needed). Matches Google's brand guidelines
+   for "Continue with Google" — white background, dark text, multi-color
+   "G" mark. */
+.button.google-signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  background: #ffffff;
+  color: #1f1813;
+  border: 1px solid rgba(85, 66, 43, 0.2);
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.button.google-signin:hover { background: #f7f1e8; border-color: rgba(85, 66, 43, 0.32); }
+.google-signin-mark { flex-shrink: 0; }
+
+/* "or sign in with email" divider — horizontal lines flanking centered text. */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(85, 66, 43, 0.15);
+}
 .form-message.is-success { color: var(--success); }
 
 .auth-footer { margin: 0; }

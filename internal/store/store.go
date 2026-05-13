@@ -228,6 +228,60 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, string,
 	return user, passwordHash, nil
 }
 
+// GetUserByGoogleSub looks up a user by their Google subject identifier
+// (the stable, opaque "sub" claim from Google's ID token). Returns
+// ErrNotFound when no row matches — caller typically falls back to
+// GetUserByEmail (auto-link) and then to creating a new user.
+func (s *Store) GetUserByGoogleSub(ctx context.Context, sub string) (User, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, email, password_hash, created_at, updated_at, display_name, anonymous_owner
+		FROM users
+		WHERE google_sub = ?`, sub)
+	user, _, err := scanUser(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrNotFound
+		}
+		return User{}, err
+	}
+	return user, nil
+}
+
+// LinkGoogleSub records a Google identity on an existing user — used in
+// the auto-link flow when a Google email already matches an existing
+// password account. Idempotent: re-linking the same sub is a no-op.
+func (s *Store) LinkGoogleSub(ctx context.Context, userID, sub string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users SET google_sub = ?, updated_at = ? WHERE id = ?`,
+		sub, time.Now().UTC().Format(time.RFC3339Nano), userID,
+	)
+	return err
+}
+
+// CreateUserFromGoogle creates a new user with no password (password_hash
+// is set to empty string, which VerifyPassword always rejects) and an
+// initial display name from the Google profile. The google_sub column is
+// populated atomically so subsequent logins find the user via
+// GetUserByGoogleSub.
+func (s *Store) CreateUserFromGoogle(ctx context.Context, id, email, displayName, sub string, now time.Time) (User, error) {
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = defaultDisplayName(cleanEmail)
+	}
+	ts := now.UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO users (id, email, password_hash, created_at, updated_at, display_name, google_sub)
+		VALUES (?, ?, '', ?, ?, ?, ?)`,
+		id, cleanEmail, ts, ts, name, sub,
+	)
+	if err != nil {
+		return User{}, err
+	}
+	user, _, err := s.GetUserByEmail(ctx, cleanEmail)
+	return user, err
+}
+
 func (s *Store) GetUserByID(ctx context.Context, id string) (User, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, email, password_hash, created_at, updated_at, display_name, anonymous_owner

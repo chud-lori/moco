@@ -46,6 +46,12 @@ type Config struct {
 	PublicURL      string // canonical https://... URL — used for absolute links in OG tags
 	Storage        storage.Backend
 	StorageBaseDir string // local fallback dir when backend is filesystem-based
+	// Google OAuth — set all three to enable the "Continue with Google"
+	// flow. Leave any blank to disable (the /api/v1/auth/google/* routes
+	// return 503 and the login UI hides the button).
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
 }
 
 type Server struct {
@@ -267,6 +273,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	s.mux.HandleFunc("GET /api/v1/auth/google/start", s.handleGoogleStart)
+	s.mux.HandleFunc("GET /api/v1/auth/google/callback", s.handleGoogleCallback)
 	s.mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	s.mux.HandleFunc("PUT /api/v1/auth/me", s.handleUpdateAccount)
@@ -378,17 +386,21 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, "discover.html", data)
 }
 
-func (s *Server) handleSignupPage(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSignupPage(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, "auth.html", authPageData{
-		pageData: pageData{Title: "Sign up - Moco"},
-		Mode:     "Sign up",
+		pageData:      pageData{Title: "Sign up - Moco"},
+		Mode:          "Sign up",
+		GoogleEnabled: s.googleOAuthEnabled(),
+		OAuthError:    r.URL.Query().Get("oauth_error"),
 	})
 }
 
-func (s *Server) handleLoginPage(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, "auth.html", authPageData{
-		pageData: pageData{Title: "Sign in - Moco"},
-		Mode:     "Sign in",
+		pageData:      pageData{Title: "Sign in - Moco"},
+		Mode:          "Sign in",
+		GoogleEnabled: s.googleOAuthEnabled(),
+		OAuthError:    r.URL.Query().Get("oauth_error"),
 	})
 }
 

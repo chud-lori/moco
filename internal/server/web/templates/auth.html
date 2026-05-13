@@ -28,6 +28,21 @@
           <p class="section-label">{{ .Mode }}</p>
           <h1 class="auth-title">{{ if eq .Mode "Sign up" }}Read your library. Publish your work.{{ else }}Welcome back to your shelf{{ end }}</h1>
           <p class="auth-copy">{{ if eq .Mode "Sign up" }}Create an account to upload, read, and (when you're ready) publish your own writing to the public shelf.{{ else }}Sign in to continue reading and review your highlights.{{ end }}</p>
+          {{ if .OAuthError }}
+            <p class="form-message is-error" role="alert">Google sign-in didn't complete ({{ .OAuthError }}). Please try again.</p>
+          {{ end }}
+          {{ if .GoogleEnabled }}
+            <a class="button google-signin" href="/api/v1/auth/google/start?next=/app">
+              <svg class="google-signin-mark" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M21.6 12.227c0-.708-.064-1.388-.182-2.04H12v3.86h5.382a4.6 4.6 0 0 1-1.996 3.018v2.51h3.227c1.887-1.738 2.987-4.297 2.987-7.348z" fill="#4285F4"/>
+                <path d="M12 22c2.7 0 4.964-.895 6.619-2.424l-3.227-2.51c-.896.6-2.04.954-3.392.954-2.61 0-4.82-1.762-5.61-4.13H3.05v2.59A9.998 9.998 0 0 0 12 22z" fill="#34A853"/>
+                <path d="M6.39 13.89A6.005 6.005 0 0 1 6.077 12c0-.66.114-1.3.314-1.89V7.52H3.05A9.998 9.998 0 0 0 2 12c0 1.614.386 3.142 1.05 4.48l3.34-2.59z" fill="#FBBC05"/>
+                <path d="M12 5.977c1.47 0 2.787.506 3.825 1.498l2.866-2.866C16.96 2.99 14.697 2 12 2A9.998 9.998 0 0 0 3.05 7.52l3.34 2.59C7.18 7.74 9.39 5.977 12 5.977z" fill="#EA4335"/>
+              </svg>
+              Continue with Google
+            </a>
+            <div class="auth-divider"><span>or {{ if eq .Mode "Sign up" }}sign up{{ else }}sign in{{ end }} with email</span></div>
+          {{ end }}
           <form class="stack-form" data-auth-form data-mode="{{ if eq .Mode "Sign up" }}signup{{ else }}login{{ end }}" novalidate>
             <label><span>Email</span><input type="email" name="email" autocomplete="email" inputmode="email" autofocus required /></label>
             <label>

@@ -43,14 +43,17 @@ func main() {
 	log.Printf("storage backend: %s", kind)
 
 	srv := server.New(server.Config{
-		Addr:           addr,
-		DataDir:        dataDir,
-		DBPath:         os.Getenv("MOCO_DB_PATH"),
-		CookieName:     "moco_session",
-		SecureCookies:  envBool("MOCO_SECURE_COOKIES"),
-		PublicURL:      os.Getenv("MOCO_PUBLIC_URL"),
-		Storage:        backend,
-		StorageBaseDir: dataDir,
+		Addr:               addr,
+		DataDir:            dataDir,
+		DBPath:             os.Getenv("MOCO_DB_PATH"),
+		CookieName:         "moco_session",
+		SecureCookies:      envBool("MOCO_SECURE_COOKIES"),
+		PublicURL:          os.Getenv("MOCO_PUBLIC_URL"),
+		Storage:            backend,
+		StorageBaseDir:     dataDir,
+		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		GoogleRedirectURL:  os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
 	})
 
 	if *migrate {
