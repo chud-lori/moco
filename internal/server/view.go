@@ -107,11 +107,12 @@ type readerPageData struct {
 	PublicAllowed  bool
 }
 
-// AssetVersion is appended to /static/* URLs as a cache-buster. Bump it on
-// any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
-// browsers, mobile WebViews that ignore Cache-Control) treat the assets as
-// new resources. Kept in sync with the service-worker cache key.
-const AssetVersion = "v95"
+// AssetVersion is appended to /static/* URLs as a cache-buster and reused
+// as the service-worker cache key, so a new value invalidates HTTP caches
+// (Cloudflare, in-app browsers, mobile WebViews that ignore Cache-Control)
+// and the SW cache at once. Set via -ldflags from the Dockerfile to the
+// short git SHA on every deploy; defaults to "dev" for local runs.
+var AssetVersion = "dev"
 
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{

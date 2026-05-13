@@ -20,8 +20,13 @@ PORT=${PORT:-8666}
 echo "==> [1/4] git pull"
 git pull --ff-only
 
+# Bake the current commit SHA into the binary as AssetVersion. The compose
+# file forwards VERSION as a build arg; the Dockerfile sets it via -ldflags
+# -X so every deploy gets a unique asset query-string + SW cache key.
+export VERSION="$(git rev-parse --short HEAD)"
+
 echo
-echo "==> [2/4] docker compose up -d --build"
+echo "==> [2/4] docker compose up -d --build (VERSION=${VERSION})"
 docker compose up -d --build
 
 echo

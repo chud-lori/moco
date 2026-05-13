@@ -281,7 +281,7 @@ The stylesheet (`internal/server/web/static/styles.css`) is **mobile-first**. Ev
 5. **iOS zoom-on-focus.** Every text input must have `font-size ≥ 16px` on mobile (token: `--m-fs-input`). Below that, Safari auto-zooms when the user taps, breaking layout.
 6. **Tap targets ≥ 48px** for primary controls on mobile (token: `--m-tap`).
 7. **No nested rounded containers.** A pill containing pills creates the "double-rounded" visual artifact. Either round the outer, or round the inner — not both.
-8. **Cache busting.** Bump `AssetVersion` in `internal/server/view.go` whenever you edit `styles.css` or `app.js`. The constant is appended as `?v=` to every static asset reference and reused as the service-worker cache key, so a deploy automatically invalidates CDN + browser caches without any manual purge.
+8. **Cache busting.** `AssetVersion` is baked from the short git SHA at Docker build time via `-ldflags` (see `Dockerfile` + `deploy.sh`) — every deploy gets a unique value automatically. It's appended as `?v=` to every static asset reference and reused as the service-worker cache key, so a new commit invalidates CDN + browser caches without any manual purge. Local `go run` builds use the default `"dev"`; pass `-ldflags "-X moco/internal/server.AssetVersion=local-$(date +%s)"` if you need a unique value while iterating.
 
 ### Why
 

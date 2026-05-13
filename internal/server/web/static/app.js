@@ -37,6 +37,45 @@ function toast(message, kind = "info", { autoDismiss = true } = {}) {
   return node;
 }
 
+// showUpdateToast surfaces a sticky "new version ready" prompt with explicit
+// Reload / Later actions. Used by the service-worker controllerchange flow
+// — see the registration block at the bottom of this file. Guarded against
+// duplicate toasts when controllerchange fires more than once per claim.
+function showUpdateToast(onReload) {
+  const stack = ensureToastStack();
+  if (stack.querySelector("[data-sw-update-toast]")) return;
+  const node = document.createElement("div");
+  node.className = "toast is-update";
+  node.setAttribute("data-sw-update-toast", "");
+  node.setAttribute("role", "status");
+
+  const text = document.createElement("span");
+  text.textContent = "A new version is ready.";
+  node.appendChild(text);
+
+  const reloadBtn = document.createElement("button");
+  reloadBtn.type = "button";
+  reloadBtn.className = "toast-action is-primary";
+  reloadBtn.textContent = "Reload";
+  reloadBtn.addEventListener("click", () => {
+    node.remove();
+    onReload();
+  });
+  node.appendChild(reloadBtn);
+
+  const laterBtn = document.createElement("button");
+  laterBtn.type = "button";
+  laterBtn.className = "toast-action";
+  laterBtn.textContent = "Later";
+  laterBtn.addEventListener("click", () => {
+    sessionStorage.setItem("moco:swReloadDismissed", "1");
+    node.remove();
+  });
+  node.appendChild(laterBtn);
+
+  stack.appendChild(node);
+}
+
 // ---------- Modal helpers ----------
 function ensureModal() {
   let modal = document.querySelector("[data-modal-root]");
@@ -2938,9 +2977,11 @@ if (readerRoot) {
 // manual unregister. Three pieces:
 //  1. updateViaCache:"none" → browser never serves /sw.js from HTTP cache.
 //  2. Active update() on each page load → forces an immediate freshness check.
-//  3. controllerchange listener + one-shot reload → when the new SW takes
-//     over (skipWaiting + clients.claim already in the SW), the page reloads
-//     itself once so the user sees the fresh CSS/JS without lifting a finger.
+//  3. controllerchange listener → prompt the user with a Reload/Later toast
+//     when the new SW takes control. We used to silently reload here, but
+//     with AssetVersion bumping on every commit a chatty push session would
+//     yank the page from under anyone mid-read. The new SW takes effect on
+//     the next navigation regardless, so "Later" is a safe fallback.
 if ("serviceWorker" in navigator && location.protocol !== "http:") {
   window.addEventListener("load", () => {
     navigator.serviceWorker
@@ -2949,32 +2990,17 @@ if ("serviceWorker" in navigator && location.protocol !== "http:") {
         // Force an update check on every load. Cheap on the wire (sw.js is
         // tiny and Cache-Control: no-cache means a 304 most of the time).
         reg.update().catch(() => {});
-
-        // When a freshly installed SW finishes installing while another SW
-        // is controlling the page, ours calls skipWaiting in install — so
-        // it'll progress to "activated" quickly. Listen so we can prompt a
-        // reload (or just reload) the moment it takes control.
-        reg.addEventListener("updatefound", () => {
-          const installing = reg.installing;
-          if (!installing) return;
-          installing.addEventListener("statechange", () => {
-            if (installing.state === "activated" && navigator.serviceWorker.controller) {
-              // controllerchange handles the actual reload; this state hook
-              // is just defensive in case controllerchange doesn't fire on
-              // some browsers.
-            }
-          });
-        });
       })
       .catch(() => {});
 
-    // One-shot reload on controller change. The session flag stops an infinite
-    // loop on browsers that fire controllerchange more than once per claim.
     let reloaded = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (reloaded) return;
-      reloaded = true;
-      window.location.reload();
+      if (sessionStorage.getItem("moco:swReloadDismissed") === "1") return;
+      showUpdateToast(() => {
+        reloaded = true;
+        window.location.reload();
+      });
     });
   });
 }

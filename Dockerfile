@@ -7,7 +7,14 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/moco ./cmd/moco
+# VERSION is passed in by docker-compose / deploy.sh as the short git SHA,
+# baked into moco/internal/server.AssetVersion via -ldflags -X. That keeps
+# the asset query-string and service-worker cache key unique per deploy
+# without anyone editing a constant.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags "-s -w -X moco/internal/server.AssetVersion=${VERSION}" \
+    -o /out/moco ./cmd/moco
 
 FROM debian:bookworm-slim
 
