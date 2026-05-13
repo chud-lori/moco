@@ -271,29 +271,75 @@ worth the complexity.
 
 ## 9. Backups
 
-What's worth backing up depends on where the app stores state. Two common
-shapes:
+Moco ships a one-shot snapshot script at the repo root: `./backup.sh`. It's
+designed for **migration moments** (moving the VM, swapping the object
+store, etc.) rather than continuous backup — if you want point-in-time
+restore, look at litestream instead.
 
-**SQLite + local files in a bind-mounted directory.** Snapshot the whole
-directory:
+### What it captures
+
+- `var/` — SQLite DB (`moco.sqlite` + `-wal` + `-shm`) and, when
+  `MOCO_STORAGE=local`, all uploaded book files.
+- A **redacted** copy of `.env` (anything matching
+  `SECRET|TOKEN|PASSWORD|KEY|CLIENT_ID` becomes `<redacted>`). Keeps the
+  variable names + comments so a future-you knows exactly which keys to
+  refill on the new host, without putting live creds in the tarball.
+- When `MOCO_STORAGE=r2` and `rclone` is on PATH, a full dump of the R2
+  bucket using inline creds from `.env` — no `rclone.conf` setup needed.
+
+### Consistency
+
+The script briefly stops the `moco` container with `docker compose stop
+moco` before copying, then restarts it. ~5 seconds of downtime. This is
+the cleanest way to avoid catching SQLite mid-write — much simpler than
+juggling WAL checkpoints by hand.
+
+### Running
 
 ```bash
-tar -czf "myapp-$(date +%Y%m%d).tar.gz" -C /srv/myapp var/
+# On the VM moco runs on
+./backup.sh
+
+# From your laptop, against the prod VM — SCPs the script up, runs it
+# there, then rsyncs the resulting tarball back to ./backups/ locally
+./backup.sh --from user@prod-vm:/srv/moco
 ```
 
-For consistent SQLite backups under load, use the online backup API:
+Output lands in `./backups/moco-YYYYMMDD-HHMMSSZ.tar.gz`. The `backups/`
+directory is gitignored.
+
+### Restore on a fresh host
 
 ```bash
-sqlite3 /srv/myapp/var/app.db ".backup '/tmp/app-$(date +%Y%m%d).db'"
+# 1. Standard moco install (clone + .env + nginx + everything in this guide).
+# 2. Stop the empty install.
+docker compose down
+
+# 3. Drop in the snapshot.
+rm -rf ./var && mkdir -p ./var
+tar -xzf moco-*.tar.gz -C /tmp/moco-restore
+cp -a /tmp/moco-restore/var/. ./var/
+
+# 4. If you were on R2, push the dumped bucket into the new R2 bucket:
+rclone copy /tmp/moco-restore/r2/ <new-remote>:<new-bucket>
+
+# 5. Rebuild .env: copy /tmp/moco-restore/env.redacted side-by-side with
+#    your .env.example, hand-fill every <redacted> with the real value.
+
+# 6. Bring it up.
+docker compose up -d --build
 ```
 
-**Object storage (S3 / R2).** The bucket is the source of truth — keep
-versioning enabled on the bucket and you don't need a separate backup job for
-the files. Only the SQLite metadata needs snapshotting.
+### What it deliberately does *not* do
 
-Cron it nightly and rotate by date. Shipping the tarballs off-box (rsync to
-another host, upload to a separate bucket) is what makes a backup actually a
-backup.
+- **No automation, no cron.** This is a manual one-shot. If you need
+  nightly snapshots, bolt cron around it yourself; the moco position is
+  that data only changes on uploads, which are infrequent and intentional.
+- **No off-box upload.** The tarball stays where you ran it. Use the
+  `--from` mode so the snapshot lands on a different machine than the
+  source — that's what makes it a real backup vs. a copy.
+- **No R2 versioning.** If you want object-storage rollback, enable R2
+  bucket versioning in the Cloudflare dashboard.
 
 ---
 

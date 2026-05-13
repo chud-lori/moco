@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"moco/internal/auth"
 	"moco/internal/epub"
@@ -330,6 +331,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 				Title:       "Moco — read what you love, publish what you write",
 				Description: "A reader for your library and a self-publishing platform for your writing. Upload PDF, EPUB, or Markdown — keep it private, share by email, or publish to the public shelf. Reflowable reading, highlights, and progress sync across devices.",
 				URL:         s.absoluteURL(r, "/"),
+				Image:       s.absoluteURL(r, "/static/og-default.svg"),
 				OGType:      "website",
 			},
 		},
@@ -370,6 +372,7 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 				Title:       "Public bookshelf — books shared by Moco readers",
 				Description: "Browse books that readers chose to publish on Moco. Read straight in your browser — no signup required.",
 				URL:         s.absoluteURL(r, "/discover"),
+				Image:       s.absoluteURL(r, "/static/og-default.svg"),
 				OGType:      "website",
 			},
 		},
@@ -506,10 +509,7 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	desc := book.Title + " on Moco."
-	if book.Author != "" {
-		desc = book.Title + " by " + book.Author + " on Moco."
-	}
+	desc := ogDescriptionForBook(book, "")
 	shareURL := s.absoluteURL(r, "/books/"+book.ID)
 	jsonLD := bookJSONLD(book, shareURL)
 
@@ -596,10 +596,7 @@ func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	desc := "Reading " + book.Title + " on Moco."
-	if book.Author != "" {
-		desc = "Reading " + book.Title + " by " + book.Author + " on Moco."
-	}
+	desc := ogDescriptionForBook(book, "Reading ")
 	jsonLD := bookJSONLD(book, s.absoluteURL(r, "/books/"+book.ID+"/read"))
 	data := readerPageData{
 		pageData: pageData{
@@ -609,6 +606,7 @@ func (s *Server) handleReadBook(w http.ResponseWriter, r *http.Request) {
 				Title:       book.Title,
 				Description: desc,
 				URL:         s.absoluteURL(r, "/books/"+book.ID+"/read"),
+				Image:       s.absoluteURL(r, "/api/v1/books/"+book.ID+"/cover"),
 				OGType:      "book",
 				JSONLD:      template.HTML(jsonLD),
 			},
@@ -1828,6 +1826,47 @@ func extractPDFCoverPNG(pdfPath string) ([]byte, bool) {
 		return nil, false
 	}
 	return body, true
+}
+
+// ogDescriptionForBook chooses the social-card description for a book. If
+// the book has a real description we use that (collapsed + truncated to fit
+// Twitter/Facebook limits); otherwise fall back to the generic title-by-
+// author line so existing books that predate the description column still
+// render a sensible preview. The verb prefix lets the reader page say
+// "Reading X" while the detail page just states the title.
+func ogDescriptionForBook(book store.Book, verbPrefix string) string {
+	if d := strings.TrimSpace(book.Description); d != "" {
+		return ogExcerpt(d, 200)
+	}
+	if book.Author != "" {
+		return verbPrefix + book.Title + " by " + book.Author + " on Moco."
+	}
+	return verbPrefix + book.Title + " on Moco."
+}
+
+// ogExcerpt collapses whitespace and truncates to at most max runes, cutting
+// on a word boundary when possible. UTF-8 safe — we index by rune, not byte.
+// Used for og:description / twitter:description where ~200 chars is the
+// safe ceiling before platforms tail-truncate themselves.
+func ogExcerpt(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	count := 0
+	cut := len(s)
+	for i := range s {
+		if count == max {
+			cut = i
+			break
+		}
+		count++
+	}
+	out := s[:cut]
+	if idx := strings.LastIndex(out, " "); idx > max/2 {
+		out = out[:idx]
+	}
+	return strings.TrimRight(out, " ,.;:—-") + "…"
 }
 
 // bookJSONLD returns a schema.org Book JSON-LD payload for the reader page.

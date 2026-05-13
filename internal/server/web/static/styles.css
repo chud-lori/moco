@@ -408,7 +408,7 @@ main { display: grid; gap: 22px; }
 
 .brand-name,
 .hero h1,
-.feature-band h2,
+.feature-band h1,
 .reader-preview h2,
 .notes-preview h2 {
   font-family: "Cormorant Garamond", serif;
@@ -846,13 +846,13 @@ main { display: grid; gap: 22px; }
    so it doesn't dominate the page; the book grid is the focal point.
    .reader-preview / .notes-preview are landing-page bands where a bigger
    editorial headline still works. */
-.feature-band h2, .reader-preview h2, .notes-preview h2 {
+.feature-band h1, .reader-preview h2, .notes-preview h2 {
   margin: 0;
   font-size: var(--m-fs-h2);
   line-height: 1.2;
 }
 @media (min-width: 768px) {
-  .feature-band h2 {
+  .feature-band h1 {
     font-size: clamp(1.4rem, 2.2vw, 1.9rem);
     line-height: 1.15;
     letter-spacing: -0.01em;
