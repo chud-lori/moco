@@ -3611,6 +3611,53 @@ main#main.is-spa-loading::before {
 .discover-footer a:hover { color: var(--accent); }
 .discover-footer .icon { color: var(--accent); }
 .discover-footer-sep { opacity: 0.55; }
+/* /about — narrow editorial column for the personal "what is this site"
+   page. Wider line-length than the reader so prose breathes without
+   feeling cramped. Heading hierarchy matches the rest of the site. */
+.about-page { padding: 24px 0 64px; }
+.about-content {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.about-content h1 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  line-height: 1.15;
+  margin: 4px 0 16px;
+  color: var(--text);
+}
+.about-content h2 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+  margin: 32px 0 8px;
+  color: var(--text);
+}
+.about-content p {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+.about-content .about-lede {
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 24px;
+}
+.about-content a {
+  color: var(--accent-dark);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.about-content a:hover { color: var(--accent); }
+.about-content .about-footer-cta {
+  margin-top: 32px;
+  display: flex;
+  justify-content: flex-start;
+}
+.about-content .about-footer-cta a { text-decoration: none; }
 .search-input input {
   width: 100%;
   min-width: 0;

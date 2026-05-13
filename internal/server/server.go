@@ -258,6 +258,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /", s.handleHome)
 	s.mux.HandleFunc("GET /discover", s.handleDiscover)
+	s.mux.HandleFunc("GET /about", s.handleAbout)
 	s.mux.HandleFunc("GET /signup", s.handleSignupPage)
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /app", s.handleDashboard)
@@ -339,6 +340,26 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		PublicBooks: takeBooks(publicBooks, 6),
+	})
+}
+
+// handleAbout renders the static "what is this site / who runs it" page.
+// The content lives entirely in about.html — no per-request data beyond
+// the standard pageData wrapper, so anyone editing the page (or a fork
+// running their own moco instance) can change the copy without touching
+// Go code.
+func (s *Server) handleAbout(w http.ResponseWriter, r *http.Request) {
+	user, _ := s.currentUser(r)
+	s.renderTemplate(w, "about.html", pageData{
+		Title:       "About — Moco",
+		CurrentUser: user,
+		SEO: SEOData{
+			Title:       "About this Moco shelf",
+			Description: "A personal reading and publishing space. What Moco is, who runs this instance, and how to follow new books.",
+			URL:         s.absoluteURL(r, "/about"),
+			Image:       s.absoluteURL(r, "/static/og-default.svg"),
+			OGType:      "website",
+		},
 	})
 }
 
