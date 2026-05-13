@@ -32,18 +32,19 @@ type SEOData struct {
 
 type dashboardPageData struct {
 	pageData
-	MyPrivateBooks []store.Book
-	MyPublicBooks  []store.Book
-	PublicBooks    []store.Book
-	WishlistBooks  []store.Book
-	SharedBooks    []store.Book
-	BookTags       map[string][]string
-	AllTags        []store.TagCount
-	Sort           string
-	Tag            string
-	Format         string
-	WishlistedIDs  map[string]bool    // book IDs the current user has wishlisted
-	Progress       map[string]float64 // progress_percent per book ID (missing = unread)
+	InProgressBooks []store.Book // dashboard's "Continue reading" hero shelf — books with active progress
+	MyPrivateBooks  []store.Book
+	MyPublicBooks   []store.Book
+	PublicBooks     []store.Book
+	WishlistBooks   []store.Book
+	SharedBooks     []store.Book
+	BookTags        map[string][]string
+	AllTags         []store.TagCount
+	Sort            string
+	Tag             string
+	Format          string
+	WishlistedIDs   map[string]bool    // book IDs the current user has wishlisted
+	Progress        map[string]float64 // progress_percent per book ID (missing = unread)
 }
 
 type discoverPageData struct {
@@ -110,7 +111,7 @@ type readerPageData struct {
 // any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
 // browsers, mobile WebViews that ignore Cache-Control) treat the assets as
 // new resources. Kept in sync with the service-worker cache key.
-const AssetVersion = "v92"
+const AssetVersion = "v93"
 
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
@@ -191,16 +192,17 @@ func templateFuncs() template.FuncMap {
 			}
 			return progress[id]
 		},
-		// readLabel maps a progress percentage to the verb on the primary
-		// CTA. The thresholds match the cover-bar's visibility threshold so
-		// "Continue reading" never shows on a card with no visible progress
-		// indicator.
+		// readLabel maps a progress percentage to a card-button verb. Kept
+		// short ("Continue", not "Continue reading") because owner cards in
+		// the library grid share the action row with 2-3 icon buttons —
+		// longer labels overflow and clip. The detail page uses its own
+		// inline template logic where there's room for "Continue reading".
 		"readLabel": func(pct float64) string {
 			switch {
 			case pct >= 95:
 				return "Read again"
 			case pct > 0.5:
-				return "Continue reading"
+				return "Continue"
 			}
 			return "Read"
 		},

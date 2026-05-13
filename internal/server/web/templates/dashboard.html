@@ -97,6 +97,36 @@
           </form>
         </section>
 
+        {{ if .InProgressBooks }}
+          <section class="library-section library-section--continue">
+            <div class="section-row">
+              <p class="section-label">Continue reading</p>
+              <span class="session-chip">{{ len .InProgressBooks }}</span>
+            </div>
+            <div class="dashboard-grid">
+              {{ $progress := .Progress }}
+              {{ range .InProgressBooks }}
+                {{ $pct := bookProgress $progress .ID }}
+                <article class="book-panel has-cover" data-book-id="{{ .ID }}">
+                  <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
+                    <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+                    {{ if gt $pct 0.5 }}<span class="cover-progress" style="--pct: {{ printf "%.0f" $pct }}%" aria-label="{{ printf "%.0f" $pct }}% read"></span>{{ end }}
+                  </a>
+                  <div class="book-panel-top">
+                    <span class="book-format">{{ .Format }}</span>
+                    <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
+                  </div>
+                  <h2>{{ .Title }}</h2>
+                  <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
+                  <div class="book-panel-actions">
+                    <a class="button primary" href="/books/{{ .ID }}/read">{{ readLabel $pct }}</a>
+                  </div>
+                </article>
+              {{ end }}
+            </div>
+          </section>
+        {{ end }}
+
         <form class="library-toolbar" method="get" action="/app" aria-label="Sort and filter library" data-auto-submit data-results-target="[data-library-results]">
           <label class="select-input">
             <span class="sr-only">Sort</span>

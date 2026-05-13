@@ -700,6 +700,62 @@ func (s *Store) GetProgress(ctx context.Context, userID, bookID string) (Reading
 	return progress, nil
 }
 
+// ListInProgressBooks returns books the user has actively started reading
+// (progress > 0.5% and < 95%), ordered by most-recent activity. Used by
+// the dashboard's top "Continue reading" section to surface in-flight
+// reads across every shelf (own, public, wishlisted, shared) in one
+// curated row rather than leaving the user to hunt for them. Books that
+// have since become inaccessible (private + not owned, etc.) are filtered
+// out by the join + visibility predicate.
+func (s *Store) ListInProgressBooks(ctx context.Context, userID string, limit int) ([]Book, error) {
+	if userID == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	q := `
+		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
+		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
+		FROM books b
+		JOIN users u ON u.id = b.user_id
+		JOIN reading_progress rp ON rp.book_id = b.id AND rp.user_id = ?
+		WHERE rp.progress_percent > 0.5 AND rp.progress_percent < 95
+		  AND (
+		        b.user_id = ?
+		     OR b.visibility = 'public'
+		     OR b.id IN (SELECT book_id FROM book_shares WHERE shared_with_user_id = ?)
+		  )
+		ORDER BY rp.updated_at DESC
+		LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, userID, userID, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var books []Book
+	for rows.Next() {
+		var book Book
+		var createdAt, updatedAt string
+		var lastOpened sql.NullString
+		if err := rows.Scan(
+			&book.ID, &book.UserID, &book.Title, &book.Author, &book.Format, &book.Visibility, &book.OwnerEmail, &book.OwnerDisplayName, &book.StoragePath,
+			&book.FileSize, &createdAt, &updatedAt, &lastOpened, &book.OriginalFilename, &book.MIMEType,
+			&book.DerivedEPUBPath, &book.ReadingMinutes, &book.CoverPath, &book.AnonymousOwner, &book.TotalPages, &book.Description,
+		); err != nil {
+			return nil, err
+		}
+		book.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		book.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+		if lastOpened.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, lastOpened.String)
+			book.LastOpenedAt = &t
+		}
+		books = append(books, book)
+	}
+	return books, rows.Err()
+}
+
 // ProgressByBookIDs returns progress_percent keyed by book ID for the given
 // user. Books with no row in reading_progress are omitted — callers should
 // treat a missing key as "unread". Used by list pages (dashboard / discover)

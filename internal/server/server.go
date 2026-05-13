@@ -449,6 +449,24 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		allIDs = append(allIDs, b.ID)
 	}
 	progress, _ := s.store.ProgressByBookIDs(r.Context(), user.ID, allIDs)
+	inProgress, _ := s.store.ListInProgressBooks(r.Context(), user.ID, 8)
+
+	// Make sure the "Continue reading" books appear in the progress map
+	// even though they came in via a separate query — they may have
+	// progress on books that aren't surfaced in any of the per-section
+	// lists above (e.g. a public book the user neither owns nor
+	// wishlisted but started reading from /discover).
+	if len(inProgress) > 0 && progress == nil {
+		progress = map[string]float64{}
+	}
+	for _, b := range inProgress {
+		if _, ok := progress[b.ID]; !ok {
+			// Look up the missing entry once; cheap fallback.
+			if prog, err := s.store.GetProgress(r.Context(), user.ID, b.ID); err == nil {
+				progress[b.ID] = prog.ProgressPercent
+			}
+		}
+	}
 
 	data := dashboardPageData{
 		pageData: pageData{
@@ -456,18 +474,19 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			CurrentUser: &user,
 			Nav:         "library",
 		},
-		MyPrivateBooks: privateBooks,
-		MyPublicBooks:  ownPublic,
-		PublicBooks:    publicBooks,
-		WishlistBooks:  wishlistBooks,
-		SharedBooks:    sharedBooks,
-		BookTags:       bookTags,
-		AllTags:        allTags,
-		Sort:           filter.Sort,
-		Tag:            filter.Tag,
-		Format:         filter.Format,
-		WishlistedIDs:  wishlistedIDs,
-		Progress:       progress,
+		InProgressBooks: inProgress,
+		MyPrivateBooks:  privateBooks,
+		MyPublicBooks:   ownPublic,
+		PublicBooks:     publicBooks,
+		WishlistBooks:   wishlistBooks,
+		SharedBooks:     sharedBooks,
+		BookTags:        bookTags,
+		AllTags:         allTags,
+		Sort:            filter.Sort,
+		Tag:             filter.Tag,
+		Format:          filter.Format,
+		WishlistedIDs:   wishlistedIDs,
+		Progress:        progress,
 	}
 	if isFragmentRequest(r) {
 		s.renderTemplate(w, "library_results", data)
