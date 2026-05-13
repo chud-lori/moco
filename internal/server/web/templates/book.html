@@ -49,8 +49,8 @@
       <span class="book-format">{{ .Book.Format }}</span>
       <span class="visibility-chip" data-visibility="{{ .Book.Visibility }}">{{ .Book.Visibility }}</span>
     </div>
-    <h1>{{ .Book.Title }}</h1>
-    {{ if .Book.Author }}<p class="book-detail-author">{{ .Book.Author }}</p>{{ end }}
+    <h1>{{ normWS .Book.Title }}</h1>
+    {{ if .Book.Author }}<p class="book-detail-author">{{ normWS .Book.Author }}</p>{{ end }}
     <ul class="book-detail-meta-line">
       {{ if not .Book.AnonymousOwner }}<li>Shared by {{ ownerName .Book.OwnerDisplayName .Book.OwnerEmail }}</li>{{ end }}
       <li>Added {{ .Book.CreatedAt.Format "Jan 2, 2006" }}</li>

@@ -107,8 +107,9 @@
               <span class="book-format">{{ .Format }}</span>
               <span class="visibility-chip" data-visibility="{{ .Visibility }}">{{ .Visibility }}</span>
             </div>
-            <h2>{{ .Title }}</h2>
+            <h2>{{ normWS .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
+            {{ if .Description }}<p class="book-panel-description">{{ normWS .Description }}</p>{{ end }}
             <div class="book-panel-actions">
               <a class="button primary" href="/books/{{ .ID }}/read">{{ readLabel $pct }}</a>
               {{ if $signedIn }}

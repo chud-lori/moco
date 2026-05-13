@@ -207,6 +207,17 @@ func templateFuncs() template.FuncMap {
 			}
 			return "Read"
 		},
+		// normWS collapses runs of whitespace into single spaces and trims
+		// leading/trailing space. Used when displaying user-supplied data
+		// (book titles, descriptions imported from EPUB metadata) where
+		// "Kamelia,  Antologi" should render as "Kamelia, Antologi". We
+		// don't normalize on write because the raw value may have meaning
+		// to the source format (EPUB OPF carries pretty-printed whitespace
+		// inside <dc:description> that the publisher chose); we just clean
+		// it at the boundary.
+		"normWS": func(s string) string {
+			return strings.Join(strings.Fields(s), " ")
+		},
 		// mkBookGrid bundles a book slice + the user's book→tags map +
 		// per-book progress so the "book_grid" sub-template gets everything
 		// as a single argument.
