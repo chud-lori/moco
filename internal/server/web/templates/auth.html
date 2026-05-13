@@ -29,7 +29,15 @@
           <h1 class="auth-title">{{ if eq .Mode "Sign up" }}Read your library. Publish your work.{{ else }}Welcome back to your shelf{{ end }}</h1>
           <p class="auth-copy">{{ if eq .Mode "Sign up" }}Create an account to upload, read, and (when you're ready) publish your own writing to the public shelf.{{ else }}Sign in to continue reading and review your highlights.{{ end }}</p>
           {{ if .OAuthError }}
-            <p class="form-message is-error" role="alert">Google sign-in didn't complete ({{ .OAuthError }}). Please try again.</p>
+            <p class="form-message is-error" role="alert">
+              {{ if eq .OAuthError "access_denied" }}You declined Google sign-in. Try again whenever you're ready.
+              {{ else if eq .OAuthError "email_not_verified" }}Your Google email isn't verified. Verify it with Google and try again.
+              {{ else if eq .OAuthError "not_configured" }}Google sign-in isn't set up on this server.
+              {{ else if eq .OAuthError "missing_state" }}Sign-in took too long or your browser blocked the cookie. Please try again.
+              {{ else if eq .OAuthError "state_mismatch" }}Couldn't verify the sign-in request. Please try again.
+              {{ else }}Google sign-in didn't complete. Please try again.
+              {{ end }}
+            </p>
           {{ end }}
           {{ if .GoogleEnabled }}
             <a class="button google-signin" href="/api/v1/auth/google/start?next=/app">

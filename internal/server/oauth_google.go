@@ -79,16 +79,23 @@ func (s *Server) handleGoogleStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-// handleGoogleCallback completes the OAuth flow.
+// handleGoogleCallback completes the OAuth flow. Every error path bounces
+// the user back to /login with an `oauth_error` query param so they land
+// on the regular auth UI (with a friendly red banner) rather than a bare
+// browser error page — which would feel like the site itself broke.
 func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	bounce := func(reason string) {
+		http.Redirect(w, r, "/login?oauth_error="+url.QueryEscape(reason), http.StatusFound)
+	}
+
 	if !s.googleOAuthEnabled() {
-		http.Error(w, "google sign-in is not configured on this server", http.StatusServiceUnavailable)
+		bounce("not_configured")
 		return
 	}
 
 	cookie, err := r.Cookie(googleOAuthStateCookie)
 	if err != nil {
-		http.Error(w, "missing oauth state — please start sign-in again", http.StatusBadRequest)
+		bounce("missing_state")
 		return
 	}
 	// Burn the state cookie immediately, regardless of outcome.
@@ -110,55 +117,54 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	urlState := r.URL.Query().Get("state")
 	if urlState == "" || urlState != cookieState {
-		http.Error(w, "oauth state mismatch — possible CSRF; please try again", http.StatusBadRequest)
+		bounce("state_mismatch")
 		return
 	}
 
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		// User declined consent or Google returned an error — bounce to login
-		// with a hint, not an error page.
-		http.Redirect(w, r, "/login?oauth_error="+url.QueryEscape(errParam), http.StatusFound)
+		// User declined consent or Google returned an error.
+		bounce(errParam)
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "missing oauth code", http.StatusBadRequest)
+		bounce("missing_code")
 		return
 	}
 
 	cfg := s.googleOAuthConfig()
 	token, err := cfg.Exchange(r.Context(), code)
 	if err != nil {
-		http.Error(w, "failed to exchange oauth code", http.StatusBadGateway)
+		bounce("token_exchange_failed")
 		return
 	}
 
 	profile, err := fetchGoogleProfile(r.Context(), cfg.Client(r.Context(), token))
 	if err != nil {
-		http.Error(w, "failed to fetch google profile", http.StatusBadGateway)
+		bounce("profile_fetch_failed")
 		return
 	}
 	if profile.Sub == "" || profile.Email == "" {
-		http.Error(w, "google profile is missing required fields", http.StatusBadGateway)
+		bounce("profile_incomplete")
 		return
 	}
 	// Auto-link by email requires Google to have verified ownership.
 	// Without this an attacker who controls an unverified Gmail-style
 	// address could hijack an existing password account.
 	if !profile.EmailVerified {
-		http.Error(w, "your google email is not verified — verify it with google before signing in", http.StatusForbidden)
+		bounce("email_not_verified")
 		return
 	}
 
 	user, err := s.findOrCreateGoogleUser(r, profile)
 	if err != nil {
-		http.Error(w, "failed to create or link user", http.StatusInternalServerError)
+		bounce("user_link_failed")
 		return
 	}
 
 	if err := s.issueSession(w, r, user.ID); err != nil {
-		http.Error(w, "failed to create session", http.StatusInternalServerError)
+		bounce("session_failed")
 		return
 	}
 	http.Redirect(w, r, next, http.StatusFound)
