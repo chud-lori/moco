@@ -1547,8 +1547,30 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 
 const csrfCookieName = "moco_csrf"
 
+// contentSecurityPolicy locks scripts to self only. After the September 2025
+// npm supply-chain attacks (chalk/debug/etc. compromised via maintainer
+// phishing) we moved every third-party library to /static/vendor/ and now
+// reject anything off-origin at the browser level too. 'unsafe-inline' on
+// style-src is the only soft spot — many templates use `style="--pct: 42%"`
+// for the per-cover progress fill, so removing it would mean hoisting all
+// dynamic CSS into a stylesheet keyed by book ID. Worker-src needs blob:
+// because pdfjs spawns its worker that way; img-src needs data:/blob: for
+// SVG favicons and the cover-upload preview.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; " +
+	"font-src 'self' https://fonts.gstatic.com; " +
+	"img-src 'self' data: blob:; " +
+	"connect-src 'self'; " +
+	"worker-src 'self' blob:; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"object-src 'none'"
+
 func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")

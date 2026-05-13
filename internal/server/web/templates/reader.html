@@ -14,12 +14,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css?v={{ assetVersion }}" />
     {{ if eq .ReaderKind "epub" }}
-      <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-      <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js" defer></script>
+      <script src="/static/vendor/jszip.min.js?v={{ assetVersion }}" defer></script>
+      <script src="/static/vendor/epub.min.js?v={{ assetVersion }}" defer></script>
     {{ end }}
     {{ if eq .ReaderKind "md" }}
-      <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js" defer></script>
-      <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js" data-autoloader-path="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/" defer></script>
+      <script src="/static/vendor/prismjs/prism.min.js?v={{ assetVersion }}" defer></script>
+      <script src="/static/vendor/prismjs/prism-autoloader.min.js?v={{ assetVersion }}" data-autoloader-path="/static/vendor/prismjs/components/" defer></script>
     {{ end }}
   </head>
   <body class="reader-body{{ if ne .ReaderKind "md" }} reader-body-paginated{{ end }}">
@@ -227,11 +227,7 @@
       </main>
     </div>
     {{ if eq .ReaderKind "pdf" }}
-      <script type="module">
-        import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.min.mjs";
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.worker.min.mjs";
-        window.__mocoPdfjs = pdfjsLib;
-      </script>
+      <script type="module" src="/static/vendor/pdfjs-init.js?v={{ assetVersion }}"></script>
     {{ end }}
     <script src="/static/app.js?v={{ assetVersion }}" defer></script>
   </body>

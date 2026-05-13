@@ -552,8 +552,8 @@ if (uploadForm) {
   // doesn't bloat the upload form for users who don't click the button.
   async function renderPdfFirstPageDataURL(file) {
     if (!window.__mocoPdfjs) {
-      const mod = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.min.mjs");
-      mod.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.worker.min.mjs";
+      const mod = await import("/static/vendor/pdf.min.mjs");
+      mod.GlobalWorkerOptions.workerSrc = "/static/vendor/pdf.worker.min.mjs";
       window.__mocoPdfjs = mod;
     }
     const buf = await file.arrayBuffer();
