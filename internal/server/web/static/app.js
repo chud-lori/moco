@@ -3048,6 +3048,47 @@ if (passwordForm) {
   });
 }
 
+// "Set a password" form — rendered only for Google-only accounts (no
+// current password to verify). The endpoint refuses if the account
+// already has a password set, so this can't be misused to bypass
+// change-password's currentPassword check.
+const setPasswordForm = document.querySelector("[data-set-password-form]");
+if (setPasswordForm) {
+  const message = setPasswordForm.querySelector("[data-set-password-message]");
+  const submit = setPasswordForm.querySelector('button[type="submit"]');
+  setPasswordForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const nxt = String(new FormData(setPasswordForm).get("newPassword") || "");
+    if (nxt.length < 10) { setMessage(message, "Password must be at least 10 characters.", "error"); return; }
+    setButtonLoading(submit, true, "Setting…");
+    try {
+      await requestJSON("/api/v1/auth/password/set", {
+        method: "POST",
+        body: JSON.stringify({ newPassword: nxt }),
+      });
+      setMessage(message, "Password set.", "success");
+      toast("Password set. You can now sign in with email + password too.", "success");
+      // Reload so the form flips to the change-password variant for the
+      // next visit / refresh (HasPassword is now true).
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      setMessage(message, err.message || "Could not set password.", "error");
+    } finally {
+      setButtonLoading(submit, false);
+    }
+  });
+  setPasswordForm.querySelectorAll("[data-toggle-password]").forEach((btn) => {
+    const input = btn.parentElement?.querySelector('input[type="password"], input[type="text"]');
+    btn.addEventListener("click", () => {
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "Show" : "Hide";
+      btn.setAttribute("aria-pressed", String(!showing));
+    });
+  });
+}
+
 const deleteAccountForm = document.querySelector("[data-delete-account-form]");
 if (deleteAccountForm) {
   const message = deleteAccountForm.querySelector("[data-delete-account-message]");

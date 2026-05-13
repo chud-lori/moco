@@ -43,23 +43,38 @@
         </section>
 
         <section class="auth-card">
-          <h2 style="margin-top:0">Change password</h2>
-          <form class="stack-form" data-password-form novalidate>
-            <label><span>Current password</span>
-              <span class="input-with-action">
-                <input type="password" name="currentPassword" autocomplete="current-password" required />
-                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
-              </span>
-            </label>
-            <label><span>New password</span>
-              <span class="input-with-action">
-                <input type="password" name="newPassword" minlength="10" autocomplete="new-password" required />
-                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
-              </span>
-            </label>
-            <p class="form-message" data-password-message aria-live="polite"></p>
-            <button class="button primary" type="submit">Change password</button>
-          </form>
+          {{ if .HasPassword }}
+            <h2 style="margin-top:0">Change password</h2>
+            <form class="stack-form" data-password-form novalidate>
+              <label><span>Current password</span>
+                <span class="input-with-action">
+                  <input type="password" name="currentPassword" autocomplete="current-password" required />
+                  <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+                </span>
+              </label>
+              <label><span>New password</span>
+                <span class="input-with-action">
+                  <input type="password" name="newPassword" minlength="10" autocomplete="new-password" required />
+                  <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+                </span>
+              </label>
+              <p class="form-message" data-password-message aria-live="polite"></p>
+              <button class="button primary" type="submit">Change password</button>
+            </form>
+          {{ else }}
+            <h2 style="margin-top:0">Set a password</h2>
+            <p class="auth-copy">You signed in with Google. Add a password as a fallback in case you lose access to your Google account.</p>
+            <form class="stack-form" data-set-password-form novalidate>
+              <label><span>New password</span>
+                <span class="input-with-action">
+                  <input type="password" name="newPassword" minlength="10" autocomplete="new-password" required />
+                  <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+                </span>
+              </label>
+              <p class="form-message" data-set-password-message aria-live="polite"></p>
+              <button class="button primary" type="submit">Set password</button>
+            </form>
+          {{ end }}
         </section>
 
         <section class="auth-card">

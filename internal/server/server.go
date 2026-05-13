@@ -279,6 +279,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	s.mux.HandleFunc("PUT /api/v1/auth/me", s.handleUpdateAccount)
 	s.mux.HandleFunc("PUT /api/v1/auth/password", s.handleChangePassword)
+	s.mux.HandleFunc("POST /api/v1/auth/password/set", s.handleSetInitialPassword)
 	s.mux.HandleFunc("DELETE /api/v1/auth/me", s.handleDeleteAccount)
 	s.mux.HandleFunc("GET /api/v1/books", s.handleBooks)
 	s.mux.HandleFunc("GET /api/v1/books/public", s.handlePublicBooks)
@@ -1939,6 +1940,53 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// handleSetInitialPassword adds a password to a Google-only account (one
+// that signed up via OAuth and has password_hash == ""). Requires an
+// authenticated session (no currentPassword — there isn't one). Refuses
+// for users who already have a password, to prevent this becoming a
+// password-reset bypass for someone who hijacked a session: those users
+// must use the change-password endpoint, which requires the current one.
+func (s *Server) handleSetInitialPassword(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
+		return
+	}
+	hasPassword, err := s.store.HasPassword(r.Context(), user.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to check account state"})
+		return
+	}
+	if hasPassword {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "account already has a password — use the change-password endpoint instead"})
+		return
+	}
+	var req struct {
+		NewPassword string `json:"newPassword"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := auth.PasswordLooksValid(req.NewPassword); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "password hashing failed"})
+		return
+	}
+	if err := s.store.UpdatePassword(r.Context(), user.ID, newHash); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to set password"})
+		return
+	}
+	// Revoke every other session for parity with change-password — a stolen
+	// session can't be used to lock the real owner out.
+	currentToken, _ := s.sessionToken(r)
+	_ = s.store.DeleteUserSessionsExcept(r.Context(), user.ID, currentToken)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	user, err := s.requireUser(r)
 	if err != nil {
@@ -2288,10 +2336,14 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	s.renderTemplate(w, "settings.html", pageData{
-		Title:       "Settings - Moco",
-		CurrentUser: &user,
-		Nav:         "settings",
+	hasPassword, _ := s.store.HasPassword(r.Context(), user.ID)
+	s.renderTemplate(w, "settings.html", settingsPageData{
+		pageData: pageData{
+			Title:       "Settings - Moco",
+			CurrentUser: &user,
+			Nav:         "settings",
+		},
+		HasPassword: hasPassword,
 	})
 }
 

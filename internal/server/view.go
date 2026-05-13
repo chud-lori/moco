@@ -71,6 +71,11 @@ type quotesPageData struct {
 	BookOptions []store.Book
 }
 
+type settingsPageData struct {
+	pageData
+	HasPassword bool // false for Google-only accounts — UI offers "Set a password" instead of "Change password".
+}
+
 type statsPageData struct {
 	pageData
 	Stats     store.ReadingStats
@@ -105,7 +110,7 @@ type readerPageData struct {
 // any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
 // browsers, mobile WebViews that ignore Cache-Control) treat the assets as
 // new resources. Kept in sync with the service-worker cache key.
-const AssetVersion = "v91"
+const AssetVersion = "v92"
 
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{

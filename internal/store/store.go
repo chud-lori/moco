@@ -228,6 +228,22 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, string,
 	return user, passwordHash, nil
 }
 
+// HasPassword reports whether a user has a usable password set. Returns
+// false for users created via Google OAuth who never set one — those rows
+// have password_hash == "". The settings page uses this to flip between
+// the "Change password" and "Set a password" UI.
+func (s *Store) HasPassword(ctx context.Context, userID string) (bool, error) {
+	var hash string
+	err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrNotFound
+		}
+		return false, err
+	}
+	return hash != "", nil
+}
+
 // GetUserByGoogleSub looks up a user by their Google subject identifier
 // (the stable, opaque "sub" claim from Google's ID token). Returns
 // ErrNotFound when no row matches — caller typically falls back to
