@@ -34,5 +34,8 @@ var/
 .env.*
 !.env.example
 
+# Local snapshots produced by backup.sh
+backups/
+
 # Docker
 docker-compose.override.yml
