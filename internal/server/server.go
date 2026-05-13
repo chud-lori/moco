@@ -271,6 +271,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
 	s.mux.HandleFunc("GET /sw.js", s.handleServiceWorker)
 
+	// Atom feed of the public shelf — see feed.go.
+	s.mux.HandleFunc("GET /feed.xml", s.handleFeed)
+
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)

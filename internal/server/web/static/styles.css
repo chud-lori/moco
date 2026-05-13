@@ -3588,6 +3588,29 @@ main#main.is-spa-loading::before {
   .discover-search { flex: 1 1 auto; min-height: 40px; padding: 6px 16px; }
   .discover-sort { flex: 0 0 auto; min-height: 40px; padding: 4px 14px; }
 }
+/* Quiet footer at the bottom of /discover — gives a stranger two things:
+   somewhere to subscribe (RSS) and a tag on what they're looking at. Kept
+   deliberately subtle so it doesn't compete with the grid. */
+.discover-footer {
+  margin-top: 48px;
+  padding: 24px 0 16px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.discover-footer p { margin: 0; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.discover-footer a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.discover-footer a:hover { color: var(--accent); }
+.discover-footer .icon { color: var(--accent); }
+.discover-footer-sep { opacity: 0.55; }
 .search-input input {
   width: 100%;
   min-width: 0;
