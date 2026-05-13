@@ -42,13 +42,15 @@ type dashboardPageData struct {
 	Sort           string
 	Tag            string
 	Format         string
-	WishlistedIDs  map[string]bool // book IDs the current user has wishlisted
+	WishlistedIDs  map[string]bool    // book IDs the current user has wishlisted
+	Progress       map[string]float64 // progress_percent per book ID (missing = unread)
 }
 
 type discoverPageData struct {
 	pageData
 	PublicBooks   []store.Book
 	WishlistedIDs map[string]bool
+	Progress      map[string]float64 // progress_percent per book ID for signed-in viewers
 	Query         string
 	Sort          string
 	Format        string
@@ -75,11 +77,12 @@ type statsPageData struct {
 
 type bookDetailPageData struct {
 	pageData
-	Book           store.Book
-	Tags           []string
-	IsOwner        bool
-	IsWishlisted   bool
-	ShareURL       string
+	Book             store.Book
+	Tags             []string
+	IsOwner          bool
+	IsWishlisted     bool
+	ProgressPercent  float64 // 0 = unread, used for Read/Continue/Read-again CTA + cover bar
+	ShareURL         string
 	HasConvertedEPUB bool
 }
 
@@ -100,7 +103,7 @@ type readerPageData struct {
 // any deploy that changes CSS/JS so HTTP caches (Cloudflare, in-app
 // browsers, mobile WebViews that ignore Cache-Control) treat the assets as
 // new resources. Kept in sync with the service-worker cache key.
-const AssetVersion = "v88"
+const AssetVersion = "v89"
 
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
@@ -172,15 +175,39 @@ func templateFuncs() template.FuncMap {
 			}
 			return ids[id]
 		},
-		// mkBookGrid bundles a book slice + the user's book→tags map so the
-		// "book_grid" sub-template gets both as a single argument.
-		"mkBookGrid": func(books []store.Book, tags map[string][]string) bookGridData {
-			return bookGridData{Books: books, Tags: tags}
+		// bookProgress returns progress_percent for a book ID, or 0 if the
+		// user has no row in reading_progress (= unread). Safe on nil maps
+		// so guests / handlers that skip the lookup still render cleanly.
+		"bookProgress": func(progress map[string]float64, id string) float64 {
+			if progress == nil {
+				return 0
+			}
+			return progress[id]
+		},
+		// readLabel maps a progress percentage to the verb on the primary
+		// CTA. The thresholds match the cover-bar's visibility threshold so
+		// "Continue reading" never shows on a card with no visible progress
+		// indicator.
+		"readLabel": func(pct float64) string {
+			switch {
+			case pct >= 95:
+				return "Read again"
+			case pct > 0.5:
+				return "Continue reading"
+			}
+			return "Read"
+		},
+		// mkBookGrid bundles a book slice + the user's book→tags map +
+		// per-book progress so the "book_grid" sub-template gets everything
+		// as a single argument.
+		"mkBookGrid": func(books []store.Book, tags map[string][]string, progress map[string]float64) bookGridData {
+			return bookGridData{Books: books, Tags: tags, Progress: progress}
 		},
 	}
 }
 
 type bookGridData struct {
-	Books []store.Book
-	Tags  map[string][]string
+	Books    []store.Book
+	Tags     map[string][]string
+	Progress map[string]float64
 }

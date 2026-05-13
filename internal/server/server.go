@@ -342,12 +342,14 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var wishlisted map[string]bool
+	var progress map[string]float64
 	if user != nil {
 		ids := make([]string, 0, len(publicBooks))
 		for _, b := range publicBooks {
 			ids = append(ids, b.ID)
 		}
 		wishlisted, _ = s.store.WishlistedBookIDs(r.Context(), user.ID, ids)
+		progress, _ = s.store.ProgressByBookIDs(r.Context(), user.ID, ids)
 	}
 
 	data := discoverPageData{
@@ -364,6 +366,7 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		},
 		PublicBooks:   publicBooks,
 		WishlistedIDs: wishlisted,
+		Progress:      progress,
 		Query:         query,
 		Sort:          sort,
 		Format:        formatFilter,
@@ -416,6 +419,24 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	wishlistedIDs, _ := s.store.WishlistedBookIDs(r.Context(), user.ID, publicIDs)
 
+	// One progress lookup across every book this page renders, so each
+	// card can show "Continue reading" + a Netflix-style progress sliver
+	// without an n+1 query.
+	allIDs := make([]string, 0, len(books)+len(publicBooks)+len(wishlistBooks)+len(sharedBooks))
+	for _, b := range books {
+		allIDs = append(allIDs, b.ID)
+	}
+	for _, b := range publicBooks {
+		allIDs = append(allIDs, b.ID)
+	}
+	for _, b := range wishlistBooks {
+		allIDs = append(allIDs, b.ID)
+	}
+	for _, b := range sharedBooks {
+		allIDs = append(allIDs, b.ID)
+	}
+	progress, _ := s.store.ProgressByBookIDs(r.Context(), user.ID, allIDs)
+
 	data := dashboardPageData{
 		pageData: pageData{
 			Title:       "Library - Moco",
@@ -433,6 +454,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Tag:            filter.Tag,
 		Format:         filter.Format,
 		WishlistedIDs:  wishlistedIDs,
+		Progress:       progress,
 	}
 	if isFragmentRequest(r) {
 		s.renderTemplate(w, "library_results", data)
@@ -483,6 +505,9 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		if wished, err := s.store.IsInWishlist(r.Context(), user.ID, book.ID); err == nil {
 			data.IsWishlisted = wished
+		}
+		if prog, err := s.store.GetProgress(r.Context(), user.ID, book.ID); err == nil {
+			data.ProgressPercent = prog.ProgressPercent
 		}
 	}
 

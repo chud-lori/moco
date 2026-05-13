@@ -147,10 +147,13 @@
         <span class="session-chip">{{ len .SharedBooks }}</span>
       </div>
       <div class="dashboard-grid">
+        {{ $progress := $.Progress }}
         {{ range .SharedBooks }}
+          {{ $pct := bookProgress $progress .ID }}
           <article class="book-panel has-cover" data-book-id="{{ .ID }}">
             <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
               <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+              {{ if gt $pct 0.5 }}<span class="cover-progress" style="--pct: {{ printf "%.0f" $pct }}%" aria-label="{{ printf "%.0f" $pct }}% read"></span>{{ end }}
             </a>
             <div class="book-panel-top">
               <span class="book-format">{{ .Format }}</span>
@@ -158,7 +161,7 @@
             </div>
             <h2>{{ .Title }}</h2>
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}from {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
-            <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">Read</a></div>
+            <div class="book-panel-actions"><a class="button primary" href="/books/{{ .ID }}/read">{{ readLabel $pct }}</a></div>
           </article>
         {{ end }}
       </div>
@@ -171,7 +174,7 @@
       <span class="session-chip">{{ len .MyPrivateBooks }}</span>
     </div>
     {{ if .MyPrivateBooks }}
-      {{ template "book_grid" (mkBookGrid .MyPrivateBooks .BookTags) }}
+      {{ template "book_grid" (mkBookGrid .MyPrivateBooks .BookTags .Progress) }}
     {{ else }}
       <section class="empty-state is-primary">
         <h2>{{ if or .Tag .Format }}No private books match these filters.{{ else }}Your shelf is empty.{{ end }}</h2>
@@ -187,7 +190,7 @@
       <span class="session-chip">{{ len .MyPublicBooks }}</span>
     </div>
     {{ if .MyPublicBooks }}
-      {{ template "book_grid" (mkBookGrid .MyPublicBooks .BookTags) }}
+      {{ template "book_grid" (mkBookGrid .MyPublicBooks .BookTags .Progress) }}
     {{ else }}
       <section class="empty-state">
         <p>{{ if or .Tag .Format }}Nothing matching these filters in your published shelf.{{ else }}You haven't published anything yet. Toggle any private book to public to share it.{{ end }}</p>
@@ -202,10 +205,13 @@
         <span class="session-chip">{{ len .WishlistBooks }}</span>
       </div>
       <div class="dashboard-grid">
+        {{ $progress := $.Progress }}
         {{ range .WishlistBooks }}
+          {{ $pct := bookProgress $progress .ID }}
           <article class="book-panel has-cover" data-book-id="{{ .ID }}">
             <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
               <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+              {{ if gt $pct 0.5 }}<span class="cover-progress" style="--pct: {{ printf "%.0f" $pct }}%" aria-label="{{ printf "%.0f" $pct }}% read"></span>{{ end }}
             </a>
             <div class="book-panel-top">
               <span class="book-format">{{ .Format }}</span>
@@ -215,7 +221,7 @@
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
             <div class="book-panel-actions">
-              <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+              <a class="button primary" href="/books/{{ .ID }}/read">{{ readLabel $pct }}</a>
               <button class="button subtle" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="1" aria-pressed="true">✓ On list</button>
             </div>
           </article>
@@ -232,11 +238,14 @@
     {{ if .PublicBooks }}
       <div class="dashboard-grid">
         {{ $wishlisted := .WishlistedIDs }}
+        {{ $progress := .Progress }}
         {{ range .PublicBooks }}
           {{ $isOnList := isWishlisted $wishlisted .ID }}
+          {{ $pct := bookProgress $progress .ID }}
           <article class="book-panel has-cover" data-book-id="{{ .ID }}">
             <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
               <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+              {{ if gt $pct 0.5 }}<span class="cover-progress" style="--pct: {{ printf "%.0f" $pct }}%" aria-label="{{ printf "%.0f" $pct }}% read"></span>{{ end }}
             </a>
             <div class="book-panel-top">
               <span class="book-format">{{ .Format }}</span>
@@ -246,7 +255,7 @@
             <p>{{ if .Author }}{{ .Author }}{{ end }}{{ if not .AnonymousOwner }}{{ if .Author }} · {{ end }}by {{ ownerName .OwnerDisplayName .OwnerEmail }}{{ end }}</p>
             {{ if .ReadingMinutes }}<p class="book-meta">{{ formatMinutes .ReadingMinutes }}</p>{{ end }}
             <div class="book-panel-actions">
-              <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+              <a class="button primary" href="/books/{{ .ID }}/read">{{ readLabel $pct }}</a>
               <button class="book-panel-wishlist" type="button" data-wishlist-toggle="{{ .ID }}" data-wishlisted="{{ if $isOnList }}1{{ else }}0{{ end }}" aria-pressed="{{ if $isOnList }}true{{ else }}false{{ end }}" aria-label="{{ if $isOnList }}Remove from wishlist{{ else }}Add to wishlist{{ end }}" title="{{ if $isOnList }}On your wishlist{{ else }}Save to wishlist{{ end }}">
                 <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="{{ if $isOnList }}currentColor{{ else }}none{{ end }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
               </button>
@@ -262,12 +271,15 @@
 
 {{ define "book_grid" }}
   {{ $tagMap := .Tags }}
+  {{ $progress := .Progress }}
   <div class="dashboard-grid">
     {{ range .Books }}
       {{ $book := . }}
+      {{ $pct := bookProgress $progress .ID }}
       <article class="book-panel has-cover" data-book-id="{{ .ID }}">
         <a class="book-cover-thumb" href="/books/{{ .ID }}" aria-label="Open {{ .Title }}">
           <img src="/api/v1/books/{{ .ID }}/cover" alt="" loading="lazy" />
+          {{ if gt $pct 0.5 }}<span class="cover-progress" style="--pct: {{ printf "%.0f" $pct }}%" aria-label="{{ printf "%.0f" $pct }}% read"></span>{{ end }}
         </a>
         <div class="book-panel-top">
           <span class="book-format">{{ .Format }}</span>
@@ -286,7 +298,7 @@
           <button type="button" class="tag-add" data-add-tag data-book-id="{{ $book.ID }}" aria-label="Add tag">+ tag</button>
         </div>
         <div class="book-panel-actions">
-          <a class="button primary" href="/books/{{ .ID }}/read">Read</a>
+          <a class="button primary" href="/books/{{ .ID }}/read">{{ readLabel $pct }}</a>
           <button class="button icon-only" data-toggle-visibility="{{ .ID }}" data-next-visibility="{{ if eq .Visibility "public" }}private{{ else }}public{{ end }}" type="button" aria-label="{{ if eq .Visibility "public" }}Make private{{ else }}Publish{{ end }}" title="{{ if eq .Visibility "public" }}Make private{{ else }}Publish{{ end }}">
             {{ if eq .Visibility "public" }}
               <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>

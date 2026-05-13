@@ -630,6 +630,40 @@ func (s *Store) GetProgress(ctx context.Context, userID, bookID string) (Reading
 	return progress, nil
 }
 
+// ProgressByBookIDs returns progress_percent keyed by book ID for the given
+// user. Books with no row in reading_progress are omitted — callers should
+// treat a missing key as "unread". Used by list pages (dashboard / discover)
+// to render "Continue reading" affordances + progress bars on covers
+// without hitting reading_progress once per card.
+func (s *Store) ProgressByBookIDs(ctx context.Context, userID string, bookIDs []string) (map[string]float64, error) {
+	out := map[string]float64{}
+	if userID == "" || len(bookIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(bookIDs)), ",")
+	q := `SELECT book_id, progress_percent FROM reading_progress
+	      WHERE user_id = ? AND book_id IN (` + placeholders + `)`
+	args := make([]any, 0, len(bookIDs)+1)
+	args = append(args, userID)
+	for _, id := range bookIDs {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var bid string
+		var pct float64
+		if err := rows.Scan(&bid, &pct); err != nil {
+			return nil, err
+		}
+		out[bid] = pct
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) CreateHighlight(ctx context.Context, highlight Highlight) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO highlights (id, user_id, book_id, locator, selected_text, color, note, created_at)
