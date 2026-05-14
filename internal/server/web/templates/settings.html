@@ -80,13 +80,22 @@
         <section class="auth-card">
           <h2 style="margin-top:0; color: var(--danger)">Delete account</h2>
           <p class="auth-copy">This permanently removes your account, all uploaded books, highlights, bookmarks, and tags. This cannot be undone.</p>
-          <form class="stack-form" data-delete-account-form novalidate>
-            <label><span>Confirm with your password</span>
-              <span class="input-with-action">
-                <input type="password" name="password" autocomplete="current-password" required />
-                <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
-              </span>
-            </label>
+          <form class="stack-form" data-delete-account-form data-has-password="{{ if .HasPassword }}1{{ else }}0{{ end }}" novalidate>
+            {{ if .HasPassword }}
+              <label><span>Confirm with your password</span>
+                <span class="input-with-action">
+                  <input type="password" name="password" autocomplete="current-password" required />
+                  <button type="button" class="input-action" data-toggle-password aria-label="Show password" aria-pressed="false">Show</button>
+                </span>
+              </label>
+            {{ else }}
+              {{/* Google-only account: no password to verify. Echo-typing the
+                   account email is the standard pattern (GitHub, Stripe) for
+                   destructive ops without a typed secret. */}}
+              <label><span>Type your email <strong>{{ .CurrentUser.Email }}</strong> to confirm</span>
+                <input type="email" name="confirm_email" autocomplete="off" autocapitalize="off" spellcheck="false" required />
+              </label>
+            {{ end }}
             <p class="form-message" data-delete-account-message aria-live="polite"></p>
             <button class="button danger" type="submit">Delete my account permanently</button>
           </form>

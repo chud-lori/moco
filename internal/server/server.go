@@ -2098,27 +2098,58 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Password string `json:"password"`
+		Password     string `json:"password"`
+		ConfirmEmail string `json:"confirm_email"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	_, currentHash, err := s.store.GetUserByEmail(r.Context(), user.Email)
-	if err != nil || !auth.VerifyPassword(currentHash, req.Password) {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "password is incorrect"})
+
+	// Branch on whether the user has a usable password. Password-bearing
+	// accounts (signup or Google-linked-with-password-set) must reverify
+	// their secret. Google-only accounts have password_hash="" — accepting
+	// a stale-looking blank-vs-blank match would be catastrophic, so they
+	// must echo-type their email instead, the same pattern GitHub/Stripe
+	// use for destructive ops without a typed secret.
+	hasPassword, err := s.store.HasPassword(r.Context(), user.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to check account state"})
+		return
+	}
+	if hasPassword {
+		_, currentHash, err := s.store.GetUserByEmail(r.Context(), user.Email)
+		if err != nil || !auth.VerifyPassword(currentHash, req.Password) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "password is incorrect"})
+			return
+		}
+	} else {
+		typed := strings.ToLower(strings.TrimSpace(req.ConfirmEmail))
+		if typed == "" || typed != strings.ToLower(user.Email) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "typed email does not match your account"})
+			return
+		}
+	}
+
+	// Storage cleanup BEFORE the DB row, not after. There's no
+	// distributed transaction across SQLite + R2; the question is which
+	// kind of inconsistency is recoverable. Old order (DB → storage):
+	// storage failure leaves orphaned objects in R2 with no DB row
+	// pointing at them — unreachable, permanent leak. New order
+	// (storage → DB): storage failure aborts the whole delete, user
+	// retries; if storage succeeds and the DB delete then fails (very
+	// rare), the rows can still be reached and re-deleted on retry.
+	// Recoverable beats permanent.
+	if err := s.storage.DeletePrefix(r.Context(), fmt.Sprintf("books/%s/", user.ID)); err != nil {
+		log.Printf("delete-account: storage cleanup for user %s failed: %v", user.ID, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to delete account files; try again"})
 		return
 	}
 	if err := s.store.DeleteUser(r.Context(), user.ID); err != nil {
+		log.Printf("delete-account: DB delete for user %s failed after storage purge: %v", user.ID, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to delete account"})
 		return
 	}
-	// Best-effort: purge the user's stored objects from whatever backend is
-	// configured. Goes through the storage interface so R2 / future remotes
-	// get cleaned up too — the previous local-only RemoveAll left objects
-	// behind on remote backends.
-	if err := s.storage.DeletePrefix(r.Context(), fmt.Sprintf("books/%s/", user.ID)); err != nil {
-		log.Printf("delete-account: storage cleanup for user %s failed: %v", user.ID, err)
-	}
+
 	// Drop the session cookie.
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.cfg.CookieName,

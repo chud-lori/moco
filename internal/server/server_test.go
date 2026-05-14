@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAuthUploadVisibilityProgressAndHighlightFlows(t *testing.T) {
@@ -192,7 +194,76 @@ func TestEPUBAndPDFReaderRoutesRenderInAppReaders(t *testing.T) {
 	assertReaderContains(t, client, baseURL+"/books/"+epubID+"/read", `data-reader-kind="epub"`)
 	assertReaderContains(t, client, baseURL+"/books/"+epubID+"/read", `epub.min.js`)
 	assertReaderContains(t, client, baseURL+"/books/"+pdfID+"/read", `data-reader-kind="pdf"`)
-	assertReaderContains(t, client, baseURL+"/books/"+pdfID+"/read", `pdf.min.mjs`)
+	// PDF reader loads pdfjs via an external module file (/static/vendor/
+	// pdfjs-init.js) rather than an inline <script type="module"> — see
+	// the supply-chain hardening pass that moved CDN libs to /static/vendor/.
+	// Asserting on the init file is the right freshness check.
+	assertReaderContains(t, client, baseURL+"/books/"+pdfID+"/read", `/static/vendor/pdfjs-init.js`)
+}
+
+func TestDeleteAccountForPasswordUserRequiresPassword(t *testing.T) {
+	t.Parallel()
+
+	client, baseURL := newTestClient(t)
+	seedCSRFCookie(t, client, baseURL)
+	doJSON(t, client, http.MethodPost, baseURL+"/api/v1/auth/signup", map[string]string{
+		"email":    "pwuser@example.com",
+		"password": "verysecurepass",
+	}, http.StatusCreated)
+
+	// Wrong password is rejected.
+	doJSON(t, client, http.MethodDelete, baseURL+"/api/v1/auth/me", map[string]string{
+		"password": "nope-wrong",
+	}, http.StatusUnauthorized)
+
+	// Right password succeeds; user can no longer log in afterwards.
+	doJSON(t, client, http.MethodDelete, baseURL+"/api/v1/auth/me", map[string]string{
+		"password": "verysecurepass",
+	}, http.StatusOK)
+	doJSON(t, client, http.MethodPost, baseURL+"/api/v1/auth/login", map[string]string{
+		"email":    "pwuser@example.com",
+		"password": "verysecurepass",
+	}, http.StatusUnauthorized)
+}
+
+func TestDeleteAccountForGoogleOnlyUserAcceptsEchoedEmail(t *testing.T) {
+	t.Parallel()
+
+	client, baseURL, srv := newTestClientWithServer(t)
+	seedCSRFCookie(t, client, baseURL)
+
+	// Direct-create a Google-only user — same path the OAuth callback
+	// uses on first sign-in. password_hash is "" so the old delete
+	// handler would reject every attempt; this test pins the new
+	// branch that accepts a typed-email confirmation instead.
+	const email = "googly@example.com"
+	ctx := context.Background()
+	now := time.Now().UTC()
+	if _, err := srv.store.CreateUserFromGoogle(ctx, "usr_google_test", email, "Googly", "google-sub-xyz", now); err != nil {
+		t.Fatalf("create google user: %v", err)
+	}
+	// Seed a session for the new user and attach it to the test client.
+	rawToken := "test-session-token-googly"
+	if err := srv.store.CreateSession(ctx, "sess_test", "usr_google_test", rawToken, now.Add(24*time.Hour), now); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	base, _ := url.Parse(baseURL)
+	client.Jar.SetCookies(base, []*http.Cookie{{Name: "moco_session", Value: rawToken, Path: "/"}})
+
+	// Wrong email payload rejected with 401.
+	doJSON(t, client, http.MethodDelete, baseURL+"/api/v1/auth/me", map[string]string{
+		"confirm_email": "not-the-same@example.com",
+	}, http.StatusUnauthorized)
+
+	// Echoed email (case-insensitive) accepted.
+	doJSON(t, client, http.MethodDelete, baseURL+"/api/v1/auth/me", map[string]string{
+		"confirm_email": "GooGly@Example.com",
+	}, http.StatusOK)
+
+	// Row is gone — store can no longer find the user by email.
+	if _, _, err := srv.store.GetUserByEmail(ctx, email); err == nil {
+		t.Fatal("expected user to be deleted after success response")
+	}
 }
 
 func assertReaderContains(t *testing.T, client *http.Client, targetURL, needle string) {
@@ -213,6 +284,16 @@ func assertReaderContains(t *testing.T, client *http.Client, targetURL, needle s
 
 func newTestClient(t *testing.T) (*http.Client, string) {
 	t.Helper()
+	client, baseURL, _ := newTestClientWithServer(t)
+	return client, baseURL
+}
+
+// newTestClientWithServer is the lower-level helper that also returns the
+// constructed *Server, so tests that need to direct-poke the store (e.g.
+// seeding a Google-only user without going through the OAuth flow) have
+// the handle they need without exporting it from the package.
+func newTestClientWithServer(t *testing.T) (*http.Client, string, *Server) {
+	t.Helper()
 	dataDir := t.TempDir()
 	dbPath := filepath.Join(dataDir, "moco.sqlite")
 	srv := New(Config{
@@ -228,7 +309,7 @@ func newTestClient(t *testing.T) (*http.Client, string) {
 	if err != nil {
 		t.Fatalf("cookie jar: %v", err)
 	}
-	return &http.Client{Jar: jar}, ts.URL
+	return &http.Client{Jar: jar}, ts.URL, srv
 }
 
 func newAnonymousClient(t *testing.T) (*http.Client, string) {

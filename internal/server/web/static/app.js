@@ -3129,10 +3129,16 @@ if (deleteAccountForm) {
     });
     if (!confirmed) return;
     const data = new FormData(deleteAccountForm);
-    const password = String(data.get("password") || "");
+    // Google-only accounts don't have a password field — the template
+    // renders an email-echo input instead. Send whichever the server
+    // expects; HasPassword on the server still branches on truth.
+    const payload =
+      deleteAccountForm.dataset.hasPassword === "1"
+        ? { password: String(data.get("password") || "") }
+        : { confirm_email: String(data.get("confirm_email") || "") };
     setButtonLoading(submit, true, "Deleting…");
     try {
-      await requestJSON("/api/v1/auth/me", { method: "DELETE", body: JSON.stringify({ password }) });
+      await requestJSON("/api/v1/auth/me", { method: "DELETE", body: JSON.stringify(payload) });
       window.location.href = "/";
     } catch (err) {
       setMessage(message, err.message || "Could not delete account.", "error");
