@@ -585,6 +585,23 @@ if (uploadForm) {
     refreshCoverPreview();
   });
 
+  // Convert a `data:<mime>;base64,<payload>` URL to a Blob without going
+  // through fetch(). Our CSP's `connect-src 'self'` rejects fetch on data:
+  // URLs, so the obvious one-liner fails silently. Manual decode keeps
+  // the upload form working under strict CSP.
+  function dataURLToBlob(dataURL) {
+    const comma = dataURL.indexOf(",");
+    if (comma < 0) throw new Error("malformed data URL");
+    const header = dataURL.slice(0, comma);
+    const payload = dataURL.slice(comma + 1);
+    const mimeMatch = /^data:([^;,]+)/.exec(header);
+    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+    const bin = atob(payload);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
   // Client-side PDF first-page render. Used when server-side extraction
   // isn't available (mutool not installed) so the user still has a way to
   // pick the actual first page as the cover. Lazy-loads PDF.js so it
@@ -881,7 +898,11 @@ if (uploadForm) {
       !coverFileInput?.files?.[0];
     if (wantClientRendered) {
       try {
-        const blob = await fetch(extractedCoverDataURL).then((r) => r.blob());
+        // Decode in-place rather than `fetch(dataURL)` — fetch on a data:
+        // URL is blocked by our `connect-src 'self'` CSP, so the fetch
+        // path silently swallows the cover and we fall back to the
+        // generated SVG. atob + Uint8Array is CSP-safe.
+        const blob = dataURLToBlob(extractedCoverDataURL);
         formData.set("cover", blob, "cover.jpg");
       } catch (err) {
         console.warn("Failed to attach client-rendered cover:", err);
@@ -1090,8 +1111,19 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
   // each placeholder gets its own per-page aspect (set on first render).
   const firstPage = await pdf.getPage(1);
   const firstVp = firstPage.getViewport({ scale: 1 });
-  let baseScale = (pagesEl.clientWidth - 32) / firstVp.width;
-  if (baseScale <= 0) baseScale = 1;
+  // pagesEl.clientWidth is read BEFORE native fullscreen has resolved
+  // (we fire-and-forget the request) so on wide displays the initial
+  // baseScale is measured against the smaller pre-fullscreen viewport
+  // and pages end up rendered larger than the actual fullscreen width.
+  // The fullscreenchange + resize listeners below recompute as soon as
+  // the real viewport is known.
+  function fitBaseScale() {
+    const w = pagesEl.clientWidth;
+    if (w <= 0) return 1;
+    const next = (w - 32) / firstVp.width;
+    return next > 0 ? next : 1;
+  }
+  let baseScale = fitBaseScale();
   let zoom = 1.0;
   let mostVisiblePage = startPage;
 
@@ -1179,20 +1211,44 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
   }, { root: scrollEl, rootMargin: "100% 0px" });
   placeholders.forEach((ph) => observer.observe(ph));
 
-  // Re-render on zoom: clear all canvases, resize placeholders, let the
-  // observer re-fire to render whatever is now visible.
+  // Shared re-layout path: clear current canvases, resize placeholders,
+  // and nudge the observer so visible ones get re-rendered at the new
+  // scale. Used by zoom AND by the resize / fullscreenchange handlers
+  // below — both have the same job, just different triggers.
+  function relayoutAtCurrentScale() {
+    [...renderedNums].forEach(clearPage);
+    applyPlaceholderSizes();
+    observer.disconnect();
+    placeholders.forEach((ph) => observer.observe(ph));
+  }
+
   function setZoom(z) {
     z = Math.min(Math.max(z, 0.25), 5);
     if (Math.abs(z - zoom) < 0.001) return;
     zoom = z;
     zoomDisp.textContent = `${Math.round(zoom * 100)}%`;
-    [...renderedNums].forEach(clearPage);
-    applyPlaceholderSizes();
-    // Nudge the observer — disconnect/reconnect re-fires entries for
-    // currently visible placeholders so they get rendered at new scale.
-    observer.disconnect();
-    placeholders.forEach((ph) => observer.observe(ph));
+    relayoutAtCurrentScale();
   }
+
+  // Re-fit when the viewport changes — fullscreen settling, window
+  // resize, orientation change. We don't reset zoom (that's user state)
+  // but the fit-to-width base does need to recompute against the new
+  // pagesEl width.
+  function refitToViewport() {
+    const next = fitBaseScale();
+    if (Math.abs(next - baseScale) < 0.001) return;
+    baseScale = next;
+    relayoutAtCurrentScale();
+  }
+  let resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(refitToViewport, 120);
+  }
+  window.addEventListener("resize", onResize);
+  // Initial refit after one frame — covers the case where the native
+  // fullscreen request resolves while we were awaiting pdf.getPage(1).
+  requestAnimationFrame(refitToViewport);
   overlay.querySelector("[data-pdf-fs-zoom-in]").addEventListener("click", () => setZoom(zoom * 1.2));
   overlay.querySelector("[data-pdf-fs-zoom-out]").addEventListener("click", () => setZoom(zoom * 0.85));
   // Ctrl/Cmd + scroll = zoom (matches PDF viewer convention).
@@ -1240,16 +1296,24 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
     document.body.classList.remove("pdf-fs-active");
     document.removeEventListener("keydown", onKey);
     document.removeEventListener("fullscreenchange", onFsChange);
+    window.removeEventListener("resize", onResize);
+    clearTimeout(resizeTimer);
     if (typeof onClose === "function") onClose(mostVisiblePage);
   }
   function onKey(e) {
     if (e.key === "Escape") close();
   }
-  // If the user exits fullscreen via the browser's own Esc (which doesn't
-  // bubble as a keydown to us inside fullscreen), close the overlay too.
-  // Otherwise they'd be stuck inside our overlay with normal browser
-  // chrome showing on top — disorienting.
+  // Two distinct cases on fullscreenchange:
+  //   - entered: viewport just expanded, refit so pages don't render
+  //     wider than the now-larger pagesEl.
+  //   - exited (and we were the ones using fullscreen): close the
+  //     overlay so the user doesn't get stranded inside it with normal
+  //     browser chrome layered on top.
   function onFsChange() {
+    if (document.fullscreenElement === overlay) {
+      requestAnimationFrame(refitToViewport);
+      return;
+    }
     if (usingBrowserFullscreen && !document.fullscreenElement && !closed) {
       close();
     }
@@ -2565,27 +2629,68 @@ if (readerRoot) {
         return stage.clientWidth >= SPREAD_MIN_WIDTH && pdf.numPages >= 2;
       };
 
-      // Snapshot the current canvas to a ghost element that slides off in
-      // the nav direction. The new render lands on the main canvas under
-      // the ghost, so by the time the ghost finishes sliding the user
-      // sees the new pages. Only fires for explicit prev/next nav — TOC
-      // jumps, resize, and initial render skip animation (direction=null)
-      // because a slide there feels arbitrary instead of intentional.
+      // Page-turn animation: snapshot the current canvas to an <img>
+      // appended at body level (with position:fixed) and rotate it
+      // around its spine edge. The new render lands on the main canvas
+      // underneath while the flipping <img> rotates out of view.
+      //
+      // Why an <img> instead of a <canvas> clone? Browsers GPU-accelerate
+      // image transforms reliably; large <canvas> elements under 3D
+      // rotation re-rasterize per frame in Chromium and stutter.
+      //
+      // Why body-level instead of inside .pdf-stage? Anything inside the
+      // stage feeds into the stage's overflow:auto, which made the
+      // browser briefly show scrollbars while the ghost was attached
+      // even with overflow-x:hidden on the stage. position:fixed at body
+      // level sidesteps that entirely — body has overflow:hidden so the
+      // rotated edge just clips against the viewport.
+      //
+      // Only fires for explicit prev/next nav — TOC jumps, resize, and
+      // initial render skip animation (direction=null).
+      // Page-turn animation. Three nested elements at body level:
+      //
+      //   .pdf-flip-clip   — fixed, overflow:hidden, sized to the canvas
+      //                      viewport rect. Confines the rotation to the
+      //                      page's footprint so the flip doesn't leak
+      //                      into surrounding chrome. Holds perspective.
+      //   .pdf-flip-page   — transform-style: preserve-3d, rotates the
+      //                      full 180° around its spine edge.
+      //   .pdf-flip-face   — two children: front = <img> snapshot of the
+      //                      outgoing page; back = paper-textured div
+      //                      pre-rotated 180° so it reads right-side-up
+      //                      at the end of the flip.
+      //
+      // This mirrors how archive.org's BookReader and turn.js do it.
+      // A two-faced 180° flip reads as a paper page being turned over;
+      // a one-faced 90° rotate reads as a card being flicked away.
+      const PAGE_TURN_MS = 520;
       const startPageTurnGhost = (direction) => {
         if (!direction || !canvas.width || !canvas.height) return;
-        const ghost = document.createElement("canvas");
-        ghost.className = `pdf-stage-ghost is-slide-out-${direction === "next" ? "left" : "right"}`;
-        ghost.width = canvas.width;
-        ghost.height = canvas.height;
-        const stageRect = stage.getBoundingClientRect();
-        const canvasRect = canvas.getBoundingClientRect();
-        ghost.style.left = `${canvasRect.left - stageRect.left + stage.scrollLeft}px`;
-        ghost.style.top = `${canvasRect.top - stageRect.top + stage.scrollTop}px`;
-        ghost.style.width = canvas.style.width;
-        ghost.style.height = canvas.style.height;
-        ghost.getContext("2d").drawImage(canvas, 0, 0);
-        stage.appendChild(ghost);
-        setTimeout(() => ghost.remove(), 360);
+        // JPEG (not PNG) — snapshot is only seen for ~500ms, encoding
+        // PNG would block the main thread ~5x longer for no real
+        // perceived quality difference on book pages.
+        let dataURL;
+        try { dataURL = canvas.toDataURL("image/jpeg", 0.85); } catch (_) { return; }
+        const rect = canvas.getBoundingClientRect();
+        const clip = document.createElement("div");
+        clip.className = "pdf-flip-clip";
+        clip.style.left = `${rect.left}px`;
+        clip.style.top = `${rect.top}px`;
+        clip.style.width = `${rect.width}px`;
+        clip.style.height = `${rect.height}px`;
+        const page = document.createElement("div");
+        page.className = `pdf-flip-page is-turn-${direction}`;
+        const front = document.createElement("img");
+        front.className = "pdf-flip-face pdf-flip-face-front";
+        front.src = dataURL;
+        front.alt = "";
+        const back = document.createElement("div");
+        back.className = "pdf-flip-face pdf-flip-face-back";
+        page.appendChild(front);
+        page.appendChild(back);
+        clip.appendChild(page);
+        document.body.appendChild(clip);
+        setTimeout(() => clip.remove(), PAGE_TURN_MS);
       };
 
       const renderPage = async (num, direction = null) => {
@@ -2658,9 +2763,12 @@ if (readerRoot) {
               pageInput.max = String(pdf.numPages);
             }
             if (pageTotal) {
-              pageTotal.textContent = rightNum > 0
-                ? `–${rightNum} / ${pdf.numPages}`
-                : `/ ${pdf.numPages}`;
+              // In spread mode we used to render `–${rightNum} / N` here,
+              // which displayed as the input (e.g. "10") followed by a
+              // detached " –11 / 1196" — the en-dash next to "11" read as
+              // "negative 11". Just show the total; the fact that two
+              // pages are visible is already obvious from the spread.
+              pageTotal.textContent = `/ ${pdf.numPages}`;
             }
             if (prev) prev.disabled = leftNum <= 1;
             // "Next" is disabled when we're already showing the last
