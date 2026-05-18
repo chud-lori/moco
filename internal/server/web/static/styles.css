@@ -1690,60 +1690,36 @@ main { display: grid; gap: 22px; }
   margin-top: auto;
   padding-top: 10px;
   border-top: 1px solid rgba(85, 66, 43, 0.08);
-  /* Single inline row at all widths — Read flexes, icon buttons shrink to
-     a 32px floor on phones so the trash never wraps to its own line.
-     `min-width: 0` on the primary lets the Read text ellipsize on the
-     narrowest cards rather than forcing the row to overflow. */
+  /* Wrap when there's not enough room for Continue + icons on one line.
+     Previously this was `nowrap` for owner cards (Continue + 3 icons),
+     and the text button was set up to ellipsize — but on narrow grid
+     columns above 768px the pill's border-radius clipped the trailing
+     letter before the ellipsis could render, producing "Continu"
+     instead of "Continue". Allowing wrap means on cramped columns the
+     text button takes row 1 alone and the icons share row 2 — same
+     behaviour public cards already had. */
   display: flex;
   flex-direction: row;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 4px;
 }
 .book-panel-actions .button:not(.icon-only) {
-  flex: 1 1 0;
-  min-width: 0;
+  /* min-width 110px ensures the label ("Continue", "Resume", "Read")
+     always fits — no more mid-letter truncation. The button grows to
+     fill remaining row space; if 110px doesn't fit alongside the
+     icons, the row wraps so this button gets a full row to itself. */
+  flex: 1 1 110px;
+  min-width: 110px;
   padding: 8px 10px;
   font-size: 0.9rem;
   min-height: 36px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .book-panel-actions .button.icon-only {
   width: 34px;
   min-width: 34px;
   min-height: 34px;
-}
-
-/* Two-text-button rows (public-shelf cards: Read + "Want to read") need
-   different behavior than owner cards. On phone-grid widths (~150–200px
-   per card) splitting 50/50 truncates "+ Want to read" to "Want to rea…".
-   Detect this row shape with :has() and let it wrap to a second line
-   with each button claiming a readable min-width instead of being clipped. */
-.book-panel-actions:not(:has(.button.icon-only)) {
-  flex-wrap: wrap;
-}
-.book-panel-actions:not(:has(.button.icon-only)) .button:not(.icon-only) {
-  flex: 1 1 110px;
-  min-width: 110px;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-/* Owner-card rows (Read + 3 icon-only buttons) on phone-grid widths
-   don't have enough room to fit Read alongside three 34px icons
-   without Read shrinking to a circle (visible at ~155–200px card
-   widths). Wrap so Read takes the full width on row 1 and the icons
-   share row 2. Above 768px, cards are wide enough to keep everything
-   on one line. */
-@media (max-width: 768px) {
-  .book-panel-actions:has(.button.icon-only) {
-    flex-wrap: wrap;
-  }
-  .book-panel-actions:has(.button.icon-only) .button:not(.icon-only) {
-    flex: 1 1 100%;
-  }
 }
 
 @media (min-width: 768px) {

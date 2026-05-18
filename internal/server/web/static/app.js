@@ -3177,6 +3177,15 @@ if (readerRoot) {
 //     yank the page from under anyone mid-read. The new SW takes effect on
 //     the next navigation regardless, so "Later" is a safe fallback.
 if ("serviceWorker" in navigator && location.protocol !== "http:") {
+  // Snapshot whether a controller already exists BEFORE registering. This
+  // distinguishes "first SW install on this page" (no prior controller —
+  // happens on every fresh incognito session) from "a newer SW just took
+  // over an existing one" (the only case we want to prompt about). Without
+  // this, the post-skipWaiting+clients.claim sequence in sw.js fires
+  // controllerchange on first install and looks like an update to the
+  // user — leading to the "A new version is ready." toast on a fresh
+  // incognito visit, which is jarring and false.
+  const hadInitialController = !!navigator.serviceWorker.controller;
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
@@ -3190,6 +3199,7 @@ if ("serviceWorker" in navigator && location.protocol !== "http:") {
     let reloaded = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (reloaded) return;
+      if (!hadInitialController) return; // first install — not a real update
       if (sessionStorage.getItem("moco:swReloadDismissed") === "1") return;
       showUpdateToast(() => {
         reloaded = true;

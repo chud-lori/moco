@@ -465,12 +465,14 @@ func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort
 		args = append(args, excludeUserID)
 	}
 	if search = strings.TrimSpace(search); search != "" {
-		// Match against title and author. Owner display name is also matched
-		// for non-anonymous uploaders so a viewer searching for a person finds
-		// their public shelf without needing to learn the anonymity rules.
-		query += ` AND (lower(b.title) LIKE ? OR lower(b.author) LIKE ? OR (u.anonymous_owner = 0 AND lower(COALESCE(u.display_name, '')) LIKE ?))`
+		// Match against title, author, description (so a phrase from the
+		// blurb finds the book even when the title slips your mind), and
+		// owner display name for non-anonymous uploaders (so a viewer
+		// searching for a person finds their public shelf without
+		// learning the anonymity rules).
+		query += ` AND (lower(b.title) LIKE ? OR lower(b.author) LIKE ? OR lower(COALESCE(b.description, '')) LIKE ? OR (u.anonymous_owner = 0 AND lower(COALESCE(u.display_name, '')) LIKE ?))`
 		needle := "%" + strings.ToLower(search) + "%"
-		args = append(args, needle, needle, needle)
+		args = append(args, needle, needle, needle, needle)
 	}
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "pdf", "epub", "md":
