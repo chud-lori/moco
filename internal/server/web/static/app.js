@@ -1060,6 +1060,25 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
   document.body.appendChild(overlay);
   document.body.classList.add("pdf-fs-active");
 
+  // Best-effort native fullscreen on the overlay so browser chrome hides
+  // too — matches archive.org's reader. Some browsers (mobile Safari,
+  // privacy modes, headless test runners) reject or hang on the request;
+  // we fire-and-forget so the overlay finishes setup either way. The
+  // close handler reads `usingBrowserFullscreen` lazily so it doesn't
+  // matter when this resolves.
+  let usingBrowserFullscreen = false;
+  (async () => {
+    try {
+      if (overlay.requestFullscreen) {
+        await overlay.requestFullscreen();
+        usingBrowserFullscreen = true;
+      } else if (overlay.webkitRequestFullscreen) {
+        overlay.webkitRequestFullscreen();
+        usingBrowserFullscreen = true;
+      }
+    } catch (_) { /* fullscreen not available — overlay still works */ }
+  })();
+
   const dpr = window.devicePixelRatio || 1;
   const pagesEl = overlay.querySelector("[data-pdf-fs-pages]");
   const scrollEl = overlay.querySelector("[data-pdf-fs-scroll]");
@@ -1206,17 +1225,37 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
     overlay.appendChild(noteBtn);
   }
 
+  let closed = false;
   function close() {
+    if (closed) return;
+    closed = true;
     observer.disconnect();
+    // Exit browser fullscreen if we entered it ourselves. Wrapped in try
+    // because exitFullscreen() rejects if we're already out (e.g., user
+    // hit Esc, which fired fullscreenchange before this handler).
+    if (usingBrowserFullscreen && document.fullscreenElement === overlay) {
+      try { document.exitFullscreen(); } catch (_) { /* already out */ }
+    }
     overlay.remove();
     document.body.classList.remove("pdf-fs-active");
     document.removeEventListener("keydown", onKey);
+    document.removeEventListener("fullscreenchange", onFsChange);
     if (typeof onClose === "function") onClose(mostVisiblePage);
   }
   function onKey(e) {
     if (e.key === "Escape") close();
   }
+  // If the user exits fullscreen via the browser's own Esc (which doesn't
+  // bubble as a keydown to us inside fullscreen), close the overlay too.
+  // Otherwise they'd be stuck inside our overlay with normal browser
+  // chrome showing on top — disorienting.
+  function onFsChange() {
+    if (usingBrowserFullscreen && !document.fullscreenElement && !closed) {
+      close();
+    }
+  }
   document.addEventListener("keydown", onKey);
+  document.addEventListener("fullscreenchange", onFsChange);
   overlay.querySelector("[data-pdf-fs-close]").addEventListener("click", close);
 
   // Scroll to the user's current paginated-reader page.
@@ -1368,7 +1407,11 @@ if (readerRoot) {
     const raw = document.getElementById("reader-highlights-data")?.textContent?.trim();
     if (!raw) return [];
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      // Server emits literal `null` for books with no highlights yet —
+      // JSON.parse turns that into null, not []. Coerce so every later
+      // .forEach / .findIndex on currentHighlights stays safe.
+      return Array.isArray(parsed) ? parsed : [];
     } catch (_) {
       return [];
     }
@@ -1780,9 +1823,18 @@ if (readerRoot) {
   };
 
   // ----- Fullscreen API -----
+  // For PDFs the PDF reader installs window.__mocoOpenPdfContinuous below
+  // and we route this button to continuous-scroll-in-fullscreen instead of
+  // plain browser fullscreen — that's what readers actually want here.
+  // EPUB/MD fall through to native fullscreen on documentElement.
   const fullscreenButton = document.querySelector("[data-fullscreen-toggle]");
   if (fullscreenButton) {
     fullscreenButton.addEventListener("click", async () => {
+      if (typeof window.__mocoOpenPdfContinuous === "function") {
+        closeAllPanels();
+        window.__mocoOpenPdfContinuous();
+        return;
+      }
       try {
         if (document.fullscreenElement) {
           await document.exitFullscreen();
@@ -1797,7 +1849,6 @@ if (readerRoot) {
       const on = !!document.fullscreenElement;
       fullscreenButton.setAttribute("aria-pressed", String(on));
       fullscreenButton.title = on ? "Exit fullscreen" : "Enter fullscreen";
-      fullscreenButton.textContent = on ? "⤧" : "⛶";
     });
   }
 
@@ -2514,9 +2565,33 @@ if (readerRoot) {
         return stage.clientWidth >= SPREAD_MIN_WIDTH && pdf.numPages >= 2;
       };
 
-      const renderPage = async (num) => {
+      // Snapshot the current canvas to a ghost element that slides off in
+      // the nav direction. The new render lands on the main canvas under
+      // the ghost, so by the time the ghost finishes sliding the user
+      // sees the new pages. Only fires for explicit prev/next nav — TOC
+      // jumps, resize, and initial render skip animation (direction=null)
+      // because a slide there feels arbitrary instead of intentional.
+      const startPageTurnGhost = (direction) => {
+        if (!direction || !canvas.width || !canvas.height) return;
+        const ghost = document.createElement("canvas");
+        ghost.className = `pdf-stage-ghost is-slide-out-${direction === "next" ? "left" : "right"}`;
+        ghost.width = canvas.width;
+        ghost.height = canvas.height;
+        const stageRect = stage.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        ghost.style.left = `${canvasRect.left - stageRect.left + stage.scrollLeft}px`;
+        ghost.style.top = `${canvasRect.top - stageRect.top + stage.scrollTop}px`;
+        ghost.style.width = canvas.style.width;
+        ghost.style.height = canvas.style.height;
+        ghost.getContext("2d").drawImage(canvas, 0, 0);
+        stage.appendChild(ghost);
+        setTimeout(() => ghost.remove(), 360);
+      };
+
+      const renderPage = async (num, direction = null) => {
         if (rendering) return;
         rendering = true;
+        startPageTurnGhost(direction);
         try {
           const dpr = window.devicePixelRatio || 1;
           const stageW = Math.max(stage.clientWidth - 24, 200);
@@ -2683,7 +2758,7 @@ if (readerRoot) {
         } else {
           pageNum = Math.max(1, pageNum - 1);
         }
-        renderPage(pageNum);
+        renderPage(pageNum, "prev");
       };
       const goNext = () => {
         if (pageNum >= pdf.numPages) return;
@@ -2697,7 +2772,7 @@ if (readerRoot) {
         } else {
           pageNum = Math.min(pdf.numPages, pageNum + 1);
         }
-        renderPage(pageNum);
+        renderPage(pageNum, "next");
       };
       prev?.addEventListener("click", goPrev);
       next?.addEventListener("click", goNext);
@@ -2705,8 +2780,9 @@ if (readerRoot) {
       const goToPage = (target) => {
         const n = Math.max(1, Math.min(pdf.numPages, target | 0));
         if (n === pageNum) return;
+        const direction = n > pageNum ? "next" : "prev";
         pageNum = n;
-        renderPage(pageNum);
+        renderPage(pageNum, direction);
       };
       pageInput?.addEventListener("change", () => goToPage(Number(pageInput.value)));
       pageInput?.addEventListener("keydown", (e) => {
@@ -2792,21 +2868,31 @@ if (readerRoot) {
         });
       }
 
-      // Settings panel "Open continuous scroll" — opens a separate
-      // fullscreen overlay with all pages stacked + zoom + lazy render.
-      // Doesn't replace the paginated reader; closing the overlay
-      // returns to it. Doesn't run for non-PDF readers.
+      // Open the continuous-scroll overlay (all pages stacked + zoom +
+      // native browser fullscreen). Used by both the settings-panel link
+      // (mobile entry point — topbar fullscreen is hidden there) and the
+      // topbar fullscreen button via window.__mocoOpenPdfContinuous below.
+      const openContinuous = async () => {
+        closeAllPanels();
+        await openPdfContinuousScroll(pdf, pageNum, bookID, isGuest, triggerPdfPageNote, (n) => {
+          pageNum = Math.max(1, Math.min(pdf.numPages, n));
+          renderPage(pageNum);
+        });
+      };
+
       const fullscreenBtn = document.querySelector("[data-pdf-fullscreen-toggle]");
       if (fullscreenBtn) {
-        fullscreenBtn.addEventListener("click", async () => {
-          closeAllPanels();
-          await openPdfContinuousScroll(pdf, pageNum, bookID, isGuest, triggerPdfPageNote, (n) => {
-            // Sync paginated reader's pageNum to wherever they were
-            // last viewing in continuous mode.
-            pageNum = Math.max(1, Math.min(pdf.numPages, n));
-            renderPage(pageNum);
-          });
-        });
+        fullscreenBtn.addEventListener("click", openContinuous);
+      }
+
+      // Topbar fullscreen button routes here for PDFs (vs. plain browser
+      // fullscreen for EPUB/MD). Title swap signals what it actually does.
+      // Cleared on close so a later non-PDF reader (if SPA) gets default.
+      window.__mocoOpenPdfContinuous = openContinuous;
+      const topbarFsBtn = document.querySelector("[data-fullscreen-toggle]");
+      if (topbarFsBtn) {
+        topbarFsBtn.title = "Continuous scroll (fullscreen)";
+        topbarFsBtn.setAttribute("aria-label", "Open continuous scroll");
       }
 
       // Report the PDF's total page count back to the server. The server
@@ -3856,7 +3942,11 @@ window.addEventListener("popstate", () => {
 // ---------- Selection popover (shared by EPUB + Markdown readers) ----------
 // One instance is built lazily and reused. Helpers below handle positioning,
 // color selection, and click-to-highlight binding for whichever reader is live.
-let __mocoPopoverActiveColor = "amber";
+// `var` (not `let`) because the MD reader block above calls
+// ensureSelectionPopover() at module-execution time — earlier than this
+// line. A `let` here would still be in its temporal dead zone at that
+// point and the read at line 3975 (a few lines down) would throw.
+var __mocoPopoverActiveColor = "amber";
 window.__mocoActiveHighlightColor = () => __mocoPopoverActiveColor;
 
 function ensureSelectionPopover() {

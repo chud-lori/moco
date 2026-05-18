@@ -2339,6 +2339,33 @@ main { display: grid; gap: 22px; }
   background: #fff;
 }
 
+/* Page-turn animation. A clone of the outgoing canvas is positioned over
+   the live one and slides off in the nav direction while the new page
+   renders underneath. Background + shadow match #pdf-canvas so the slide
+   reads as a printed page edge moving, not a floating bitmap. */
+.pdf-stage-ghost {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
+  max-width: 100%;
+  will-change: transform, opacity;
+}
+.pdf-stage-ghost.is-slide-out-left  { animation: moco-pdf-slide-left  280ms ease-out forwards; }
+.pdf-stage-ghost.is-slide-out-right { animation: moco-pdf-slide-right 280ms ease-out forwards; }
+@keyframes moco-pdf-slide-left {
+  from { transform: translateX(0);     opacity: 1; }
+  to   { transform: translateX(-110%); opacity: 0; }
+}
+@keyframes moco-pdf-slide-right {
+  from { transform: translateX(0);    opacity: 1; }
+  to   { transform: translateX(110%); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdf-stage-ghost { animation: none !important; display: none; }
+}
+
 /* PDF continuous-scroll fullscreen viewer. Mimics the browser's native
    PDF view — dark backdrop, all pages stacked, lazy rendered, scroll +
    zoom. Lives at body level so it covers Moco's own chrome cleanly.
