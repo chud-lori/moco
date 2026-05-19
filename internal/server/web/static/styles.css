@@ -300,6 +300,19 @@ main { display: grid; gap: 22px; }
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: var(--shadow);
+  /* Mobile-only auto-hide on downward scroll. The class is toggled by
+     setupScrollAwayTopbar in app.js. Slide off the top so the grid gets
+     full viewport height while scrolling down; bring back instantly on
+     scroll-up. Desktop ignores the class (the @media-gated translate
+     below only fires below 768px). */
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+@media (max-width: 767px) {
+  .topbar.is-tucked-away {
+    transform: translateY(calc(-100% - 16px));
+    opacity: 0;
+    pointer-events: none;
+  }
 }
 .topbar > .brand,
 .topbar > .topnav,

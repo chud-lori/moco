@@ -76,6 +76,42 @@ function showUpdateToast(onReload) {
   stack.appendChild(node);
 }
 
+// ---------- Scroll-away topbar (mobile only) ----------
+// The sticky .topbar pill eats ~100px of viewport on phones, which is
+// significant on a content-heavy reading page. Hide it while the user
+// scrolls down through the grid and slide it back when they scroll up
+// — same affordance Safari / Twitter use. Desktop keeps it always-on
+// (the CSS rule that visually hides this is media-queried to ≤767px,
+// so adding the class on desktop is inert).
+(function setupScrollAwayTopbar() {
+  const bar = document.querySelector(".topbar");
+  if (!bar) return;
+  // Reader pages have their own .reader-topbar with bespoke chrome —
+  // this hook only applies to the dashboard-style pages.
+  let lastY = window.scrollY;
+  let ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      const y = window.scrollY;
+      const delta = y - lastY;
+      // Always show when near the top so a small scroll bounce after
+      // page-load doesn't tuck the bar away before the user sees it.
+      if (y < 80) {
+        bar.classList.remove("is-tucked-away");
+      } else if (delta > 8) {
+        bar.classList.add("is-tucked-away");
+      } else if (delta < -8) {
+        bar.classList.remove("is-tucked-away");
+      }
+      lastY = y;
+      ticking = false;
+    });
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+})();
+
 // ---------- Modal helpers ----------
 function ensureModal() {
   let modal = document.querySelector("[data-modal-root]");
