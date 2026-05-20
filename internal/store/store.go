@@ -452,36 +452,79 @@ func (s *Store) ListBooks(ctx context.Context, userID string) ([]Book, error) {
 	return books, rows.Err()
 }
 
+// buildFTSQuery converts a user search string into an FTS5 MATCH expression.
+// Each whitespace-separated token is double-quoted (so FTS5 syntax characters
+// in the input — AND, OR, NEAR, parentheses, etc. — are treated as literal
+// terms rather than operators) and suffixed with `*` for prefix matching, so
+// "harr pot" finds "Harry Potter". Tokens are joined by space, which FTS5
+// reads as an implicit AND across all indexed columns.
+//
+// Returns "" when the input is empty after trimming — callers fall back to
+// the regular WHERE path.
+func buildFTSQuery(s string) string {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteByte('"')
+		b.WriteString(strings.ReplaceAll(f, `"`, `""`))
+		b.WriteString(`"*`)
+	}
+	return b.String()
+}
+
 func (s *Store) ListPublicBooks(ctx context.Context, excludeUserID, search, sort, format string) ([]Book, error) {
-	query := `
-		SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
-		       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
-		FROM books b
-		JOIN users u ON u.id = b.user_id
-		WHERE b.visibility = 'public'`
+	search = strings.TrimSpace(search)
+	ftsQuery := buildFTSQuery(search)
 	args := []any{}
+
+	var query string
+	if ftsQuery != "" {
+		// FTS5 path. JOIN through books_fts so MATCH ranks results by bm25
+		// — much better relevance for description hits than the LIKE scan
+		// could give, and stays fast as the corpus grows.
+		query = `
+			SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
+			       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
+			FROM books_fts f
+			JOIN books b ON b.id = f.book_id
+			JOIN users u ON u.id = b.user_id
+			WHERE books_fts MATCH ? AND b.visibility = 'public'`
+		args = append(args, ftsQuery)
+	} else {
+		query = `
+			SELECT b.id, b.user_id, b.title, b.author, b.format, b.visibility, u.email, u.display_name, b.storage_path, b.file_size, b.created_at, b.updated_at,
+			       b.last_opened_at, b.original_filename, b.mime_type, b.derived_epub_path, b.reading_minutes, b.cover_path, u.anonymous_owner, b.total_pages, b.description
+			FROM books b
+			JOIN users u ON u.id = b.user_id
+			WHERE b.visibility = 'public'`
+	}
 	if excludeUserID != "" {
-		query += ` AND user_id != ?`
+		query += ` AND b.user_id != ?`
 		args = append(args, excludeUserID)
 	}
-	if search = strings.TrimSpace(search); search != "" {
-		// Match against title, author, description (so a phrase from the
-		// blurb finds the book even when the title slips your mind), and
-		// owner display name for non-anonymous uploaders (so a viewer
-		// searching for a person finds their public shelf without
-		// learning the anonymity rules).
-		query += ` AND (lower(b.title) LIKE ? OR lower(b.author) LIKE ? OR lower(COALESCE(b.description, '')) LIKE ? OR (u.anonymous_owner = 0 AND lower(COALESCE(u.display_name, '')) LIKE ?))`
-		needle := "%" + strings.ToLower(search) + "%"
-		args = append(args, needle, needle, needle, needle)
-	}
+	// Anonymous owners shouldn't show up via owner-name hits in the FTS
+	// index — the trigger writes empty owner_name for them so they can
+	// only be reached by title/author/description, but a stray match
+	// could still happen if the user types their email (stored elsewhere).
+	// No extra filter needed thanks to the trigger.
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "pdf", "epub", "md":
 		query += ` AND b.format = ?`
 		args = append(args, strings.ToLower(strings.TrimSpace(format)))
 	}
-	switch sort {
-	case "title":
+	switch {
+	case sort == "title":
 		query += ` ORDER BY b.title COLLATE NOCASE ASC`
+	case ftsQuery != "":
+		// Relevance-first when the user typed a search; bm25 sorts the
+		// most-relevant rows to the top. Recency breaks ties.
+		query += ` ORDER BY bm25(books_fts), COALESCE(b.last_opened_at, b.updated_at) DESC`
 	default:
 		query += ` ORDER BY COALESCE(b.last_opened_at, b.updated_at) DESC`
 	}
