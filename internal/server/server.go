@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +21,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -248,11 +252,64 @@ func (s *Server) Handler() http.Handler {
 	return s.withLogging(handler)
 }
 
+// buildCombinedCSS reads every *.css under web/static/styles in name order
+// and concatenates them into one byte slice with a SHA-256 ETag. Templates
+// already cache-bust on assetVersion; the ETag is a belt-and-suspenders for
+// 304 responses when AssetVersion is unchanged across restarts.
+func buildCombinedCSS(staticFS fs.FS) ([]byte, string, error) {
+	entries, err := fs.ReadDir(staticFS, "styles")
+	if err != nil {
+		return nil, "", fmt.Errorf("read styles dir: %w", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".css") {
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+
+	var buf bytes.Buffer
+	for _, name := range names {
+		body, err := fs.ReadFile(staticFS, path.Join("styles", name))
+		if err != nil {
+			return nil, "", fmt.Errorf("read %s: %w", name, err)
+		}
+		// Separator comment makes the concatenated output easier to debug
+		// in DevTools — you can see which file a rule came from.
+		fmt.Fprintf(&buf, "\n/* === %s === */\n", name)
+		buf.Write(body)
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	return buf.Bytes(), etag, nil
+}
+
 func (s *Server) routes() {
 	staticFS, err := fs.Sub(embeddedFiles, "web/static")
 	if err != nil {
 		panic(err)
 	}
+
+	// Stylesheets live under web/static/styles/ as several focused files
+	// (01-base.css, 02-layout.css, …) so each surface has a sane place to
+	// edit. They concatenate into a single response at startup so the
+	// browser still sees one stylesheet — service worker cache, asset
+	// versioning, and CSP all keep their original shape.
+	combinedCSS, cssETag, err := buildCombinedCSS(staticFS)
+	if err != nil {
+		panic(err)
+	}
+	s.mux.HandleFunc("GET /static/styles.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("ETag", cssETag)
+		if match := r.Header.Get("If-None-Match"); match == cssETag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		_, _ = w.Write(combinedCSS)
+	})
 
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
