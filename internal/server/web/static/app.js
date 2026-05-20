@@ -2643,6 +2643,7 @@ if (readerRoot) {
       const next = document.querySelector("[data-pdf-next]");
       const pageInput = document.querySelector("[data-pdf-page-input]");
       const pageTotal = document.querySelector("[data-pdf-page-total]");
+      const pageAnnounce = document.querySelector("[data-pdf-page-announce]");
       let pdf;
       try {
         pdf = await pdfjsLib.getDocument(fileURL).promise;
@@ -2811,6 +2812,11 @@ if (readerRoot) {
             // possible page — either the right slot is the last page, or
             // (when total is even and on the last spread) the left slot is.
             if (next) next.disabled = (rightNum === pdf.numPages) || (rightNum === 0 && leftNum === pdf.numPages);
+            const spreadLabel = rightNum > 0
+              ? `Pages ${leftNum}–${rightNum} of ${pdf.numPages}`
+              : `Page ${leftNum} of ${pdf.numPages}`;
+            canvas.setAttribute("aria-label", spreadLabel);
+            if (pageAnnounce && direction) pageAnnounce.textContent = spreadLabel;
             setReaderPosition(`page:${leftNum}`, `Page ${leftNum}`);
             await saveProgress(`page:${leftNum}`, (leftNum / pdf.numPages) * 100);
             return;
@@ -2842,6 +2848,9 @@ if (readerRoot) {
           if (pageTotal) pageTotal.textContent = `/ ${pdf.numPages}`;
           if (prev) prev.disabled = num <= 1;
           if (next) next.disabled = num >= pdf.numPages;
+          const singleLabel = `Page ${num} of ${pdf.numPages}`;
+          canvas.setAttribute("aria-label", singleLabel);
+          if (pageAnnounce && direction) pageAnnounce.textContent = singleLabel;
           setReaderPosition(`page:${num}`, `Page ${num}`);
           await saveProgress(`page:${num}`, (num / pdf.numPages) * 100);
         } finally {
