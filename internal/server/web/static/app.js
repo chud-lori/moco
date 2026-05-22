@@ -2675,6 +2675,44 @@ if (readerRoot) {
       const pageInput = document.querySelector("[data-pdf-page-input]");
       const pageTotal = document.querySelector("[data-pdf-page-total]");
       const pageAnnounce = document.querySelector("[data-pdf-page-announce]");
+      const textLayerLeft = document.querySelector("[data-pdf-text-layer-left]");
+      const textLayerRight = document.querySelector("[data-pdf-text-layer-right]");
+
+      // Tracks the active TextLayer render per container so a navigation
+      // that fires while the previous text layer is still building can
+      // cancel it instead of letting two passes race into the same div.
+      const textLayerTasks = new Map();
+      async function renderTextLayer(container, page, viewport, forPage, offsetLeft = 0) {
+        if (!container) return;
+        const prior = textLayerTasks.get(container);
+        if (prior) { try { prior.cancel(); } catch (_) { /* already done */ } }
+        textLayerTasks.delete(container);
+        container.replaceChildren();
+        if (!page) {
+          container.hidden = true;
+          container.dataset.pageNum = "";
+          return;
+        }
+        container.hidden = false;
+        container.style.setProperty("--scale-factor", String(viewport.scale));
+        container.style.width = `${viewport.width}px`;
+        container.style.height = `${viewport.height}px`;
+        container.style.left = `${offsetLeft}px`;
+        container.dataset.pageNum = String(forPage);
+        try {
+          const textLayer = new pdfjsLib.TextLayer({
+            textContentSource: page.streamTextContent(),
+            container,
+            viewport,
+          });
+          textLayerTasks.set(container, textLayer);
+          await textLayer.render();
+        } catch (_) {
+          // Cancelled by a newer navigation — expected.
+        } finally {
+          if (textLayerTasks.get(container)) textLayerTasks.delete(container);
+        }
+      }
       let pdf;
       try {
         pdf = await pdfjsLib.getDocument(fileURL).promise;
@@ -2825,6 +2863,15 @@ if (readerRoot) {
               ctx.restore();
             }
 
+            // Text layers — one per page, sized in CSS pixels (canvas
+            // uses DPR-scaled pixels). The right layer is offset by the
+            // left page's CSS width so spans land over the right half
+            // of the canvas. fitScale is the CSS-pixel viewport scale.
+            const lCssVp = leftPage.getViewport({ scale: fitScale });
+            const rCssVp = rightPage ? rightPage.getViewport({ scale: fitScale }) : null;
+            renderTextLayer(textLayerLeft, leftPage, lCssVp, leftNum, 0);
+            renderTextLayer(textLayerRight, rightPage, rCssVp, rightNum, rCssVp ? lCssVp.width : 0);
+
             pageNum = leftNum;
             if (pageInput) {
               pageInput.value = String(leftNum);
@@ -2872,6 +2919,11 @@ if (readerRoot) {
           canvas.style.height = `${viewport.height / dpr}px`;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           await page.render({ canvasContext: ctx, viewport }).promise;
+
+          // Text layer in CSS pixels over the canvas; right layer hidden.
+          const cssViewport = page.getViewport({ scale: fitScale });
+          renderTextLayer(textLayerLeft, page, cssViewport, num, 0);
+          renderTextLayer(textLayerRight, null);
           if (pageInput) {
             pageInput.value = String(num);
             pageInput.max = String(pdf.numPages);
@@ -3099,13 +3151,85 @@ if (readerRoot) {
         const target = (forPage && forPage > 0) ? forPage : pageNum;
         const note = await openTextPrompt({
           title: `Add a note for page ${target}`,
-          body: "Text selection inside PDFs isn't supported in this build. Type a short note instead — it will be saved against this page.",
+          body: "Tip: you can also select text on the page to highlight it. This button is for typed notes attached to the whole page — useful for scanned PDFs without selectable text.",
           placeholder: "What stood out on this page?",
           confirmLabel: "Save note",
         });
         if (!note) return;
         await saveHighlight(`page:${target}`, note);
       };
+
+      // ---- Text-selection highlights (paginated mode) ----
+      // The text layers built by renderTextLayer hold transparent spans
+      // positioned over each glyph. A selection inside one of those
+      // layers becomes a highlight tied to that layer's page number.
+      ensureSelectionPopover();
+      let pdfPendingSelection = null;
+
+      const pageNumFromSelection = (sel) => {
+        const anchor = sel.anchorNode?.nodeType === Node.TEXT_NODE
+          ? sel.anchorNode.parentElement
+          : sel.anchorNode;
+        const layer = anchor?.closest?.("[data-pdf-text-layer-left], [data-pdf-text-layer-right]");
+        const n = layer ? parseInt(layer.dataset.pageNum || "", 10) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : null;
+      };
+
+      const settlePdfSelection = () => {
+        const sel = window.getSelection();
+        const text = sel ? sel.toString().trim() : "";
+        if (!text || !sel || sel.rangeCount === 0) {
+          hideSelectionPopover();
+          pdfPendingSelection = null;
+          return;
+        }
+        const forPage = pageNumFromSelection(sel);
+        if (!forPage) {
+          hideSelectionPopover();
+          pdfPendingSelection = null;
+          return;
+        }
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        pdfPendingSelection = { text, page: forPage };
+        showSelectionPopoverNear(rect);
+      };
+
+      document.addEventListener("mouseup", () => setTimeout(settlePdfSelection, 10));
+      document.addEventListener("touchend", () => setTimeout(settlePdfSelection, 10), { passive: true });
+      document.addEventListener("selectionchange", () => {
+        const sel = window.getSelection();
+        if (!sel || !sel.toString().trim()) {
+          hideSelectionPopover();
+          pdfPendingSelection = null;
+        }
+      });
+
+      attachPopoverHighlight(async () => {
+        if (isGuest) {
+          hideSelectionPopover();
+          guestBlock("save highlights");
+          return;
+        }
+        if (!pdfPendingSelection) return;
+        const { text, page: forPage } = pdfPendingSelection;
+        const color = window.__mocoActiveHighlightColor?.() || "amber";
+        try {
+          const payload = await requestJSON(`/api/v1/books/${bookID}/highlights`, {
+            method: "POST",
+            body: JSON.stringify({ locator: `page:${forPage}`, selectedText: text, color }),
+          });
+          clearEmptyHighlightState();
+          highlightsList?.prepend(buildHighlightCard(payload.highlight));
+          currentHighlights.unshift(payload.highlight);
+          toast("Highlighted.", "success");
+        } catch (err) {
+          toast(err.message || "Could not save highlight.", "error");
+        } finally {
+          window.getSelection()?.removeAllRanges();
+          hideSelectionPopover();
+          pdfPendingSelection = null;
+        }
+      });
 
       // Floating action button — primary entry point for "add a note for
       // this page." Always-visible, fixed bottom-right of the reader so

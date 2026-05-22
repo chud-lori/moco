@@ -335,6 +335,61 @@
   max-width: 100%;
   box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
   background: #fff;
+  display: block;
+}
+
+/* Wrapper that hosts the canvas + transparent text layer(s) on top so
+   the user can select text drawn on the canvas. Sized via inline-block
+   to the canvas's intrinsic CSS dimensions; text layers are positioned
+   absolutely against this container. */
+.pdf-page-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
+/* pdf.js text layer — invisible spans positioned to match each glyph
+   on the canvas so the browser's text selection engine can grab them.
+   The TextLayer class drives span placement; this stylesheet handles
+   visibility (transparent text, visible ::selection highlight) and
+   pointer behavior. --scale-factor is set inline by renderTextLayer. */
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  cursor: text;
+  /* Containing canvas already has the shadow; keep the text layer
+     visually identical to the canvas underneath. */
+  pointer-events: auto;
+}
+.pdf-text-layer[hidden] { display: none; }
+
+.pdf-text-layer span,
+.pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-text-layer ::selection {
+  background: rgba(186, 125, 74, 0.32);
+  color: transparent;
+}
+.pdf-text-layer ::-moz-selection {
+  background: rgba(186, 125, 74, 0.32);
+  color: transparent;
 }
 
 /* Page-turn animation — three nested elements:
