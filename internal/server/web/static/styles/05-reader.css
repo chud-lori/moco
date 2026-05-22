@@ -875,7 +875,7 @@ body.pdf-fs-active { overflow: hidden; }
   padding: 22px;
   overflow: auto;
 }
-.reader-sidebar.is-open { display: grid; }
+.reader-sidebar.is-open { display: grid; align-content: start; }
 .reader-sidebar[data-reader-panel="toc"] {
   left: 12px;
   right: auto;
