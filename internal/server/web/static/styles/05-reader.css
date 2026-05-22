@@ -1,0 +1,1397 @@
+/* ---------- Reader ---------- */
+.reader-layout {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.reader-layout-full {
+  grid-template-columns: minmax(0, 1fr);
+  /* dvh tracks the visible viewport on mobile — vh includes the collapsed
+     URL bar, which makes the layout taller than what's actually visible. */
+  min-height: calc(100dvh - 108px);
+  gap: 0;
+}
+
+.reader-shell { min-height: 70vh; }
+
+.reader-shell-full {
+  min-height: calc(100dvh - 108px);
+  display: grid;
+  align-content: start;
+}
+@supports not (height: 100dvh) {
+  .reader-layout-full, .reader-shell-full { min-height: calc(100vh - 108px); }
+}
+
+.reader-card.reader-shell-full {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 12px 16px 0;
+}
+
+.reader-owner {
+  color: var(--muted);
+  margin-bottom: 10px;
+  font-size: 0.92rem;
+}
+
+/* Paginated reader stage container.
+   Mobile-first: tighter padding, dvh-based heights, safe-area-aware bottom
+   reserve so the floating bottom-bar pill never overlaps the last text line.
+   Desktop: more breathing room above. */
+.ebook-stage { display: grid; gap: 0; padding-top: 0; }
+
+/* The wrapper used to reserve a chunk of bottom padding for the floating
+   button pill. Since v40 the page-nav uses side-arrows on desktop and a
+   thin chip on mobile (both `position: fixed`), so the wrapper no longer
+   needs to carry that reservation in flow — the explicit stage height
+   already accounts for it. Leaving the padding in place pushed the layout
+   ~90px past 100dvh, and reader-body's overflow:hidden clipped the result
+   at the bottom (= no visible bottom margin around the canvas). */
+.ebook-stage-full {
+  min-height: 0;
+  align-content: start;
+  padding: 0;
+}
+@media (min-width: 768px) {
+  .ebook-stage-full { min-height: 0; padding: 0; }
+}
+
+/* Reader pagination bar — purely an overlay so content never shifts when
+   the reader topbar fades. Floating pill on desktop, full-width strip on
+   phones (rules in @media at the bottom of this file). Always visible. */
+/* Reader pagination bar — purely a floating overlay so content never
+   shifts when the topbar fades. Mobile-first: low-profile pill above the
+   home-indicator with safe-area padding. Desktop: same pill with slightly
+   more breathing room. Always visible at all viewports.
+*/
+.ebook-stage-full .ebook-controls {
+  position: fixed;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Desktop redesign: split the floating pill into edge-positioned arrows
+   so the buttons don't visually overlap the page area. The container
+   becomes transparent and pointer-events:none; each button positions
+   itself independently. The page-jumper stays as a compact pill at the
+   bottom center. */
+@media (min-width: 768px) {
+  .ebook-stage-full .ebook-controls {
+    position: fixed;
+    inset: 0;
+    transform: none;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    height: auto;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0;
+    box-shadow: none;
+    pointer-events: none;
+    display: block;
+  }
+  .ebook-stage-full .ebook-controls > * { pointer-events: auto; }
+
+  .ebook-stage-full .ebook-controls .reader-page-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+    border-radius: 999px;
+    background: rgba(247, 240, 230, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(85, 66, 43, 0.16);
+    box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
+    padding: 0;
+    font-size: 1.4rem;
+    font-weight: 600;
+    transition: opacity 0.18s ease, background 0.18s ease;
+    opacity: 0.85;
+  }
+  .ebook-stage-full .ebook-controls .reader-page-btn:hover { opacity: 1; }
+  .ebook-stage-full .ebook-controls .reader-page-btn:disabled { opacity: 0.3; cursor: default; }
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-epub-prev],
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-pdf-prev] { left: 24px; }
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-epub-next],
+  .ebook-stage-full .ebook-controls .reader-page-btn[data-pdf-next] { right: 24px; }
+  /* Side arrows are icon-only — drop the text labels at this size. */
+  .ebook-stage-full .ebook-controls .reader-page-btn .reader-page-btn-label { display: none; }
+
+  .ebook-stage-full .ebook-controls .page-jumper {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: rgba(247, 240, 230, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(85, 66, 43, 0.16);
+    border-radius: 999px;
+    box-shadow: 0 6px 18px rgba(34, 28, 22, 0.12);
+  }
+}
+.ebook-controls { display: flex; align-items: center; gap: 10px; }
+
+/* Bottom-bar prev/next labels — icon-only on mobile, full text on desktop. */
+.reader-page-btn-label,
+.page-jumper-label { display: none; }
+@media (min-width: 768px) {
+  .reader-page-btn-label,
+  .page-jumper-label { display: inline; }
+}
+.ebook-stage-full .ebook-controls .reader-page-btn {
+  /* Bigger glyph + bolder weight so the unicode arrow doesn't render as
+     a thin hairline in mobile in-app browsers (Instagram / FB / iOS Mail
+     webviews) where the default font draws arrow chars at light weight.
+     A 52px tap target also clears Apple's 44px minimum comfortably. */
+  min-width: 52px;
+  min-height: var(--m-tap);
+  padding: 6px 14px;
+  font-size: 1.45rem;
+  line-height: 1;
+  font-weight: 800;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(247, 240, 230, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(85, 66, 43, 0.16);
+  box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
+}
+.ebook-stage-full .ebook-controls .page-jumper input { width: 48px; }
+@media (min-width: 768px) {
+  .ebook-stage-full .ebook-controls .reader-page-btn {
+    min-height: var(--tap);
+    padding: 10px 18px;
+    font-size: 0.95rem;
+  }
+  .ebook-stage-full .ebook-controls .page-jumper input { width: 56px; }
+}
+
+/* Inline page jumper — input blends into the pill. Fades with immersive
+   mode (matches the topbar) while prev/next arrows stay visible. opacity-
+   only so the pill width never changes and prev/next don't reposition. */
+.page-jumper {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 6px 14px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: opacity 0.25s ease;
+  border-radius: 999px;
+  background: rgba(247, 240, 230, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(85, 66, 43, 0.16);
+  box-shadow: 0 8px 24px rgba(34, 28, 22, 0.15);
+}
+/* Immersive mode still shows the page-jumper, just dimmed. Reviewer
+   feedback: without it, the reader felt "underpowered or ambiguous" —
+   no visible progress, no obvious where-am-I cue. Leaving it at low
+   opacity (a) keeps the reading surface uncluttered and (b) gives users
+   constant context without forcing them to tap to check progress. */
+.reader-app.is-immersive .page-jumper {
+  opacity: 0.4;
+  pointer-events: auto;
+  transition: opacity 0.25s ease;
+}
+.reader-app.is-immersive .page-jumper:hover,
+.reader-app.is-immersive .page-jumper:focus-within { opacity: 1; }
+.page-jumper input {
+  width: 56px;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 0;
+  -moz-appearance: textfield;
+  transition: border-color 0.15s ease;
+}
+.page-jumper input:hover { border-bottom-color: rgba(85, 66, 43, 0.25); }
+.page-jumper input:focus {
+  outline: none;
+  border-bottom-color: var(--accent-dark, #6f4a2a);
+}
+.page-jumper input::-webkit-inner-spin-button,
+.page-jumper input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.page-jumper input[data-pdf-page-input]:focus {
+  outline: 2px solid var(--accent-dark);
+  outline-offset: 1px;
+}
+.page-jumper-total { color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
+
+/* Chapter jump dropdown (EPUB) */
+.page-jumper-select {
+  max-width: 220px;
+}
+
+/* Paginated reader stage (EPUB iframe / PDF canvas).
+   Mobile-first: viewport minus reader-app top/bottom paddings (~22px) and
+   the floating bottom-bar reserve. Earlier versions used 100px which left
+   only ~36px between content and the floating prev/next pill — buttons
+   visually clipped the bottom of the rendered page. 130px gives a clear
+   gap regardless of safe-area inset.
+   Desktop: the topbar reserves 80px + toolbar ~50px + bottom bar = 180px. */
+.epub-stage, .pdf-stage {
+  width: 100%;
+  height: calc(100dvh - 130px - env(safe-area-inset-bottom));
+  min-height: 360px;
+  border-radius: 20px;
+  background: transparent;
+  border: 0;
+  overflow: hidden;
+  position: relative;
+}
+@supports not (height: 100dvh) {
+  .epub-stage, .pdf-stage {
+    height: calc(100vh - 130px - env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 768px) {
+  /* Desktop: side-arrow nav frees vertical space, so we only reserve the
+     topbar + small bottom for the page-jumper chip (~120px total). */
+  .epub-stage, .pdf-stage { height: calc(100dvh - 120px); }
+  @supports not (height: 100dvh) {
+    .epub-stage, .pdf-stage { height: calc(100vh - 120px); }
+  }
+}
+
+.epub-stage iframe {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  border: 0;
+  background: transparent;
+}
+/* epub.js wraps the iframe in `.epub-container > .epub-view`. Force both to
+   fill so the rendered EPUB page doesn't appear smaller than the stage,
+   especially on short pages or pages with explicit body backgrounds. */
+.epub-stage > div,
+.epub-stage .epub-container,
+.epub-stage .epub-view {
+  width: 100% !important;
+  height: 100% !important;
+}
+.epub-stage iframe::-webkit-scrollbar { display: none; }
+.epub-stage iframe { scrollbar-width: none; }
+
+.reader-loading {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 60px 20px;
+  font-family: "Cormorant Garamond", serif;
+  font-size: 1.4rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* PDF stage scrolls vertically when the canvas is taller than the
+   viewport (typical when fit-to-width on mobile or spread-mode on
+   desktop). `safe center` keeps the page centered when it fits but
+   falls back to top-aligned when overflowing, so the top of the page
+   is always visible instead of being clipped by alignment. */
+.pdf-stage {
+  display: grid;
+  place-items: safe center;
+  padding: 12px 12px 28px 12px;
+  overflow: auto;
+  /* anchor for the loading overlay child */
+  position: relative;
+}
+
+#pdf-canvas {
+  max-width: 100%;
+  box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
+  background: #fff;
+}
+
+/* Page-turn animation — three nested elements:
+   .pdf-flip-clip   — fixed-position, overflow:hidden, sized to the
+                      canvas viewport rect. Holds perspective.
+   .pdf-flip-page   — transform-style: preserve-3d, rotates the full
+                      180° around its spine edge.
+   .pdf-flip-face   — front = <img> snapshot of outgoing page,
+                      back = paper-coloured div pre-rotated 180° so it
+                      reads right-side-up at the end of the flip.
+
+   Why preserve-3d + two faces: archive.org's BookReader and turn.js
+   use this exact structure. A real paper page has thickness — front
+   visible 0–90°, the edge at 90°, back visible 90–180°. A one-faced
+   rotation hides past 90° via backface-visibility and reads as a card
+   being thrown away, not a page turning over. */
+.pdf-flip-clip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1000;
+  overflow: hidden;
+  perspective: 1800px;
+  perspective-origin: 50% 50%;
+}
+.pdf-flip-page {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  will-change: transform;
+}
+.pdf-flip-page.is-turn-next {
+  transform-origin: 0% 50%;
+  animation: moco-pdf-flip-next 520ms cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+.pdf-flip-page.is-turn-prev {
+  transform-origin: 100% 50%;
+  animation: moco-pdf-flip-prev 520ms cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+@keyframes moco-pdf-flip-next {
+  from { transform: rotateY(0deg); }
+  to   { transform: rotateY(-180deg); }
+}
+@keyframes moco-pdf-flip-prev {
+  from { transform: rotateY(0deg); }
+  to   { transform: rotateY(180deg); }
+}
+.pdf-flip-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.pdf-flip-face-front {
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
+}
+/* Back of paper — pre-rotated 180° around Y so it appears right-side-up
+   once the page wrapper has rotated 180°. A faint diagonal gradient gives
+   the back face the look of unprinted paper catching ambient light. */
+.pdf-flip-face-back {
+  transform: rotateY(180deg);
+  background: #f4ede3;
+  background-image: linear-gradient(135deg,
+    rgba(0, 0, 0, 0.06) 0%,
+    rgba(0, 0, 0, 0.00) 40%,
+    rgba(0, 0, 0, 0.04) 100%);
+  box-shadow: 0 18px 40px rgba(58, 40, 22, 0.16);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdf-flip-clip { display: none; }
+}
+
+/* PDF continuous-scroll fullscreen viewer. Mimics the browser's native
+   PDF view — dark backdrop, all pages stacked, lazy rendered, scroll +
+   zoom. Lives at body level so it covers Moco's own chrome cleanly.
+   Activated only via [data-pdf-fullscreen-toggle]; doesn't affect the
+   default paginated reader. */
+.pdf-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #2b2b2b;
+  display: flex;
+  flex-direction: column;
+  /* Pad for iOS notch / Dynamic Island so the toolbar isn't overlapped. */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+body.pdf-fs-active { overflow: hidden; }
+.pdf-fs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #1f1f1f;
+  color: #f0f0f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: nowrap;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+.pdf-fs-spacer { flex: 1 1 auto; }
+.pdf-fs-btn {
+  background: transparent;
+  border: 0;
+  color: #f0f0f0;
+  font-size: 1.4rem;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0;
+  line-height: 1;
+}
+.pdf-fs-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.pdf-fs-btn:active { background: rgba(255, 255, 255, 0.16); }
+.pdf-fs-pageind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: #d0d0d0;
+}
+.pdf-fs-pageind input {
+  width: 56px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f0f0f0;
+  border-radius: 4px;
+  padding: 4px 6px;
+  text-align: center;
+  font: inherit;
+  -moz-appearance: textfield;
+}
+.pdf-fs-pageind input::-webkit-inner-spin-button,
+.pdf-fs-pageind input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pdf-fs-zoom { font-size: 0.9rem; color: #d0d0d0; min-width: 48px; text-align: center; }
+.pdf-fs-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  overflow-anchor: none; /* don't let lazy-rendered canvases nudge scroll */
+  -webkit-overflow-scrolling: touch;
+  /* Re-enable mobile pinch-zoom — `.reader-body-paginated` sets
+     `touch-action: manipulation` which blocks pinch. We override here so
+     fingers can pinch the canvas natively. The +/− buttons re-render
+     crisply; pinch gives instant feedback (CSS-level, blurry on extreme
+     zoom but matches the browser PDF viewer experience). */
+  touch-action: pinch-zoom pan-y pan-x;
+}
+.pdf-fs-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  /* Extra bottom padding so content can scroll clear of the iOS home
+     indicator + leaves room for the floating note FAB to not overlap
+     the last page's edge. */
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+.pdf-fs-page {
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pdf-fs-page canvas {
+  display: block;
+}
+/* Floating note FAB inside the fullscreen overlay — same idea as the
+   paginated reader's FAB but anchored to the overlay instead. */
+.pdf-fs-note-fab {
+  position: fixed;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  right: calc(24px + env(safe-area-inset-right));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #f5f1e8;
+  color: #2a2a2a;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  z-index: 201;
+  transition: transform 0.08s ease, opacity 0.18s ease;
+  opacity: 0.92;
+}
+.pdf-fs-note-fab:hover { opacity: 1; transform: scale(1.04); background: #fff; }
+.pdf-fs-note-fab:active { transform: scale(0.96); }
+@media (max-width: 600px) {
+  .pdf-fs-toolbar { gap: 6px; padding: 6px 8px; }
+  .pdf-fs-pageind input { width: 44px; }
+  .pdf-fs-zoom { min-width: 40px; font-size: 0.85rem; }
+  .pdf-fs-pages { padding: 8px; gap: 8px; }
+}
+
+/* Loading spinner overlays the reader stage so the user sees feedback
+   while PDF.js fetches + rasterizes the first page (or epub.js hydrates
+   the iframe). Removed by JS the moment the first render fires —
+   without this the user just stares at blank white (PDF) or empty cream
+   (EPUB) for the seconds-long loading window. */
+.epub-stage, .pdf-stage { position: relative; }
+.epub-stage > [data-reader-loading],
+.pdf-stage > [data-reader-loading] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  margin: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(247, 240, 230, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  color: var(--muted);
+  font-size: 0.95rem;
+  transition: opacity 0.25s ease;
+}
+.epub-stage > [data-reader-loading].is-fading,
+.pdf-stage > [data-reader-loading].is-fading {
+  opacity: 0;
+}
+
+.markdown-reader h1,
+.markdown-reader h2,
+.markdown-reader h3,
+.markdown-reader h4,
+.markdown-reader h5,
+.markdown-reader h6 {
+  font-family: "Cormorant Garamond", serif;
+  color: var(--text-soft);
+  scroll-margin-top: 96px;
+}
+
+.markdown-reader h1 { font-size: clamp(2rem, 4vw, 2.8rem); margin: 0 0 16px; line-height: 1.1; }
+.markdown-reader h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); margin: 28px 0 12px; line-height: 1.15; }
+.markdown-reader h3 { font-size: clamp(1.3rem, 2.4vw, 1.6rem); margin: 22px 0 10px; line-height: 1.2; }
+.markdown-reader h4,
+.markdown-reader h5,
+.markdown-reader h6 { font-size: clamp(1.1rem, 2vw, 1.35rem); margin: 18px 0 10px; line-height: 1.2; }
+
+.markdown-reader p {
+  font-family: var(--reader-font, "Cormorant Garamond", serif);
+  font-size: calc(clamp(1.1rem, 1.6vw, 1.3rem) * var(--reader-font-scale, 1));
+  line-height: calc(1.7 * var(--reader-line-scale, 1));
+  color: var(--text-soft);
+}
+.markdown-reader li {
+  font-family: var(--reader-font, "Cormorant Garamond", serif);
+}
+.markdown-reader h1 { font-size: calc(clamp(2rem, 4vw, 2.8rem) * var(--reader-font-scale, 1)); }
+.markdown-reader h2 { font-size: calc(clamp(1.6rem, 3vw, 2.1rem) * var(--reader-font-scale, 1)); }
+.markdown-reader h3 { font-size: calc(clamp(1.3rem, 2.4vw, 1.6rem) * var(--reader-font-scale, 1)); }
+
+/* Long-form reading elements: lists, links, quotes, tables, code */
+.markdown-reader ul,
+.markdown-reader ol {
+  padding-left: 1.6em;
+  margin: 0 0 1.1em;
+}
+.markdown-reader li {
+  font-family: "Cormorant Garamond", serif;
+  font-size: calc(clamp(1.05rem, 1.5vw, 1.25rem) * var(--reader-font-scale, 1));
+  line-height: calc(1.65 * var(--reader-line-scale, 1));
+  color: var(--text-soft);
+  margin: 4px 0;
+}
+.markdown-reader li > p { margin: 0 0 0.4em; }
+
+.markdown-reader a {
+  color: var(--accent-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(186, 125, 74, 0.5);
+}
+.markdown-reader a:hover { text-decoration-color: currentColor; }
+
+.markdown-reader blockquote {
+  margin: 1.4em 0;
+  padding: 14px 20px;
+  border-left: 4px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 12px 12px 0;
+  color: var(--text-soft);
+  font-style: italic;
+}
+.markdown-reader blockquote > :last-child { margin-bottom: 0; }
+
+.markdown-reader hr {
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+  margin: 2em auto;
+  width: 50%;
+}
+
+.markdown-reader table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.4em 0;
+  font-family: "Manrope", sans-serif;
+  font-size: calc(0.95rem * var(--reader-font-scale, 1));
+  display: block;
+  overflow-x: auto;
+}
+.markdown-reader thead { background: var(--accent-soft); }
+.markdown-reader th,
+.markdown-reader td {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  text-align: left;
+  color: var(--text);
+}
+.markdown-reader th { font-weight: 700; color: var(--accent-dark); }
+.markdown-reader tbody tr:nth-child(odd) td { background: rgba(85, 66, 43, 0.03); }
+
+/* Inline code */
+.markdown-reader code {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(85, 66, 43, 0.08);
+  color: var(--accent-dark);
+}
+
+/* Fenced code blocks */
+.markdown-reader pre {
+  position: relative;
+  margin: 1.5em 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(85, 66, 43, 0.06);
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: calc(0.92rem * var(--reader-font-scale, 1));
+  line-height: 1.6;
+  -webkit-overflow-scrolling: touch;
+}
+.markdown-reader pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: inherit;
+}
+.reader-body[data-reader-theme="dark"] .markdown-reader pre { background: rgba(0, 0, 0, 0.45); }
+.reader-body[data-reader-theme="sepia"] .markdown-reader pre { background: rgba(85, 66, 43, 0.10); }
+.reader-body[data-reader-theme="paper"] .markdown-reader pre { background: rgba(60, 50, 37, 0.10); }
+
+/* Copy button on code blocks */
+.code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--panel-strong);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  min-height: 0;
+}
+.markdown-reader pre:hover .code-copy,
+.markdown-reader pre:focus-within .code-copy { opacity: 1; }
+.code-copy:hover { color: var(--text); }
+.code-copy.is-copied { color: var(--success); border-color: rgba(74, 125, 86, 0.4); }
+/* On touch devices (no hover), the copy button has no hover trigger to
+   reveal it — keep it visible. Detected via interaction-media-features
+   instead of a viewport width, which is the semantically correct test. */
+@media (hover: none) {
+  .code-copy { opacity: 1; }
+}
+
+/* Prism syntax tokens — tuned to the Moco palette */
+.markdown-reader .token.comment,
+.markdown-reader .token.prolog,
+.markdown-reader .token.doctype,
+.markdown-reader .token.cdata { color: var(--muted); font-style: italic; }
+.markdown-reader .token.punctuation { color: var(--text-soft); }
+.markdown-reader .token.property,
+.markdown-reader .token.tag,
+.markdown-reader .token.boolean,
+.markdown-reader .token.number,
+.markdown-reader .token.constant,
+.markdown-reader .token.symbol,
+.markdown-reader .token.deleted { color: #b46336; }
+.markdown-reader .token.selector,
+.markdown-reader .token.attr-name,
+.markdown-reader .token.string,
+.markdown-reader .token.char,
+.markdown-reader .token.builtin,
+.markdown-reader .token.inserted { color: #517a4f; }
+.markdown-reader .token.operator,
+.markdown-reader .token.entity,
+.markdown-reader .token.url { color: var(--accent-dark); }
+.markdown-reader .token.atrule,
+.markdown-reader .token.attr-value,
+.markdown-reader .token.keyword { color: var(--accent-dark); font-weight: 600; }
+.markdown-reader .token.function,
+.markdown-reader .token.class-name { color: #6e4f93; }
+.markdown-reader .token.regex,
+.markdown-reader .token.important,
+.markdown-reader .token.variable { color: #b46336; }
+.markdown-reader .token.important,
+.markdown-reader .token.bold { font-weight: 700; }
+.markdown-reader .token.italic { font-style: italic; }
+.markdown-reader h4,
+.markdown-reader h5,
+.markdown-reader h6 { font-size: calc(clamp(1.1rem, 2vw, 1.35rem) * var(--reader-font-scale, 1)); }
+
+.markdown-reader a {
+  color: var(--accent-dark);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.12em;
+}
+
+.markdown-reader ul,
+.markdown-reader ol {
+  margin: 0 0 20px;
+  padding-left: 26px;
+  display: grid;
+  gap: 10px;
+}
+
+.markdown-reader li,
+.markdown-reader blockquote p {
+  font-family: "Cormorant Garamond", serif;
+  font-size: calc(clamp(1.1rem, 1.6vw, 1.3rem) * var(--reader-font-scale, 1));
+  line-height: calc(1.7 * var(--reader-line-scale, 1));
+  color: var(--text-soft);
+}
+
+.markdown-reader blockquote {
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border-left: 4px solid rgba(163, 118, 83, 0.45);
+  background: rgba(234, 220, 203, 0.42);
+  border-radius: 18px;
+}
+
+.markdown-reader pre {
+  margin: 0 0 22px;
+  padding: 18px;
+  overflow: auto;
+  border-radius: 18px;
+  background: rgba(48, 40, 32, 0.94);
+  color: #f3ede5;
+}
+
+.markdown-reader code {
+  font-family: "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.92em;
+}
+
+.markdown-reader p code,
+.markdown-reader li code,
+.markdown-reader blockquote code {
+  padding: 0.1em 0.34em;
+  border-radius: 8px;
+  background: rgba(214, 173, 104, 0.2);
+  color: inherit;
+}
+
+.markdown-reader hr {
+  margin: 28px 0;
+  border: 0;
+  border-top: 1px solid rgba(85, 66, 43, 0.12);
+}
+
+.reader-section {
+  display: grid;
+  gap: 2px;
+}
+
+.saved-highlight {
+  padding: 0.05em 0.14em;
+  border-radius: 0.28em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.saved-highlight-amber {
+  background: rgba(236, 196, 120, 0.48);
+  color: inherit;
+}
+
+.saved-highlight-sage {
+  background: rgba(180, 199, 160, 0.42);
+  color: inherit;
+}
+
+.reader-page-full {
+  max-width: 720px;
+  min-height: calc(100vh - 260px);
+  margin: 0 auto;
+  padding: 26px 6px 24px;
+}
+
+.bullet { margin-left: 8px; }
+
+.reader-notes { grid-template-columns: 1fr; padding: 22px; }
+
+.reader-sidebar {
+  display: none;
+  position: fixed;
+  top: 80px;
+  bottom: 12px;
+  z-index: 18;
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100vh - 100px);
+  background: var(--panel-strong);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  overflow: auto;
+}
+.reader-sidebar.is-open { display: grid; }
+.reader-sidebar[data-reader-panel="toc"] {
+  left: 12px;
+  right: auto;
+}
+.reader-sidebar[data-reader-panel="notes"] {
+  right: 12px;
+  left: auto;
+}
+
+.reader-sidebar-close {
+  display: inline-flex;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255, 250, 245, 0.9);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.highlight-actions { gap: 10px; margin-top: 22px; }
+
+/* Reading settings panel */
+.settings-row { display: grid; gap: 8px; margin-top: 16px; }
+.settings-row label { color: var(--muted); font-size: 0.9rem; }
+.settings-row input[type="range"] { width: 100%; }
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.theme-swatch {
+  display: grid;
+  place-items: center;
+  padding: 14px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: var(--swatch-bg, transparent);
+  color: var(--swatch-fg, var(--text));
+  min-height: 56px;
+}
+.theme-swatch[data-theme="light"]  { --swatch-bg: #f7f1e8; --swatch-fg: #30261d; }
+.theme-swatch[data-theme="paper"]  { --swatch-bg: #ebe2cd; --swatch-fg: #2a241c; }
+.theme-swatch[data-theme="sepia"]  { --swatch-bg: #f3e8d4; --swatch-fg: #4a3a25; }
+.theme-swatch[data-theme="dark"]   { --swatch-bg: #16130f; --swatch-fg: #f1e6d3; }
+.theme-swatch[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Reading-style and line-height pickers reuse .theme-picker grid */
+.font-swatch, .line-swatch {
+  display: grid;
+  place-items: center;
+  padding: 12px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(255, 251, 246, 0.7);
+  color: var(--text);
+  min-height: 44px;
+}
+.font-swatch[data-font-family="serif"]    { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1rem; }
+.font-swatch[data-font-family="sans"]     { font-family: "Manrope", system-ui, sans-serif; }
+.font-swatch[data-font-family="original"] { font-style: italic; }
+.font-swatch[aria-pressed="true"],
+.line-swatch[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: var(--accent-soft);
+}
+
+/* Hide the page-layout picker on screens too narrow to fit two pages —
+   both options collapse to one page below this width (epub.js's responsive
+   spread), so showing the toggle would just mislead users: they'd pick
+   "Two pages" and still see one, because there's no room for more.
+   The saved preference is preserved; it reactivates when viewed wide. */
+@media (max-width: 899px) {
+  .settings-row--spread { display: none; }
+}
+
+/* Page-layout picker — same shape as font/line swatches so the selected
+   layout is visibly outlined (was previously unstyled, so both buttons
+   looked identical regardless of which was active). */
+.spread-swatch {
+  display: grid;
+  place-items: center;
+  padding: 12px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(255, 251, 246, 0.7);
+  color: var(--text);
+  min-height: 44px;
+}
+.spread-swatch[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: var(--accent-soft);
+}
+
+/* Always-visible escape hatch back to the library — works regardless of
+   immersive state and doesn't depend on :has(). */
+.reader-floating-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: 44px;
+  height: 44px;
+  display: none; /* shown only via .is-visible (immersive mode) */
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(34, 28, 22, 0.82);
+  color: #fff8f0;
+  text-decoration: none;
+  z-index: 50;
+  border: 1px solid rgba(255, 248, 240, 0.18);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0.92;
+  transition: opacity 0.18s ease, transform 0.08s ease, background 0.18s ease;
+  cursor: pointer;
+}
+.reader-floating-close.is-visible { display: inline-flex; }
+.reader-floating-close .icon { width: 22px; height: 22px; }
+
+/* While any reader sidebar (TOC / highlights / settings) or modal is
+   open, hide the floating page controls and the floating close button.
+   They live at higher z-index than the sidebar (z:30 / z:50 vs z:18) and
+   without this they overlap panel content — see the side-arrow circle
+   bleeding over the Dark theme swatch in the settings panel. */
+.reader-panel-open .ebook-stage-full .ebook-controls,
+.reader-panel-open .reader-floating-close.is-visible,
+.reader-panel-open .reader-fab {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+/* Floating "Add a note" action button for the PDF reader. The .pdf-stage
+   has no text-selection layer, so the only way to attach a note is from
+   here. Always visible (when not in immersive mode / no panel open) so
+   the entry point isn't buried in the Highlights sidebar.
+   Mobile: compact 56px round button bottom-right, sits above the
+   page-jumper pill (which is centered, ~bottom 14px).
+   Desktop: pill with icon + "Add note" label at the bottom-right corner,
+   clear of the centered page-jumper and the right-edge side arrow. */
+.reader-fab {
+  position: fixed;
+  /* Pager pill is ~62px tall at bottom: 14px + safe-area, so its top
+     sits at ~76px above the viewport bottom. FAB needs to clear that
+     by a comfortable margin — 96px gives ~20px breathing room. */
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--text);
+  color: #fff8f0;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  box-shadow: 0 10px 24px rgba(34, 28, 22, 0.28);
+  /* Above the pager (z:30) and the floating close (z:50). The FAB is
+     the primary action — it should always win the stacking contest. */
+  z-index: 55;
+  opacity: 1;
+  transition: transform 0.08s ease, opacity 0.22s ease, background 0.18s ease;
+}
+.reader-fab[hidden] {
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+.reader-fab:hover { background: #1f1813; transform: scale(1.04); }
+.reader-fab:active { transform: scale(0.96); }
+.reader-fab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.reader-fab-label { display: none; }
+/* FAB stays visible in immersive mode — it's the only way to attach a
+   note to a PDF page, and immersive is the *primary* reading state. The
+   topbar/pager hide as expected; the FAB lingers as a single discreet
+   action. Slightly dimmer to read as "background-y". */
+.reader-app.is-immersive .reader-fab { opacity: 0.7; }
+.reader-app.is-immersive .reader-fab:hover { opacity: 1; }
+@media (min-width: 768px) {
+  .reader-fab {
+    bottom: 24px;
+    right: 24px;
+    width: auto;
+    height: auto;
+    min-height: 48px;
+    padding: 12px 22px;
+    border-radius: 999px;
+  }
+  .reader-fab-label { display: inline; }
+}
+
+/* Floating selection popover for "Highlight this passage" */
+.selection-popover {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(34, 28, 22, 0.94);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 0.88rem;
+  pointer-events: auto;
+}
+.selection-popover.is-open { display: inline-flex; }
+.selection-popover::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(34, 28, 22, 0.94);
+  border-bottom: 0;
+}
+.selection-popover button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff8f0;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 36px;
+  white-space: nowrap;
+}
+.selection-popover button:hover { background: rgba(255, 248, 240, 0.12); }
+.selection-popover .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #d6ad68;
+  border: 1px solid rgba(255, 248, 240, 0.4);
+}
+.reader-floating-close:hover { opacity: 1; transform: scale(1.05); background: rgba(34, 28, 22, 0.95); }
+.reader-floating-close:active { transform: scale(0.94); }
+.reader-floating-close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.jump-to-progress {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+  display: none;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--text);
+  color: #fff8f0;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  font-weight: 600;
+  min-height: var(--tap);
+}
+.jump-to-progress.is-visible { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ---------- Toasts ---------- */
+.toast-stack {
+  position: fixed;
+  z-index: 100;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+  max-width: calc(100% - 32px);
+}
+.toast {
+  pointer-events: auto;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(34, 28, 22, 0.94);
+  color: #fff8f0;
+  box-shadow: var(--shadow);
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+  animation: toast-in 0.18s ease-out;
+}
+.toast.is-error { background: var(--danger); }
+.toast.is-success { background: var(--success); color: #fff8f0; }
+.toast button {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 1rem;
+  margin-left: auto;
+}
+.toast.is-update { max-width: 420px; }
+.toast .toast-action {
+  background: rgba(255, 255, 255, 0.16);
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.toast .toast-action.is-primary { background: var(--accent); color: #fff; }
+.toast .toast-action:hover { filter: brightness(1.12); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Modal ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(34, 28, 22, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.modal.is-open { display: flex; }
+.modal-card {
+  width: min(440px, 100%);
+  background: var(--panel-strong);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  position: relative;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.modal-card.is-wide { width: min(640px, 100%); padding: 0; }
+.modal-card.is-wide .book-detail {
+  margin: 0;
+  max-width: none;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(34, 28, 22, 0.08);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+}
+.modal-close:hover { background: rgba(34, 28, 22, 0.16); }
+.modal-card h2 {
+  margin: 0 0 8px;
+  font-family: "Cormorant Garamond", serif;
+  font-size: 1.6rem;
+}
+.modal-card p { margin: 0 0 16px; color: var(--muted); }
+.modal-card textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 246, 0.9);
+  color: var(--text);
+  resize: vertical;
+}
+.modal-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Modal loading state — centered spinner shown while the SPA-style book
+   detail card fetches. Without this, the wide modal flashes empty with bare
+   "Loading…" text. */
+.modal-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 320px;
+  padding: 40px 24px;
+  color: var(--muted);
+}
+.modal-loading-text {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 1.15rem;
+}
+
+/* Edit-book modal — title/author inputs reuse stack-form; the cover row is
+   the only edit-specific layout. Mobile-first: stacked column with preview
+   on top; desktop puts preview beside the action buttons. */
+.edit-book-card { width: min(520px, 100%); }
+.edit-book-cover-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+.edit-book-cover-preview {
+  width: 120px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  align-self: center;
+}
+.edit-book-cover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.edit-book-cover-actions .form-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+@media (min-width: 768px) {
+  .edit-book-cover-row { flex-direction: row; align-items: flex-start; }
+  .edit-book-cover-preview { align-self: flex-start; }
+  .edit-book-cover-actions { flex: 1 1 auto; }
+}
+
+/* ---------- Reader sidebar overlay ---------- */
+.reader-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(34, 28, 22, 0.4);
+  z-index: 14;
+  display: none;
+}
+.reader-overlay.is-open { display: block; }
+
+/* ===== Responsive (mobile-first additions) =====
+   Mobile is the default everywhere above. The blocks below ADD desktop /
+   wide-viewport adjustments. New components: don't add `max-width` rules
+   here — make the base style mobile-correct, and any desktop variation
+   goes inside `@media (min-width: 768px)`. */
+
+/* Tablet landscape — multi-column grids start widening here */
+@media (min-width: 1024px) {
+  .library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Tablet portrait — desktop-style readers and grids */
+@media (min-width: 768px) {
+  .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* Reader panel sidebars: full-screen drawers on mobile (set elsewhere),
+     fixed-width side panels on desktop. */
+  .reader-sidebar { width: min(380px, calc(100% - 24px)); }
+
+  .reader-page-full { padding: 26px 6px 24px; }
+
+  .reader-preview, .dashboard-hero { gap: 28px; }
+  .reader-preview { grid-template-columns: 1fr 0.8fr; }
+  /* .feature-band layout is set at its primary rule above — keeping the
+     `2fr 1fr` two-column desktop layout there. Overriding it here was a
+     leftover from when the hero was a card; left in place it forced the
+     paragraph column too wide and broke the proportions. */
+
+  .hero-copy { order: 0; }
+  .hero-panel { order: 0; }
+}
+

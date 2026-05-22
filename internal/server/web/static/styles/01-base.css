@@ -1,0 +1,224 @@
+/* =========================================================================
+   moco — stylesheet (01-base.css)
+   -------------------------------------------------------------------------
+   ARCHITECTURE: mobile-first.
+     • Every default rule targets phones first.
+     • Use `@media (min-width: 768px)` to ADD desktop styles. Never use
+       `max-width` for new components — overriding desktop with smaller-
+       viewport rules is the pattern that produced the long history of
+       mobile bugs in this file.
+     • Single breakpoint scale: 768px (tablet/desktop), 1024px (wide).
+     • Inputs use --m-fs-input (16px) to prevent iOS zoom-on-focus.
+     • Primary tap targets ≥48px on mobile.
+
+   FILE LAYOUT (web/static/styles/, concatenated at server startup):
+     01-base.css            — tokens, reset, theme variants, skip-link, focus
+     02-layout.css          — page/reader shells, topbars, brand, topnav,
+                              buttons, hero, public-shelf, audience bands
+     03-cards-and-forms.css — cards, badges/chips, forms, upload dropzone,
+                              surface cards, progress bar
+     04-library.css         — dashboard library grid, book panels,
+                              book detail / share page
+     05-reader.css          — PDF/EPUB/MD reader UI, toasts, modal,
+                              reader sidebar overlay, responsive overrides
+     06-pages.css           — highlights/quotes, tags on cards, stats grid,
+                              popover color row, in-book search, settings
+                              hero, utilities, phase-2 status notes
+
+   Browser sees one stylesheet — buildCombinedCSS in server.go concatenates
+   these alphabetically at startup and serves them at /static/styles.css.
+   ========================================================================= */
+
+:root {
+  --bg: #f6f0e7;
+  --bg-strong: #efe5d6;
+  --panel: rgba(255, 251, 245, 0.78);
+  --panel-strong: #fffaf2;
+  --line: rgba(85, 66, 43, 0.14);
+  --line-strong: rgba(85, 66, 43, 0.24);
+  --text: #30261d;
+  --text-soft: #46382c;
+  --muted: #6f6255;
+  --accent: #ba7d4a;
+  --accent-dark: #905f36;
+  --accent-soft: rgba(186, 125, 74, 0.18);
+  --danger: #9d4d3f;
+  --danger-soft: rgba(157, 77, 63, 0.14);
+  --success: #4a7d56;
+  --success-soft: rgba(74, 125, 86, 0.16);
+  --focus-ring: rgba(186, 125, 74, 0.55);
+  --shadow: 0 24px 60px rgba(70, 46, 22, 0.12);
+  --shadow-soft: 0 6px 18px rgba(70, 46, 22, 0.08);
+  --radius-lg: 28px;
+  --radius-md: 20px;
+  --radius-sm: 14px;
+  --tap: 44px;
+
+  /* Mobile design tokens — used in the consolidated mobile layer at the
+     end of this file. Kept separate from desktop tokens so each surface
+     has its own scale rather than scaling desktop values down. */
+  --m-pad-page: 14px;            /* horizontal padding on the page-shell */
+  --m-pad-card: 16px;            /* card interior padding */
+  --m-gap-section: 18px;         /* gap between major sections */
+  --m-gap-card: 10px;            /* gap inside cards */
+  --m-radius-card: 18px;         /* card corner radius */
+  --m-radius-input: 14px;        /* input/select corner radius */
+  --m-tap: 48px;                 /* min tap target for primary controls */
+  --m-fs-h1: 1.6rem;             /* page-level headings on mobile */
+  --m-fs-h2: 1.25rem;            /* section headings */
+  --m-fs-body: 0.95rem;          /* body copy */
+  --m-fs-meta: 0.85rem;          /* secondary/muted copy */
+  --m-fs-input: 16px;            /* >=16px so iOS doesn't zoom on input focus */
+
+  /* Single flat warm cream across the entire viewport so there's nothing
+     for "darker side panel" perception to read against. Component cards
+     (.book-panel, etc.) share the same base color and lean on borders +
+     shadows for definition instead of contrast against the body. The
+     reader keeps a faint gradient because the reading surface benefits
+     from a subtle paper-like depth. */
+  --page-bg: #faf4e8;
+  --bg-grad: var(--page-bg);
+  --reader-bg-grad: linear-gradient(180deg, #f7f0e5 0%, #f1e7d4 100%);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; overflow-x: clip; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  /* overflow-x: clip clips at the box edge without creating a new
+     positioning context (which `hidden` does on some browsers and which
+     can let fixed/absolute children escape the clip). */
+  overflow-x: clip;
+  color: var(--text);
+  font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg-grad);
+  background-attachment: fixed;
+}
+
+/* iOS Safari zooms when a user taps any input whose font-size is < 16px,
+   which breaks paginated layouts. Set 16px globally on every text input
+   so the zoom never triggers; visible scaling is handled per-component. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+textarea,
+select {
+  font-size: var(--m-fs-input);
+}
+
+.reader-body {
+  background: var(--reader-bg-grad);
+  background-attachment: fixed;
+}
+
+/* Paginated reader (EPUB / PDF) — lock viewport scroll so the page is one
+   fixed canvas instead of a scrollable document. Without this, mobile
+   in-app browsers (Instagram, etc.) let the page scroll, defeating the
+   page-turn UX. touch-action: manipulation also kills the iOS double-tap
+   zoom that interferes with our tap-to-toggle-immersive interaction. */
+.reader-body-paginated {
+  overflow: hidden;
+  height: 100dvh;
+  touch-action: manipulation;
+}
+@supports not (height: 100dvh) {
+  .reader-body-paginated { height: 100vh; }
+}
+.reader-body-paginated .reader-app {
+  /* The reader-app already has min-height:100vh; cap it to dvh inside the
+     paginated body so it never grows past the viewport. */
+  min-height: 100dvh;
+  height: 100dvh;
+}
+@supports not (height: 100dvh) {
+  .reader-body-paginated .reader-app { min-height: 100vh; height: 100vh; }
+}
+
+/* Reader theme overrides — set via data-reader-theme on the body */
+.reader-body[data-reader-theme="light"] {
+  --bg: #f6f0e7;
+  --text: #30261d;
+  --text-soft: #46382c;
+  --muted: #6f6255;
+  --line: rgba(85, 66, 43, 0.14);
+  --reader-bg-grad: linear-gradient(180deg, #f7f1e8 0%, #f1e7d8 100%);
+}
+/* Paper: warm off-white that mimics physical book paper. Lower contrast
+   than Light, less yellow tint than Sepia — comfortable for long reads. */
+.reader-body[data-reader-theme="paper"] {
+  --bg: #ebe2cd;
+  --text: #2a241c;
+  --text-soft: #3c3225;
+  --muted: #7a6a52;
+  --line: rgba(85, 66, 43, 0.16);
+  --reader-bg-grad: linear-gradient(180deg, #ece3ce 0%, #e2d7bc 100%);
+}
+.reader-body[data-reader-theme="sepia"] {
+  --bg: #f3e8d4;
+  --text: #4a3a25;
+  --text-soft: #5b4830;
+  --muted: #8c7858;
+  --line: rgba(85, 66, 43, 0.18);
+  --reader-bg-grad: linear-gradient(180deg, #f3e8d4 0%, #ebd8b6 100%);
+}
+.reader-body[data-reader-theme="dark"] {
+  --bg: #16130f;
+  --text: #f1e6d3;
+  --text-soft: #e7dcc7;
+  --muted: #b1a591;
+  --line: rgba(232, 213, 184, 0.14);
+  --reader-bg-grad: linear-gradient(180deg, #1a1612 0%, #100d09 100%);
+}
+
+input, button, textarea, select { font: inherit; color: inherit; }
+
+a { color: inherit; text-decoration: none; }
+
+/* ---------- Skip link & focus ---------- */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -100px;
+  z-index: 100;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: var(--text);
+  color: #fff8f0;
+  font-weight: 600;
+  transition: top 0.18s ease;
+}
+.skip-link:focus, .skip-link:focus-visible { top: 12px; }
+
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.button:focus-visible,
+.text-link:focus-visible,
+a.button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+

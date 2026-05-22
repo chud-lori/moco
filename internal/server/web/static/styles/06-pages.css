@@ -1,0 +1,602 @@
+/* ---------- Highlights / Quotes page ---------- */
+.quotes-hero {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  max-width: 720px;
+}
+.quotes-hero h1 { font-size: var(--m-fs-h2); }
+.quotes-hero .auth-copy { font-size: var(--m-fs-body); line-height: 1.45; }
+@media (min-width: 768px) {
+  .quotes-hero { gap: 8px; }
+  .quotes-hero h1 { font-size: clamp(2rem, 3.4vw, 2.8rem); }
+  .quotes-hero .auth-copy { font-size: 1rem; }
+}
+.quotes-list {
+  display: grid;
+  gap: 16px;
+}
+/* Cross-book quote/highlight cards.
+   Mobile-first: tighter padding + smaller serif body. Desktop expands. */
+.quote-card {
+  position: relative;
+  padding: 16px;
+  background: rgba(255, 251, 246, 0.86);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--m-radius-card);
+  box-shadow: var(--shadow);
+}
+.quote-text {
+  margin: 0 0 14px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+@media (min-width: 768px) {
+  .quote-card { padding: 28px 32px 24px; border-radius: var(--radius-md); }
+  .quote-text { margin: 0 0 16px; font-size: clamp(1.2rem, 2vw, 1.5rem); line-height: 1.55; }
+}
+.quote-text::before {
+  content: "“";
+  margin-right: 4px;
+  color: var(--accent);
+  font-size: 1.4em;
+  vertical-align: -0.1em;
+}
+.quote-text::after {
+  content: "”";
+  margin-left: 2px;
+  color: var(--accent);
+  font-size: 1.4em;
+  vertical-align: -0.1em;
+}
+.quote-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.92rem;
+}
+.quote-cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  min-width: 0;
+}
+.quote-cite-title {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.quote-cite-author { font-style: italic; }
+
+/* (.quote-card is mobile-first above — no mobile override needed.) */
+
+/* AJAX loading state on result containers */
+[data-library-results].is-loading,
+[data-quotes-results].is-loading,
+main#main.is-spa-loading {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* Reader loading spinner — calm circular pulse */
+.reader-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.reader-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid rgba(85, 66, 43, 0.18);
+  border-top-color: var(--accent-dark, #905f36);
+  animation: reader-spinner-rotate 0.9s linear infinite;
+}
+@keyframes reader-spinner-rotate { to { transform: rotate(360deg); } }
+
+/* SPA-loading top bar — slim progress strip across the page */
+main#main.is-spa-loading::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent-dark, #905f36), transparent);
+  background-size: 200% 100%;
+  animation: spa-loading-stripe 1s linear infinite;
+  z-index: 100;
+  pointer-events: none;
+}
+@keyframes spa-loading-stripe {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Vertical rhythm between library sections */
+[data-library-results] {
+  display: grid;
+  gap: 36px;
+  margin-top: 8px;
+}
+
+/* ----- Filter toolbars (highlights search, library filter) -----
+   Mobile-first: stack inputs as standalone form fields, no outer pill
+   container (drops the "double-pill" visual of a rounded box around
+   already-rounded inputs). Desktop wraps them in a hug-content pill row.
+*/
+.quotes-toolbar, .library-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  width: 100%;
+  min-width: 0;
+}
+.quotes-toolbar > *, .library-toolbar > * { min-width: 0; }
+
+@media (min-width: 768px) {
+  /* Desktop: lay the search + select pills side by side, but stay flat
+     (no outer pill background/border/shadow). The inputs are already
+     pill-shaped — wrapping them in another rounded container produced the
+     "pill inside a pill" visual that read as broken UI. */
+  .quotes-toolbar, .library-toolbar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    margin-bottom: 8px;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* ----- Search + select inputs -----
+   Mobile-first: full-width form fields with 16px font (no iOS zoom),
+   ≥48px tap height. Desktop becomes inline pills for the toolbar layout.
+*/
+.search-input, .select-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  /* min-width: 0 lets the input/select shrink below its intrinsic content
+     width when a parent flex column is narrower — without it, a long book
+     title in a <select> option (or a long input value) widens this row past
+     the viewport on small phones. */
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  background: rgba(255, 251, 245, 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--m-radius-input);
+  min-height: var(--m-tap);
+  box-shadow: var(--shadow-soft);
+}
+@media (min-width: 768px) {
+  .search-input, .select-input {
+    display: inline-flex;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: 999px;
+    min-height: var(--tap);
+    background: rgba(255, 250, 245, 0.8);
+    box-shadow: none;
+  }
+  .search-input { flex: 1 1 240px; }
+}
+.search-input .icon { color: var(--muted); flex-shrink: 0; }
+
+/* ----- Discover toolbar -----
+   Flat layout (no outer pill) so the input doesn't end up nested in a
+   second rounded container — that "pill-in-pill" look read as broken UI.
+   On desktop the search input takes the lion's share and the sort select
+   sits beside it. */
+.discover-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 10px;
+  width: 100%;
+  min-width: 0;
+}
+.discover-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 16px;
+  background: rgba(255, 251, 245, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: var(--m-tap);
+  box-shadow: var(--shadow-soft);
+}
+.discover-search .icon { color: var(--muted); flex-shrink: 0; }
+.discover-search input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.discover-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(255, 251, 245, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: var(--m-tap);
+  box-shadow: var(--shadow-soft);
+}
+.discover-sort select {
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  width: 100%;
+  min-width: 0;
+}
+@media (min-width: 768px) {
+  .discover-toolbar { flex-direction: row; align-items: center; }
+  /* Slimmer than --tap (44/48) so the search row doesn't dominate the
+     viewport above the grid. Still well above hit-target minimums on a
+     mouse-driven device. */
+  .discover-search { flex: 1 1 auto; min-height: 40px; padding: 6px 16px; }
+  .discover-sort { flex: 0 0 auto; min-height: 40px; padding: 4px 14px; }
+}
+/* Quiet footer at the bottom of /discover — gives a stranger two things:
+   somewhere to subscribe (RSS) and a tag on what they're looking at. Kept
+   deliberately subtle so it doesn't compete with the grid. */
+.discover-footer {
+  margin-top: 48px;
+  padding: 24px 0 16px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.discover-footer p { margin: 0; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.discover-footer a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.discover-footer a:hover { color: var(--accent); }
+.discover-footer .icon { color: var(--accent); }
+.discover-footer-sep { opacity: 0.55; }
+/* /about — narrow editorial column for the personal "what is this site"
+   page. Wider line-length than the reader so prose breathes without
+   feeling cramped. Heading hierarchy matches the rest of the site. */
+.about-page { padding: 24px 0 64px; }
+.about-content {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.about-content h1 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  line-height: 1.15;
+  margin: 4px 0 16px;
+  color: var(--text);
+}
+.about-content h2 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+  margin: 32px 0 8px;
+  color: var(--text);
+}
+.about-content p {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+.about-content .about-lede {
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 24px;
+}
+.about-content a {
+  color: var(--accent-dark);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.about-content a:hover { color: var(--accent); }
+.about-content .about-footer-cta {
+  margin-top: 32px;
+  display: flex;
+  justify-content: flex-start;
+}
+.about-content .about-footer-cta a { text-decoration: none; }
+.search-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.95rem;
+}
+.select-input select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  padding-right: 8px;
+  /* Truncate long book titles in the closed select so a single long option
+     can't widen the parent past the viewport on phones. */
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.quote-note {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: rgba(85, 66, 43, 0.05);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Quote-card colors per highlight color */
+.quote-card[data-color="sage"]  { border-left-color: #8d9b77; }
+.quote-card[data-color="rose"]  { border-left-color: #c98072; }
+
+/* ---------- Tags on book cards ---------- */
+.book-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+  align-items: center;
+}
+.tag-chip, .tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  cursor: pointer;
+  min-height: 28px;
+}
+.tag-chip { padding-right: 8px; }
+.tag-chip:hover { background: rgba(186, 125, 74, 0.28); }
+
+/* Removable variant: a wrapper with two click targets — clicking the label
+   filters the library by that tag, clicking × removes it from the book. */
+.tag-chip--removable {
+  padding: 0;
+  cursor: default;
+  overflow: hidden;
+}
+.tag-chip--removable:hover { background: var(--accent-soft); }
+.tag-chip-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px 4px 10px;
+  color: var(--accent-dark);
+  text-decoration: none;
+  align-self: stretch;
+}
+.tag-chip-label:hover { background: rgba(186, 125, 74, 0.28); }
+.tag-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  font-size: 1rem;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  color: var(--accent-dark);
+  cursor: pointer;
+  opacity: 0.55;
+  align-self: stretch;
+}
+.tag-chip-remove:hover { opacity: 1; background: rgba(186, 125, 74, 0.32); }
+.tag-add {
+  background: transparent;
+  color: var(--muted);
+  border-style: dashed;
+}
+.tag-add:hover { color: var(--text); }
+.tag-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.6;
+}
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-cloud .tag-chip {
+  background: rgba(255, 251, 246, 0.78);
+  color: var(--text);
+  text-decoration: none;
+}
+.tag-count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* Reading-time meta line on book cards */
+.book-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ---------- Stats grid ----------
+   Mobile-first: 2-column grid with tighter padding. Desktop: auto-fill
+   with 220px min for fluid 3-4 column layouts. */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.stat-card {
+  padding: 14px;
+  border-radius: var(--m-radius-card);
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 246, 0.86);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 4px;
+}
+.stat-card-wide { grid-column: 1 / -1; }
+.stat-label {
+  margin: 0;
+  color: var(--accent-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.stat-value {
+  margin: 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.stat-sub { margin: 0; color: var(--muted); font-size: 0.92rem; }
+@media (min-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .stat-card { padding: 22px 24px; border-radius: var(--radius-md); }
+  .stat-card-wide { grid-column: span 2; }
+  .stat-value { font-size: clamp(2rem, 4vw, 2.6rem); }
+}
+
+/* ---------- Popover color row ---------- */
+.popover-colors {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 4px;
+  margin-left: 6px;
+  border-left: 1px solid rgba(255, 248, 240, 0.18);
+}
+.popover-colors .swatch {
+  width: 22px;
+  height: 22px;
+  min-height: 0; /* override .selection-popover button min-height */
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 248, 240, 0.4);
+  cursor: pointer;
+  padding: 0;
+  background: var(--swatch-bg);
+  flex: 0 0 auto;
+}
+.popover-colors .swatch-amber { --swatch-bg: #d6ad68; }
+.popover-colors .swatch-sage  { --swatch-bg: #8d9b77; }
+.popover-colors .swatch-rose  { --swatch-bg: #c98072; }
+.popover-colors .swatch[aria-pressed="true"] {
+  border-color: #fff8f0;
+  box-shadow: 0 0 0 2px rgba(255, 248, 240, 0.5);
+}
+
+/* ---------- In-book search match highlight (markdown reader) ---------- */
+.markdown-reader .search-hit {
+  background: rgba(214, 173, 104, 0.5);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* ---------- Settings page hero ---------- */
+.settings-hero { display: grid; gap: 8px; max-width: 720px; margin-bottom: 8px; }
+
+/* Visually hidden helper */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* =========================================================================
+   PHASE-2 STATUS — all components migrated mobile-first
+   -------------------------------------------------------------------------
+   Every primitive and component now uses mobile-first authoring (default
+   styles target the phone viewport, desktop additions live in
+   `@media (min-width: 768px)` blocks alongside each component).
+
+   The single remaining viewport-specific media query is for **truly narrow
+   phones** (≤420px) where some grids and tap targets need a final tighten.
+   This is genuinely viewport-specific — a phone fundamentally has less
+   horizontal room — so the max-width query is appropriate here, not a
+   patching pattern.
+   ========================================================================= */
+
+/* Phone-narrow refinements (≤420px) — smaller iPhones, narrow Androids. */
+@media (max-width: 420px) {
+  :root { --m-pad-page: 12px; }
+  .topbar-actions .button { padding: 6px 10px; font-size: 0.82rem; }
+  .dashboard-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .stat-card-wide { grid-column: auto; }
+}

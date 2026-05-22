@@ -1183,8 +1183,17 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
   applyPlaceholderSizes();
 
   // Track which pages are currently rendered so we can clear far-away
-  // canvases on scroll/zoom.
+  // canvases on scroll/zoom. Also track the active pdf.js RenderTask
+  // for each page so eviction during a fast scroll can cancel the
+  // still-in-flight render instead of letting it finish into a canvas
+  // we're about to throw away.
   const renderedNums = new Set();
+  const renderTasks = new Map();
+  // Tighter keep-window on small viewports — phones have far less GPU
+  // canvas memory budget, and a 200-page PDF at ±3 = 7 canvases × full
+  // viewport at DPR=3 can push memory pressure into Safari's "this
+  // tab uses too much memory" reload.
+  const KEEP_RADIUS = (window.innerWidth < 600 || window.innerHeight < 700) ? 2 : 3;
   async function renderPage(num) {
     if (renderedNums.has(num)) return;
     const ph = placeholders[num - 1];
@@ -1200,25 +1209,47 @@ async function openPdfContinuousScroll(pdf, startPage, bookID, isGuest, triggerP
       canvas.style.width = `${vp.width / dpr}px`;
       canvas.style.height = `${vp.height / dpr}px`;
       const ctx = canvas.getContext("2d");
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const task = page.render({ canvasContext: ctx, viewport: vp });
+      renderTasks.set(num, task);
+      await task.promise;
       if (ph.isConnected) {
         ph.innerHTML = "";
         ph.appendChild(canvas);
       }
-    } catch (_) {
+    } catch (err) {
       renderedNums.delete(num);
+      // pdf.js throws RenderingCancelledException when we cancel a task
+      // mid-flight (see clearPage). That's expected, not an error.
+      if (err && err.name !== "RenderingCancelledException") {
+        // swallow other errors — the page will be re-attempted on the
+        // next IntersectionObserver entry if still visible
+      }
+    } finally {
+      renderTasks.delete(num);
     }
   }
   function clearPage(num) {
+    const task = renderTasks.get(num);
+    if (task) {
+      try { task.cancel(); } catch (_) { /* already done */ }
+      renderTasks.delete(num);
+    }
     const ph = placeholders[num - 1];
-    if (ph) ph.innerHTML = "";
+    if (ph) {
+      // Explicitly zero the canvas before detaching. Removing the node
+      // alone leaves the backing store alive until GC; setting dims to
+      // 0 forces the browser to drop it immediately, which matters on
+      // mobile where the GPU canvas budget is small and scrolling
+      // through a 700-page PDF would otherwise accumulate hidden memory.
+      const c = ph.querySelector("canvas");
+      if (c) { c.width = 0; c.height = 0; }
+      ph.innerHTML = "";
+    }
     renderedNums.delete(num);
   }
   function evictFarPages() {
-    // Keep current page ± 3 rendered, dispose the rest. Plenty for
-    // smooth scrolling without eating gigabytes on long PDFs.
     const keep = new Set();
-    for (let d = -3; d <= 3; d++) keep.add(mostVisiblePage + d);
+    for (let d = -KEEP_RADIUS; d <= KEEP_RADIUS; d++) keep.add(mostVisiblePage + d);
     [...renderedNums].forEach((n) => { if (!keep.has(n)) clearPage(n); });
   }
 
@@ -2643,6 +2674,7 @@ if (readerRoot) {
       const next = document.querySelector("[data-pdf-next]");
       const pageInput = document.querySelector("[data-pdf-page-input]");
       const pageTotal = document.querySelector("[data-pdf-page-total]");
+      const pageAnnounce = document.querySelector("[data-pdf-page-announce]");
       let pdf;
       try {
         pdf = await pdfjsLib.getDocument(fileURL).promise;
@@ -2811,6 +2843,11 @@ if (readerRoot) {
             // possible page — either the right slot is the last page, or
             // (when total is even and on the last spread) the left slot is.
             if (next) next.disabled = (rightNum === pdf.numPages) || (rightNum === 0 && leftNum === pdf.numPages);
+            const spreadLabel = rightNum > 0
+              ? `Pages ${leftNum}–${rightNum} of ${pdf.numPages}`
+              : `Page ${leftNum} of ${pdf.numPages}`;
+            canvas.setAttribute("aria-label", spreadLabel);
+            if (pageAnnounce && direction) pageAnnounce.textContent = spreadLabel;
             setReaderPosition(`page:${leftNum}`, `Page ${leftNum}`);
             await saveProgress(`page:${leftNum}`, (leftNum / pdf.numPages) * 100);
             return;
@@ -2842,6 +2879,9 @@ if (readerRoot) {
           if (pageTotal) pageTotal.textContent = `/ ${pdf.numPages}`;
           if (prev) prev.disabled = num <= 1;
           if (next) next.disabled = num >= pdf.numPages;
+          const singleLabel = `Page ${num} of ${pdf.numPages}`;
+          canvas.setAttribute("aria-label", singleLabel);
+          if (pageAnnounce && direction) pageAnnounce.textContent = singleLabel;
           setReaderPosition(`page:${num}`, `Page ${num}`);
           await saveProgress(`page:${num}`, (num / pdf.numPages) * 100);
         } finally {
