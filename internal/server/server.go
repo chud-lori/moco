@@ -1738,7 +1738,11 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, userID str
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
+		// Lax (not Strict) so the cookie is delivered on the top-level
+		// redirect back from Google OAuth — Strict cookies are withheld
+		// on requests whose navigation chain started cross-site, which
+		// would land freshly-signed-in users on /login instead of /app.
+		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 		MaxAge:   int((14 * 24 * time.Hour).Seconds()),
 	})
