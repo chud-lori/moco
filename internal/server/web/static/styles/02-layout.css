@@ -16,7 +16,11 @@
   min-width: 0;
   overflow-x: clip;
 }
-.page-shell-narrow { width: 100%; max-width: 760px; }
+/* margin-inline:auto lets this class work either as the outer shell
+   (combined with .page-shell, used on auth) or as an inner content
+   wrapper inside a wide .page-shell (used on settings to keep the
+   topbar full-width while narrowing the form body). */
+.page-shell-narrow { width: 100%; max-width: 760px; margin-inline: auto; }
 @media (min-width: 768px) {
   /* Wider shell so content reaches closer to the viewport edges. Combined
      with the flat body color, this reduces the perception of empty
