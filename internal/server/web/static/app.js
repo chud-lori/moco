@@ -2362,13 +2362,6 @@ if (readerRoot) {
         removeLoading();
       });
 
-      try {
-        await rendition.display();
-      } catch (err) {
-        toast("Could not display the EPUB.", "error");
-        console.error("EPUB display error:", err);
-      }
-
       book.loaded.navigation.then((navigation) => {
         tocList.innerHTML = "";
         if (!navigation.toc || navigation.toc.length === 0) {
@@ -2403,8 +2396,52 @@ if (readerRoot) {
         tocList.appendChild(li);
       });
 
+      const epubPageInput = document.querySelector("[data-epub-page-input]");
+      const epubPageTotal = document.querySelector("[data-epub-page-total]");
+      if (epubPageTotal) epubPageTotal.textContent = "%";
+      if (epubPageInput) {
+        epubPageInput.min = 0;
+        epubPageInput.max = 100;
+      }
+
+      let epubLocationsReady = false;
+      const epubLocationsReadyPromise = book.locations.generate(1024).then(() => {
+        epubLocationsReady = true;
+        if (epubPageInput) epubPageInput.disabled = false;
+      }).catch(() => {});
+      const savedProgressPromise = requestJSON(`/api/v1/books/${bookID}/progress`).catch(() => null);
+
       let userMovedEpub = false;
       let epubNavBusy = false;
+      let epubCurrentLocation = null;
+      const encodeEpubColumnLocator = (cfi, x) => {
+        if (!cfi) return "";
+        return `epubcol:${encodeURIComponent(cfi)}:${Math.max(0, Math.round(x || 0))}`;
+      };
+      const decodeEpubColumnLocator = (locator) => {
+        if (!locator || !locator.startsWith("epubcol:")) return null;
+        const tail = locator.slice("epubcol:".length);
+        const cut = tail.lastIndexOf(":");
+        if (cut < 0) return null;
+        const cfi = decodeURIComponent(tail.slice(0, cut));
+        const x = parseInt(tail.slice(cut + 1), 10);
+        if (!cfi || Number.isNaN(x)) return null;
+        return { cfi, x: Math.max(0, x) };
+      };
+      const epubProgressPercent = (loc, columnIndex = 0, maxIndex = 0) => {
+        const point = loc?.start;
+        if (!point) return 0;
+        if (loc?.atStart) return 0;
+        if (loc?.atEnd) return 100;
+        if (typeof point.location === "number" && point.location >= 0 && point.percentage > 0 && point.percentage < 1) {
+          return point.percentage * 100;
+        }
+        const spineItems = book?.spine?.spineItems || book?.spine?.items || [];
+        const spineCount = Math.max(spineItems.length || 1, 1);
+        const spineIndex = Math.max(point.index || 0, 0);
+        const pageFraction = maxIndex > 0 ? Math.max(0, Math.min(columnIndex, maxIndex)) / (maxIndex + 1) : 0;
+        return Math.max(0, Math.min(100, ((spineIndex + pageFraction) / spineCount) * 100));
+      };
       const getEpubColumnFrame = () => {
         const iframe = stage?.querySelector("iframe");
         const win = iframe?.contentWindow;
@@ -2415,21 +2452,56 @@ if (readerRoot) {
         const max = Math.max((root.scrollWidth || 0) - step, 0);
         return { win, root, step, max, x: win.scrollX || root.scrollLeft || 0 };
       };
+      const getEpubColumnMetrics = (frame = getEpubColumnFrame(), loc = epubCurrentLocation || rendition?.currentLocation?.()) => {
+        const startPage = loc?.start?.displayed?.page || 1;
+        const endPage = loc?.end?.displayed?.page || startPage;
+        const totalPages = loc?.start?.displayed?.total || loc?.end?.displayed?.total || 0;
+        const pagesPerView = Math.max(1, endPage - startPage + 1);
+        const rawMaxIndex = frame?.step > 0 ? Math.ceil((frame.max || 0) / frame.step) : 0;
+        const logicalMaxIndex = totalPages > 0 ? Math.max(0, Math.ceil(totalPages / pagesPerView) - 1) : rawMaxIndex;
+        const maxIndex = Math.max(0, Math.min(rawMaxIndex, logicalMaxIndex));
+        const maxX = frame?.step > 0 ? Math.min(frame.max, maxIndex * frame.step) : 0;
+        return { pagesPerView, totalPages, maxIndex, maxX };
+      };
+      const syncEpubColumnProgress = (targetX = null) => {
+        const frame = getEpubColumnFrame();
+        const loc = epubCurrentLocation || rendition?.currentLocation?.();
+        const start = loc?.start;
+        if (!frame || !start) return;
+        const x = targetX == null ? frame.x : targetX;
+        const metrics = getEpubColumnMetrics(frame, loc);
+        const rawColumnIndex = frame.step > 0 ? Math.max(0, Math.ceil((x - 8) / frame.step)) : 0;
+        const columnIndex = Math.min(rawColumnIndex, metrics.maxIndex);
+        const progressPercent = epubProgressPercent(loc, columnIndex, metrics.maxIndex);
+        const locator = encodeEpubColumnLocator(start.cfi, Math.min(x, metrics.maxX)) || start.cfi || "";
+        const pct = Math.round(progressPercent);
+        if (epubPageInput && document.activeElement !== epubPageInput) {
+          epubPageInput.value = String(pct);
+        }
+        setReaderPosition(locator, `${pct}%`);
+        saveProgress(locator, progressPercent);
+      };
       const scrollEpubColumn = (direction) => {
         const frame = getEpubColumnFrame();
         if (!frame || frame.step <= 0 || frame.max <= 8) return false;
+        const metrics = getEpubColumnMetrics(frame);
+        const currentIndex = Math.max(0, Math.min(metrics.maxIndex, Math.ceil((frame.x - 8) / frame.step)));
         const pageIndex = direction === "next"
           ? Math.floor((frame.x + 8) / frame.step) + 1
-          : Math.floor((frame.x - 8) / frame.step);
-        const nextX = Math.max(0, Math.min(pageIndex * frame.step, frame.max));
+          : currentIndex - 1;
+        if (pageIndex < 0 || pageIndex > metrics.maxIndex) return false;
+        const nextX = Math.max(0, Math.min(pageIndex * frame.step, metrics.maxX));
         if (Math.abs(nextX - frame.x) < 8) return false;
-        frame.win.scrollTo({ left: nextX, top: 0, behavior: "smooth" });
+        frame.win.scrollTo({ left: nextX, top: 0, behavior: "instant" });
+        syncEpubColumnProgress(nextX);
         return true;
       };
       const scrollEpubColumnToEnd = () => {
         const frame = getEpubColumnFrame();
         if (!frame || frame.max <= 8) return;
-        frame.win.scrollTo({ left: frame.max, top: 0, behavior: "instant" });
+        const metrics = getEpubColumnMetrics(frame);
+        frame.win.scrollTo({ left: metrics.maxX, top: 0, behavior: "instant" });
+        syncEpubColumnProgress(metrics.maxX);
       };
       const setEpubNavBusy = (busy) => {
         epubNavBusy = busy;
@@ -2474,44 +2546,49 @@ if (readerRoot) {
           // epub.js can resolve before the iframe has fully settled at a
           // spine boundary. Give its relocated/rendered handlers a beat so
           // rapid taps/swipes cannot stack conflicting page turns.
-          setTimeout(() => setEpubNavBusy(false), usedColumnScroll ? 360 : 180);
+          setTimeout(() => setEpubNavBusy(false), 180);
         }
       };
-
-      requestJSON(`/api/v1/books/${bookID}/progress`).then((data) => {
-        if (userMovedEpub) return;
-        if (data.progress?.locator) {
-          try { rendition.display(data.progress.locator); }
-          catch (_) { /* invalid CFI from old data — ignore */ }
-        }
-      }).catch(() => {});
 
       // EPUBs don't have intrinsic page numbers — epub.js builds "locations"
       // from the spine. We pre-generate them so the user gets a jump-to-page
       // input similar to the PDF reader. ~1024 chars per location is the
       // standard heuristic.
-      const epubPageInput = document.querySelector("[data-epub-page-input]");
-      const epubPageTotal = document.querySelector("[data-epub-page-total]");
       // Locations are still generated so the chapter-jump dropdown and
       // jump-to-page-number can resolve to a CFI. But the on-screen
       // counter shows a percentage — for PDF-converted EPUBs the location
       // index jumps by 100s when crossing chapter boundaries (the CFI
       // reported by `relocated` rounds to a chapter-start checkpoint),
       // which made next/prev look broken. Percentage advances smoothly.
-      let epubLocationsReady = false;
-      book.locations.generate(1024).then(() => {
-        epubLocationsReady = true;
-        if (epubPageInput) epubPageInput.disabled = false;
-      }).catch(() => {});
-      if (epubPageTotal) epubPageTotal.textContent = "%";
-      if (epubPageInput) {
-        epubPageInput.min = 0;
-        epubPageInput.max = 100;
+      await epubLocationsReadyPromise;
+
+      const savedProgress = await savedProgressPromise;
+      const savedLocator = savedProgress?.progress?.locator || "";
+      const savedColumnLocator = decodeEpubColumnLocator(savedLocator);
+      try {
+        await rendition.display(savedColumnLocator?.cfi || savedLocator || undefined);
+        epubCurrentLocation = rendition.currentLocation?.() || epubCurrentLocation;
+        syncEpubEdgeButtons(epubCurrentLocation);
+        if (savedColumnLocator && !userMovedEpub) {
+          setTimeout(() => {
+            const frame = getEpubColumnFrame();
+            const metrics = getEpubColumnMetrics(frame);
+            const x = Math.max(0, Math.min(savedColumnLocator.x, metrics.maxX));
+            frame?.win.scrollTo({ left: x, top: 0, behavior: "instant" });
+            syncEpubColumnProgress(x);
+          }, 120);
+        } else {
+          syncEpubColumnProgress(0);
+        }
+      } catch (err) {
+        toast("Could not display the EPUB.", "error");
+        console.error("EPUB display error:", err);
       }
 
       rendition.on("relocated", (location) => {
+        epubCurrentLocation = location;
         const locator = location?.start?.cfi || "";
-        const progressPercent = location?.start?.percentage ? location.start.percentage * 100 : 0;
+        const progressPercent = epubProgressPercent(location, 0, getEpubColumnMetrics().maxIndex);
         saveProgress(locator, progressPercent);
         syncEpubEdgeButtons(location);
         const pct = Math.round(progressPercent);
@@ -2522,7 +2599,21 @@ if (readerRoot) {
       });
       jumpToLocator = (locator) => {
         if (!locator) return;
-        try { rendition.display(locator); } catch (_) {}
+        const columnLocator = decodeEpubColumnLocator(locator);
+        try {
+          if (!columnLocator) {
+            rendition.display(locator);
+            return;
+          }
+          Promise.resolve(rendition.display(columnLocator.cfi)).then(() => {
+            setTimeout(() => {
+              const frame = getEpubColumnFrame();
+              const x = Math.max(0, Math.min(columnLocator.x, frame?.max || 0));
+              frame?.win.scrollTo({ left: x, top: 0, behavior: "instant" });
+              syncEpubColumnProgress(x);
+            }, 120);
+          });
+        } catch (_) {}
       };
 
       function jumpToEpubPage() {
