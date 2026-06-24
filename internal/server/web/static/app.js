@@ -2405,6 +2405,32 @@ if (readerRoot) {
 
       let userMovedEpub = false;
       let epubNavBusy = false;
+      const getEpubColumnFrame = () => {
+        const iframe = stage?.querySelector("iframe");
+        const win = iframe?.contentWindow;
+        const doc = iframe?.contentDocument;
+        const root = doc?.documentElement;
+        if (!win || !root) return null;
+        const step = Math.max(root.clientWidth || iframe.clientWidth || 0, 0);
+        const max = Math.max((root.scrollWidth || 0) - step, 0);
+        return { win, root, step, max, x: win.scrollX || root.scrollLeft || 0 };
+      };
+      const scrollEpubColumn = (direction) => {
+        const frame = getEpubColumnFrame();
+        if (!frame || frame.step <= 0 || frame.max <= 8) return false;
+        const pageIndex = direction === "next"
+          ? Math.floor((frame.x + 8) / frame.step) + 1
+          : Math.floor((frame.x - 8) / frame.step);
+        const nextX = Math.max(0, Math.min(pageIndex * frame.step, frame.max));
+        if (Math.abs(nextX - frame.x) < 8) return false;
+        frame.win.scrollTo({ left: nextX, top: 0, behavior: "smooth" });
+        return true;
+      };
+      const scrollEpubColumnToEnd = () => {
+        const frame = getEpubColumnFrame();
+        if (!frame || frame.max <= 8) return;
+        frame.win.scrollTo({ left: frame.max, top: 0, behavior: "instant" });
+      };
       const setEpubNavBusy = (busy) => {
         epubNavBusy = busy;
         if (prev && !prev.dataset.edgeDisabled) prev.disabled = busy;
@@ -2426,16 +2452,29 @@ if (readerRoot) {
         if (button?.dataset.edgeDisabled) return;
         userMovedEpub = true;
         setEpubNavBusy(true);
+        let usedColumnScroll = false;
         try {
+          if (scrollEpubColumn(direction)) {
+            usedColumnScroll = true;
+            return;
+          }
           const action = direction === "prev" ? rendition.prev() : rendition.next();
           await Promise.resolve(action);
+          if (direction === "prev") {
+            // epub.js moves to the previous spine item but often lands at
+            // that chapter's first column. A reader's "previous page" from
+            // a chapter boundary should be the last visible column of the
+            // prior chapter, so settle the new iframe and then jump to its
+            // horizontal end.
+            setTimeout(scrollEpubColumnToEnd, 80);
+          }
         } catch (err) {
           console.warn("EPUB navigation failed:", err);
         } finally {
           // epub.js can resolve before the iframe has fully settled at a
           // spine boundary. Give its relocated/rendered handlers a beat so
           // rapid taps/swipes cannot stack conflicting page turns.
-          setTimeout(() => setEpubNavBusy(false), 180);
+          setTimeout(() => setEpubNavBusy(false), usedColumnScroll ? 360 : 180);
         }
       };
 
