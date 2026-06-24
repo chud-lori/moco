@@ -2403,7 +2403,44 @@ if (readerRoot) {
         tocList.appendChild(li);
       });
 
+      let userMovedEpub = false;
+      let epubNavBusy = false;
+      const setEpubNavBusy = (busy) => {
+        epubNavBusy = busy;
+        if (prev && !prev.dataset.edgeDisabled) prev.disabled = busy;
+        if (next && !next.dataset.edgeDisabled) next.disabled = busy;
+      };
+      const syncEpubEdgeButtons = (location) => {
+        if (prev) {
+          prev.dataset.edgeDisabled = location?.atStart ? "1" : "";
+          prev.disabled = epubNavBusy || !!location?.atStart;
+        }
+        if (next) {
+          next.dataset.edgeDisabled = location?.atEnd ? "1" : "";
+          next.disabled = epubNavBusy || !!location?.atEnd;
+        }
+      };
+      const navigateEpub = async (direction) => {
+        if (!rendition || epubNavBusy) return;
+        const button = direction === "prev" ? prev : next;
+        if (button?.dataset.edgeDisabled) return;
+        userMovedEpub = true;
+        setEpubNavBusy(true);
+        try {
+          const action = direction === "prev" ? rendition.prev() : rendition.next();
+          await Promise.resolve(action);
+        } catch (err) {
+          console.warn("EPUB navigation failed:", err);
+        } finally {
+          // epub.js can resolve before the iframe has fully settled at a
+          // spine boundary. Give its relocated/rendered handlers a beat so
+          // rapid taps/swipes cannot stack conflicting page turns.
+          setTimeout(() => setEpubNavBusy(false), 180);
+        }
+      };
+
       requestJSON(`/api/v1/books/${bookID}/progress`).then((data) => {
+        if (userMovedEpub) return;
         if (data.progress?.locator) {
           try { rendition.display(data.progress.locator); }
           catch (_) { /* invalid CFI from old data — ignore */ }
@@ -2437,8 +2474,7 @@ if (readerRoot) {
         const locator = location?.start?.cfi || "";
         const progressPercent = location?.start?.percentage ? location.start.percentage * 100 : 0;
         saveProgress(locator, progressPercent);
-        if (prev) prev.disabled = !!location?.atStart;
-        if (next) next.disabled = !!location?.atEnd;
+        syncEpubEdgeButtons(location);
         const pct = Math.round(progressPercent);
         if (epubPageInput && document.activeElement !== epubPageInput) {
           epubPageInput.value = String(pct);
@@ -2466,13 +2502,13 @@ if (readerRoot) {
         if (event.key === "Enter") { event.preventDefault(); jumpToEpubPage(); }
       });
 
-      prev?.addEventListener("click", () => { if (!prev.disabled) rendition.prev(); });
-      next?.addEventListener("click", () => { if (!next.disabled) rendition.next(); });
+      prev?.addEventListener("click", () => { navigateEpub("prev"); });
+      next?.addEventListener("click", () => { navigateEpub("next"); });
 
       document.addEventListener("keydown", (event) => {
         if (event.target.matches("input,textarea,select")) return;
-        if (event.key === "ArrowLeft") rendition.prev();
-        if (event.key === "ArrowRight") rendition.next();
+        if (event.key === "ArrowLeft") navigateEpub("prev");
+        if (event.key === "ArrowRight") navigateEpub("next");
       });
 
       // Taps inside the iframe never reach the parent document, so wire the
@@ -2515,8 +2551,8 @@ if (readerRoot) {
           const dy = Math.abs(t.clientY - sy);
           // Swipe → page turn
           if (elapsed < TIME_LIMIT && Math.abs(dx) >= SWIPE_MIN && dy <= VERTICAL_TOLERANCE) {
-            if (dx > 0) rendition.prev();
-            else rendition.next();
+            if (dx > 0) navigateEpub("prev");
+            else navigateEpub("next");
             return;
           }
           // Plain tap (no movement, no selection) → toggle chrome
